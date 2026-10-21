@@ -1,0 +1,26 @@
+{
+  "name": "smash64-online",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted BYOR Smash 64 with private rooms and configurable controllers",
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check": "node scripts/check.mjs",
+    "test:e2e": "node scripts/e2e.mjs",
+    "share": "node scripts/share.mjs",
+    "format": "prettier --write server.mjs public/*.html public/*.css public/js/*.js scripts/*.mjs test/*.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1",
+    "prettier": "3.6.2"
+  }
+}

@@ -1,0 +1,3 @@
+[submodule "upstream/m64wasm"]
+	path = upstream/m64wasm
+	url = https://github.com/waveplate/M64Wasm.git

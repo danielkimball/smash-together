@@ -1,0 +1,25 @@
+{
+  "application": "Smash Together",
+  "version": "1.0.0",
+  "engine_source": "https://github.com/waveplate/M64Wasm",
+  "engine_commit": "f6b5d6cc31821ec501a94aa761eae022d08f5a9d",
+  "emscripten": "2.0.7",
+  "font": "Abel Regular / SIL OFL",
+  "files": {
+    "engine/n64wasm.js": {
+      "sha256": "9746baf9719a81732ae02bd7601cf3e3f98766a463bed33427d4e9bfd1eabad1",
+      "bytes": 256024,
+      "modified": false
+    },
+    "engine/n64wasm.wasm": {
+      "sha256": "2e0305468f4eeab8ed794533e87315d90d9665a6c673e53f10a3c6f8da199fdc",
+      "bytes": 2527207,
+      "modified": false
+    },
+    "engine/assets.zip": {
+      "sha256": "c99e553befe6c2e97c92e9fe3222036f3bb2919bb04a3a2dc9d5c9b2ecb00144",
+      "bytes": 33302,
+      "modified": true
+    }
+  }
+}

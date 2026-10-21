@@ -1,0 +1,11 @@
+node_modules/
+.local/
+artifacts/
+upstream/battleship/
+*.z64
+*.n64
+*.v64
+*.sav
+*.state
+.DS_Store
+*.smash64
