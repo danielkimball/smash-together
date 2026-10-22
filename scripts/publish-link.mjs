@@ -14,7 +14,7 @@ export async function publishLink(url) {
   } catch {
     return;
   }
-  if (!config.pagesRepo) return;
+  if (!config.pagesRepo || config.publishLink === false) return;
   if (!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(url))
     throw Error("Invalid tunnel address");
   const gh = config.ghPath || "gh",
@@ -40,7 +40,7 @@ export async function publishLink(url) {
     await run(gh, ["api", "--method", "PUT", endpoint, "--input", temp], {
       timeout: 30000,
     });
-    console.log("Legacy bookmark redirect updated: " + url);
+    console.log("Stable site host address updated: " + url);
   } finally {
     await rm(temp, { force: true });
   }

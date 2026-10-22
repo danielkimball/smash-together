@@ -330,6 +330,9 @@ body[data-view="home"] footer {
   background: var(--accent);
 }
 .room-browser {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: 28px;
   border: 1px solid var(--line);
   min-height: clamp(170px, 22dvh, 280px);
   padding: 18px 20px 12px;
@@ -369,7 +372,8 @@ body[data-view="home"] footer {
   text-align: left;
   color: var(--ink);
 }
-.room-row:hover:not(:disabled) {
+.room-row:hover:not(:disabled),
+.room-row:focus-visible {
   background: #ff002815;
   border-color: var(--accent);
   color: var(--ink);
@@ -617,12 +621,13 @@ label:not(.inline-label, .checkbox-label, .volume-label) {
 }
 .native-choice:hover:not(:disabled),
 .native-choice:focus-visible {
-  outline-color: var(--accent);
+  outline: none;
+  box-shadow: none;
 }
+.native-choice > span,
 .native-choice:hover > span,
 .native-choice:focus-visible > span {
-  background: #000d;
-  color: var(--ink);
+  display: none;
 }
 .room-ribbon {
   background: #000;
@@ -973,5 +978,106 @@ body[data-touch="on"] .setup-footer {
 @media (prefers-reduced-motion: reduce) {
   button {
     transition: none;
+  }
+}
+
+/* Persistent player names and controller text entry. */
+.lobby-actions .name-field {
+  width: 68%;
+  margin-left: 32%;
+}
+.lobby-actions .name-field input:not([type="range"], [type="checkbox"]) {
+  width: 100%;
+  margin: 0;
+}
+.player-name-label {
+  display: block;
+  margin: 0 0 10px;
+  color: var(--ink);
+  font: 500 11px var(--label);
+  text-align: center;
+}
+.name-keys {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 24px;
+}
+.name-keys button {
+  min-width: 0;
+  padding: 14px 0 10px;
+  font-size: 16px;
+  border-radius: 8px;
+}
+.name-keys button[data-key-index="36"],
+.name-keys button[data-key-index="37"],
+.name-keys button[data-key-index="38"],
+.name-keys button[data-key-index="39"],
+.name-keys button[data-key-index="40"],
+.name-keys button[data-key-index="41"] {
+  font-size: 10px;
+  letter-spacing: 0;
+}
+.name-keys button:focus {
+  background: var(--accent);
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+#controller-saved {
+  color: var(--green);
+}
+@media (min-width: 901px) {
+  .lobby-logo img {
+    max-height: min(54dvh, 630px);
+  }
+  .lobby-side {
+    padding-top: 0;
+  }
+  .lobby-screen {
+    min-height: 0;
+  }
+}
+@media (max-width: 600px) and (orientation: portrait) {
+  .lobby-actions .name-field {
+    width: 100%;
+    margin: 0;
+  }
+  .name-keys {
+    gap: 5px;
+  }
+  .name-keys button {
+    font-size: 14px;
+  }
+  .name-keys button:nth-child(n + 37) {
+    font-size: 9px;
+  }
+}
+.room-browser .list-heading {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.room-row strong {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+body[data-navigation="controller"] .lobby-actions button:focus,
+body[data-navigation="controller"] .lobby-actions input:focus {
+  background: var(--accent);
+  outline: 2px solid var(--yellow);
+  outline-offset: 5px;
+}
+body[data-navigation="controller"] .room-row:focus {
+  background: #ff002825;
+  border-color: var(--accent);
+  outline: 2px solid var(--yellow);
+  outline-offset: 3px;
+}
+@media (max-width: 600px) and (orientation: portrait) {
+  .room-row {
+    grid-template-columns: minmax(0, 1fr) 38px;
+  }
+  .room-row .room-state {
+    grid-column: 1 / -1;
   }
 }

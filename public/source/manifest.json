@@ -1,6 +1,6 @@
 {
   "application": "Smash Portal",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "engine_source": "https://github.com/waveplate/M64Wasm",
   "engine_commit": "f6b5d6cc31821ec501a94aa761eae022d08f5a9d",
   "emscripten": "2.0.7",
@@ -43,17 +43,13 @@
       "sha256": "f42db2dd16e642258e35782916eceb1dcdbea06fb958d77ad71dc5963587e8fd",
       "bytes": 38576
     },
-    "media/how-to-play.mp4": {
-      "sha256": "6963505b8c474c2e76f34a3c6a0d5500625a187f71d1c5fad424871dfc115fba",
-      "bytes": 41915989
+    "media/fire.mp4": {
+      "sha256": "14cb1e5af1b322751fc44f2df4a52ae144d9f0ddbcbeb5de470d6ca3ab3b18e6",
+      "bytes": 675214
     },
     "media/opening.mp4": {
       "sha256": "731efb1d1f33b98d120fd8a128b247a5955b5960f9616a51adca4de1d16382e8",
       "bytes": 15716120
-    },
-    "media/title.mp4": {
-      "sha256": "e8382ff68b47fc47a9b801ea957be094b2724a0ccf43128415abe6fea7668b3c",
-      "bytes": 2398841
     }
   }
 }

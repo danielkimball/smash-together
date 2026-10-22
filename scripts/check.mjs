@@ -45,8 +45,8 @@ assert.equal(
 const app = await readFile(path.join(root, "public/js/app.js"), "utf8");
 for (const match of app.matchAll(/\$\(["']([a-z][\w-]*)["']\)/g))
   assert.ok(ids.includes(match[1]), `Missing UI element: ${match[1]}`);
-for (const match of html.matchAll(/(?:src|href)="(\/[^"#]*)"/g)) {
-  if (match[1] === "/") continue;
+for (const match of html.matchAll(/(?:src|href)="((?:\.\/|\/)[^"#]*)"/g)) {
+  if (["/", "./"].includes(match[1])) continue;
   await stat(path.join(root, "public", match[1]));
 }
 console.log(

@@ -45,7 +45,7 @@ try {
       ),
     );
   const [a, bPage] = await Promise.all(contexts.map((c) => c.newPage()));
-  let b = bPage;
+  const b = bPage;
   for (const p of [a, b]) p.on("pageerror", (e) => errors.push(e.message));
   await a.goto(url);
   await a.keyboard.press("Enter");
@@ -117,9 +117,7 @@ try {
     "Clipboard denial offers a selected read-only invite without leaving the room",
   );
   await bPage.goto(link);
-  if (new URL(link).origin !== new URL(shareUrl).origin) {
-    b = await (await bPage.waitForSelector("#game")).contentFrame();
-  }
+  assert.equal(bPage.frames().length, 1);
   await b.locator("#join-dialog").waitFor({ state: "visible" });
   await b.locator("#join-name").fill("Brother");
   await b.locator("#join-room").click();

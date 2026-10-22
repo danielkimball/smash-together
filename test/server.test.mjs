@@ -78,7 +78,7 @@ test("serves the game, isolates public assets, rejects writes and traversal", as
 });
 test("attract media supports seeking, suffix ranges, HEAD, and rejects invalid ranges", async (t) => {
   const a = await setup(t);
-  const url = a.http + "/media/title.mp4";
+  const url = a.http + "/media/fire.mp4";
   const head = await fetch(url, { method: "HEAD" });
   assert.equal(head.status, 200);
   assert.equal(head.headers.get("content-type"), "video/mp4");
@@ -387,4 +387,34 @@ test("testing cartridge is opt-in, password-gated, rate-limited and absent from 
     ).status,
     429,
   );
+});
+
+test("stable frontend alone can read APIs, preflight testing access and open the room socket", async (t) => {
+  const origin = "https://danielkimball.github.io";
+  const a = await setup(t, { frontendUrl: origin + "/smash-together/" });
+  const response = await fetch(a.http + "/api/status", {
+    headers: { Origin: origin },
+  });
+  assert.equal(response.headers.get("access-control-allow-origin"), origin);
+  assert.equal((await response.json()).publicUrl, origin + "/smash-together/");
+  assert.equal((await fetch(a.http + "/")).status, 200);
+  const preflight = await fetch(a.http + "/api/testing/cartridge", {
+    method: "OPTIONS",
+    headers: {
+      Origin: origin,
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "content-type",
+    },
+  });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get("access-control-allow-origin"), origin);
+  const denied = await fetch(a.http + "/api/rooms", {
+    headers: { Origin: "https://unrelated.example" },
+  });
+  assert.equal(denied.status, 403);
+  assert.equal(denied.headers.get("access-control-allow-origin"), null);
+  const socket = new WebSocket(a.ws, { origin });
+  await once(socket, "open");
+  socket.close();
+  await once(socket, "close");
 });

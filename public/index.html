@@ -9,12 +9,12 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#000000" />
     <title>Smash Portal · Super Smash Bros. Online</title>
-    <link rel="icon" href="/mark.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/type.css" />
-    <link rel="stylesheet" href="/style.css" />
-    <link rel="stylesheet" href="/touch.css" />
-    <link rel="stylesheet" href="/portal.css" />
-    <script type="module" src="/js/app.js"></script>
+    <link rel="icon" href="./mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./type.css" />
+    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./touch.css" />
+    <link rel="stylesheet" href="./portal.css" />
+    <script type="module" src="./js/app.js"></script>
   </head>
   <body>
     <section id="game-view" hidden aria-label="Game">
@@ -245,7 +245,7 @@
           <div class="attract-display">
             <video
               id="attract-opening"
-              src="/media/opening.mp4"
+              src="./media/opening.mp4"
               preload="auto"
               autoplay
               muted
@@ -255,7 +255,8 @@
             ></video>
             <video
               id="attract-title"
-              src="/media/title.mp4"
+              src="./media/fire.mp4"
+              loop
               preload="auto"
               muted
               playsinline
@@ -263,18 +264,8 @@
               hidden
               aria-label="Original Super Smash Bros. title screen"
             ></video>
-            <video
-              id="attract-how-to-play"
-              src="/media/how-to-play.mp4"
-              preload="none"
-              muted
-              playsinline
-              disablepictureinpicture
-              hidden
-              aria-label="Original Super Smash Bros. how to play demonstration"
-            ></video>
             <div id="attract-fallback" hidden>
-              <img src="/brand/smash-portal.jpeg" alt="Smash Portal" />
+              <img src="./brand/smash-portal.jpeg" alt="Smash Portal" />
               <p>PRESS START</p>
             </div>
             <button
@@ -295,7 +286,7 @@
           <h1 class="sr-only">Smash Portal multiplayer lobby</h1>
           <div class="lobby-logo">
             <img
-              src="/brand/smash-portal.jpeg"
+              src="./brand/smash-portal.jpeg"
               alt="Smash Portal"
               width="656"
               height="655"
@@ -303,40 +294,45 @@
           </div>
           <div class="lobby-side">
             <div class="lobby-actions">
-              <label class="sr-only" for="player-name">Your name</label>
-              <input
-                id="player-name"
-                maxlength="30"
-                placeholder="Enter your name"
-                autocomplete="nickname"
-                aria-label="Your name"
-              />
+              <div class="name-field">
+                <label class="player-name-label" for="player-name"
+                  >Change your name</label
+                >
+                <input
+                  id="player-name"
+                  maxlength="30"
+                  placeholder="Your name"
+                  autocomplete="nickname"
+                  aria-label="Your name"
+                />
+              </div>
               <button id="create-open" class="primary">Create a room</button>
               <button id="join-open">Join a room</button>
             </div>
-            <section class="room-browser" aria-label="Available rooms">
-              <div class="list-heading">
-                <span>OPEN ROOMS</span
-                ><button
-                  id="refresh-rooms"
-                  class="quiet"
-                  aria-label="Refresh rooms"
-                >
-                  ↻ Refresh
-                </button>
-              </div>
-              <div id="room-list" class="room-list" aria-live="polite"></div>
-              <div id="rooms-empty" class="empty-room">
-                <p>No challengers. Yet.</p>
-                <button id="create-empty" class="quiet">
-                  Be the first. Create a room →
-                </button>
-              </div>
-              <p id="browser-status" class="subtext" role="status">
-                Finding rooms…
-              </p>
-            </section>
           </div>
+          <section class="room-browser" aria-label="Available rooms">
+            <div class="list-heading">
+              <span>OPEN ROOMS · ↑ ↓ CHOOSE · A JOIN</span
+              ><button
+                id="refresh-rooms"
+                data-controller-skip
+                class="quiet"
+                aria-label="Refresh rooms"
+              >
+                ↻ Refresh
+              </button>
+            </div>
+            <div id="room-list" class="room-list" aria-live="polite"></div>
+            <div id="rooms-empty" class="empty-room">
+              <p>No challengers. Yet.</p>
+              <button id="create-empty" class="quiet">
+                Be the first. Create a room →
+              </button>
+            </div>
+            <p id="browser-status" class="subtext" role="status">
+              Finding rooms…
+            </p>
+          </section>
         </section>
       </main>
       <footer>
@@ -352,7 +348,7 @@
         <div>
           <button id="cartridge-open" class="quiet">Your cartridge</button
           ><button id="diagnostics-open" class="quiet">Connection</button
-          ><a href="/credits.html">Credits & source</a>
+          ><a href="./credits.html">Credits & source</a>
         </div>
       </footer>
     </div>
@@ -385,7 +381,7 @@
         browser, and we’ll remember it for next time.
       </p>
       <div class="cartridge-card">
-        <img src="/mark.svg" width="56" height="56" alt="" />
+        <img src="./mark.svg" width="56" height="56" alt="" />
         <div>
           <strong>Super Smash Bros.</strong>
           <p id="rom-status">Original US release · .z64, .v64 or .n64</p>
@@ -588,6 +584,34 @@
         ><button id="quit-game" class="quiet">Leave game</button>
       </div>
     </dialog>
+    <dialog id="name-dialog">
+      <form id="name-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">MAKE A NAME FOR YOURSELF</p>
+            <h2>Change your name</h2>
+          </div>
+          <button
+            type="button"
+            class="close"
+            data-close="name-dialog"
+            aria-label="Cancel name change"
+          >
+            ×
+          </button>
+        </div>
+        <label for="name-draft">Your name</label
+        ><input id="name-draft" maxlength="30" autocomplete="nickname" />
+        <div
+          id="name-keys"
+          class="name-keys"
+          aria-label="Controller keyboard"
+        ></div>
+        <p class="subtext">
+          Stick / D-pad: choose · A: type · B: delete · Start: done
+        </p>
+      </form>
+    </dialog>
     <dialog id="controls-dialog">
       <div class="dialog-heading">
         <div>
@@ -604,8 +628,8 @@
       </div>
       <p class="dialog-description">
         Pair Bluetooth controllers in your device’s settings, or connect by USB.
-        Then press a button. Xbox controllers have a preset; use guided setup
-        for N64 controllers and adapters.
+        Then press a button. Xbox and DragonRise N64 USB controllers have
+        presets. Custom mappings are saved automatically for this controller.
       </p>
       <label for="touch-mode">PHONE TOUCH CONTROLS</label>
       <select id="touch-mode">
@@ -622,6 +646,11 @@
         ><button id="wizard" class="button primary compact">Guided setup</button
         ><button id="calibrate" class="subtle-button">Calibrate center</button>
       </div>
+      <p id="controller-saved" class="subtext"></p>
+      <p id="mac-controller-help" class="subtext" hidden>
+        On Mac, if B opens Launchpad: System Settings → Game Controllers → turn
+        off “Press Home button to open Launchpad.”
+      </p>
       <p id="mapping-prompt" class="mapping-prompt" hidden></p>
       <div class="controller-preview">
         <div class="stick-meter"><span id="stick-dot"></span></div>

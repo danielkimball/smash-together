@@ -1,4 +1,5 @@
 import { Rounds } from "./rounds.js";
+import { socketURL } from "./service.js";
 const neutral = () => ({ buttons: 0, x: 0, y: 0 });
 const bytesOf = async (stream) =>
   new Uint8Array(await new Response(stream).arrayBuffer());
@@ -123,14 +124,21 @@ export class Netplay extends EventTarget {
       }
     } else this.send({ type: "game", to, payload: data });
   }
-  connect(options = {}) {
+  async connect(options = {}) {
     this.leave();
+    const connection = this.connectionGeneration;
     this.message = "";
     this.lastOptions = options;
     this.status("connecting");
-    const ws = new WebSocket(
-      `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/room`,
-    );
+    let address;
+    try {
+      address = await socketURL();
+    } catch (error) {
+      if (connection === this.connectionGeneration) this.error(error.message);
+      return;
+    }
+    if (connection !== this.connectionGeneration) return;
+    const ws = new WebSocket(address);
     this.socket = ws;
     ws.binaryType = "arraybuffer";
     ws.onopen = () =>
@@ -261,6 +269,7 @@ export class Netplay extends EventTarget {
     this.emit();
   }
   leave() {
+    this.connectionGeneration = (this.connectionGeneration || 0) + 1;
     this.rounds.restore();
     clearTimeout(this.syncTimeout);
     const s = this.socket;

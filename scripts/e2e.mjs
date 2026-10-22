@@ -9,7 +9,7 @@ await access(rom);
 const local = process.env.SMASH_URL || "http://127.0.0.1:8787";
 const remote =
   process.env.SMASH_GUEST_URL === "public"
-    ? (await (await fetch(local + "/api/status")).json()).shareUrl
+    ? (await (await fetch(local + "/api/status")).json()).publicUrl
     : process.env.SMASH_GUEST_URL || local;
 if (!remote) throw Error("Public sharing is not ready.");
 const dir = path.join(root, "artifacts");
@@ -161,6 +161,8 @@ try {
   );
   assert.equal(await a.evaluate(() => smash.engine.loaded), false);
   await a.locator("#power-on").click();
+  // A pointer parked over a native choice now selects it as the menu appears.
+  await a.mouse.move(0, 0);
   await a.locator("#rom-file").setInputFiles(rom);
   await a.waitForFunction(
     () => smash.view === "native" && !smash.paused,

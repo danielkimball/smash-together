@@ -12,11 +12,18 @@ const run = promisify(execFile);
 export async function writeFriendsShortcut(url) {
   if (process.platform !== "darwin") return;
   if (!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(url)) return;
+  try {
+    const config = JSON.parse(
+      await readFile(path.join(root, ".local/config.json"), "utf8"),
+    );
+    if (config.frontendUrl && new URL(config.frontendUrl).protocol === "https:")
+      url = new URL(config.frontendUrl).href;
+  } catch {}
   const desktop = path.join(os.homedir(), "Desktop/Smash Together");
   await mkdir(desktop, { recursive: true });
   await writeFile(
     path.join(desktop, "Friends Link.webloc"),
-    `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>URL</key><string>${url}</string></dict></plist>\n`,
+    `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>URL</key><string>${url.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</string></dict></plist>\n`,
   );
 }
 const version = "2026.10.3";
@@ -29,14 +36,19 @@ const releases = {
     "darwin-arm64",
     "1165d14b6f6360a3b8c283d7d1100024d6ec7cd9bc9e32519e96150645f3ec55",
   ],
+  "win32-x64": [
+    "windows-amd64",
+    "76b2805253d0d6ffacb092a7acfbee99e7af6917835c0c5410e23f3ef5052da2",
+  ],
 };
 export async function ensureTunnel() {
   const dir = path.join(root, ".local/bin"),
-    bin = path.join(dir, "cloudflared");
+    windows = process.platform === "win32",
+    bin = path.join(dir, windows ? "cloudflared.exe" : "cloudflared");
   const release = releases[`${process.platform}-${process.arch}`];
   if (!release)
     throw Error(
-      "Automatic tunnel setup supports Intel and Apple Silicon Macs. Install cloudflared manually on other platforms.",
+      "Automatic tunnel setup supports Intel/Apple Silicon Macs and x64 Windows. Use a supported Node architecture or install cloudflared manually on other platforms.",
     );
   await mkdir(dir, { recursive: true });
   try {
@@ -45,17 +57,20 @@ export async function ensureTunnel() {
   } catch {}
   console.log(`Downloading free cloudflared ${version} for ${release[0]}…`);
   const response = await fetch(
-    `https://github.com/cloudflare/cloudflared/releases/download/${version}/cloudflared-${release[0]}.tgz`,
+    `https://github.com/cloudflare/cloudflared/releases/download/${version}/cloudflared-${release[0]}.${windows ? "exe" : "tgz"}`,
   );
   if (!response.ok) throw Error(`Tunnel download failed: ${response.status}`);
   const data = Buffer.from(await response.arrayBuffer());
   if (createHash("sha256").update(data).digest("hex") !== release[1])
     throw Error("Tunnel download checksum did not match.");
-  const archive = path.join(dir, "cloudflared.tgz");
-  await writeFile(archive, data);
-  await run("/usr/bin/tar", ["-xzf", archive, "-C", dir, "cloudflared"]);
-  await chmod(bin, 0o755);
-  await rm(archive);
+  if (windows) await writeFile(bin, data);
+  else {
+    const archive = path.join(dir, "cloudflared.tgz");
+    await writeFile(archive, data);
+    await run("/usr/bin/tar", ["-xzf", archive, "-C", dir, "cloudflared"]);
+    await chmod(bin, 0o755);
+    await rm(archive);
+  }
   return bin;
 }
 export async function share(port = 8787) {

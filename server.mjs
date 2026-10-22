@@ -36,6 +36,18 @@ export function createApp({
   const rooms = new Map();
   const attempts = new Map();
   let testingBytes;
+  const frontend = config.frontendUrl ? new URL(config.frontendUrl) : null;
+  const trustedOrigin = (req) => {
+    if (!req.headers.origin) return true;
+    try {
+      const origin = new URL(req.headers.origin);
+      return (
+        origin.host === req.headers.host || origin.origin === frontend?.origin
+      );
+    } catch {
+      return false;
+    }
+  };
   const server = http.createServer(async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
@@ -48,6 +60,22 @@ export function createApp({
       "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     );
     try {
+      if (req.url.startsWith("/api/") && req.headers.origin) {
+        if (!trustedOrigin(req)) {
+          res.writeHead(403);
+          return res.end("Origin not allowed");
+        }
+        res.setHeader("Access-Control-Allow-Origin", req.headers.origin);
+        res.setHeader("Vary", "Origin");
+        if (req.method === "OPTIONS") {
+          res.writeHead(204, {
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Max-Age": "600",
+          });
+          return res.end();
+        }
+      }
       if (
         req.url === "/api/testing/cartridge" &&
         req.method === "POST" &&
@@ -122,9 +150,9 @@ export function createApp({
         return res.end(
           JSON.stringify({
             ok: true,
-            version: "3.3.0",
+            version: "3.4.0",
             shareUrl,
-            publicUrl: shareUrl,
+            publicUrl: frontend?.href || shareUrl,
             testingAvailable: !!config.testing?.romPath,
           }),
         );
@@ -219,13 +247,7 @@ export function createApp({
   });
   server.on("upgrade", (req, socket, head) => {
     let valid = req.url === "/room";
-    if (req.headers.origin) {
-      try {
-        valid &&= new URL(req.headers.origin).host === req.headers.host;
-      } catch {
-        valid = false;
-      }
-    }
+    valid &&= trustedOrigin(req);
     if (!valid || wss.clients.size >= 64) return socket.destroy();
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws));
   });

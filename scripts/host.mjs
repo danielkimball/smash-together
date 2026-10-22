@@ -1,10 +1,13 @@
 import { spawn } from "node:child_process";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { once } from "node:events";
 import { root, share } from "./share.mjs";
 const port = Number(process.env.PORT || 8787);
 await mkdir(path.join(root, ".local"), { recursive: true });
+await writeFile(path.join(root, ".local/host.pid"), String(process.pid), {
+  mode: 0o600,
+});
 await rm(path.join(root, ".local/share.json"), { force: true });
 let server,
   restarting = false;
@@ -53,6 +56,7 @@ for (const signal of ["SIGINT", "SIGTERM"])
     tunnel?.kill("SIGTERM");
     awake?.kill("SIGTERM");
     await rm(path.join(root, ".local/share.json"), { force: true });
+    await rm(path.join(root, ".local/host.pid"), { force: true });
     if (server?.exitCode === null) {
       const exited = once(server, "exit");
       server.kill("SIGTERM");
@@ -61,20 +65,21 @@ for (const signal of ["SIGINT", "SIGTERM"])
     process.exit(0);
   });
 
-process.on("SIGUSR2", async () => {
-  if (stopping || restarting) return;
-  restarting = true;
-  try {
-    if (server?.exitCode === null) {
-      const exited = once(server, "exit");
-      server.kill("SIGTERM");
-      const deadline = setTimeout(() => server.kill("SIGKILL"), 5000);
-      await exited;
-      clearTimeout(deadline);
+if (process.platform !== "win32")
+  process.on("SIGUSR2", async () => {
+    if (stopping || restarting) return;
+    restarting = true;
+    try {
+      if (server?.exitCode === null) {
+        const exited = once(server, "exit");
+        server.kill("SIGTERM");
+        const deadline = setTimeout(() => server.kill("SIGKILL"), 5000);
+        await exited;
+        clearTimeout(deadline);
+      }
+      startServer();
+      console.log("Game server restarted; sharing address retained.");
+    } finally {
+      restarting = false;
     }
-    startServer();
-    console.log("Game server restarted; sharing address retained.");
-  } finally {
-    restarting = false;
-  }
-});
+  });

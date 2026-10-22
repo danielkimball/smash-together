@@ -107,15 +107,11 @@ try {
         const scene = e.inspect().scene;
         const changed = scene !== captureScene;
         captureScene = scene;
-        if (scene === 1 && captureSeenTutorial) {
+        if (capturePhase === "title" && scene !== 1) {
           captureDone = true;
           break;
         }
         if (scene === 1) capturePhase = "title";
-        else if (capturePhase === "title") {
-          capturePhase = "how-to-play";
-          captureSeenTutorial = true;
-        }
         const write = m._neilGetAudioWritePosition();
         const ring = new Int16Array(
           m.HEAP16.buffer,
@@ -185,7 +181,9 @@ try {
         "-shortest",
         "-movflags",
         "+faststart",
-        path.join(root, "public/media", name + ".mp4"),
+        name === "opening"
+          ? path.join(root, "public/media/opening.mp4")
+          : path.join(out, "title-with-audio.mp4"),
       ],
       { stdio: "inherit" },
     );
@@ -197,7 +195,36 @@ try {
     path.join(out, "scenes.json"),
     JSON.stringify(scenes, null, 2),
   );
-  if (!outputs.has("how-to-play")) throw Error("The tutorial was not reached.");
+  if (!outputs.has("title")) throw Error("The title was not reached.");
+  const fire = spawn(
+    "/usr/local/bin/ffmpeg",
+    [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-ss",
+      "7.5",
+      "-i",
+      path.join(out, "title-with-audio.mp4"),
+      "-t",
+      "3.2",
+      "-an",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "fast",
+      "-crf",
+      "20",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+      path.join(root, "public/media/fire.mp4"),
+    ],
+    { stdio: "inherit" },
+  );
+  if ((await once(fire, "exit"))[0]) throw Error("Fire loop encoding failed.");
 } finally {
   await browser.close();
   for (const w of outputs.values())

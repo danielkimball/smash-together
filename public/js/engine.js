@@ -1,3 +1,4 @@
+import { assetURL } from "./service.js";
 // Browser integration for the pinned N64Wasm core. ROM bytes never leave this browser.
 export const ROM_SHA1 = "e2929e10fccc0aa84e5776227e798abc07cedabf";
 export async function sha1(data) {
@@ -54,7 +55,7 @@ export class Engine {
       window.Module = {
         canvas: this.canvas,
         noInitialRun: true,
-        locateFile: (file) => "/engine/" + file,
+        locateFile: (file) => assetURL("engine/" + file),
         print: (text) => {
           self.logs.push(text);
           if (self.logs.length > 100) self.logs.shift();
@@ -67,14 +68,16 @@ export class Engine {
         onAbort: (reason) => reject(Error(String(reason))),
       };
       const script = document.createElement("script");
-      script.src = "/engine/n64wasm.js";
+      script.src = assetURL("engine/n64wasm.js");
       script.onerror = () => reject(Error("Could not load the game engine."));
       document.head.append(script);
     });
     this.module = window.Module;
     window.FS.writeFile(
       "assets.zip",
-      new Uint8Array(await (await fetch("/engine/assets.zip")).arrayBuffer()),
+      new Uint8Array(
+        await (await fetch(assetURL("engine/assets.zip"))).arrayBuffer(),
+      ),
     );
     window.FS.writeFile("custom.v64", bytes);
     const config = Array(48).fill("0");
@@ -212,18 +215,20 @@ export class Engine {
         stageSelect: !!byte(rules + 10),
       },
       menu:
-        scene === 9
-          ? {
-              row: word(0x80134948),
-              rule: word(0x8013494c),
-              time: word(0x80134950),
-              lives: word(0x80134954) + 1,
-            }
-          : scene === 10
-            ? { row: word(0x801348e0), hasItems: !!word(0x80134904) }
-            : scene === 11
-              ? { row: word(0x801333d8), items: word(0x80133420) }
-              : null,
+        scene === 7
+          ? { row: word(0x80132c88) }
+          : scene === 9
+            ? {
+                row: word(0x80134948),
+                rule: word(0x8013494c),
+                time: word(0x80134950),
+                lives: word(0x80134954) + 1,
+              }
+            : scene === 10
+              ? { row: word(0x801348e0), hasItems: !!word(0x80134904) }
+              : scene === 11
+                ? { row: word(0x801333d8), items: word(0x80133420) }
+                : null,
     };
     return this.info;
   }

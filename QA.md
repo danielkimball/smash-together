@@ -1,4 +1,21 @@
-# Release verification · Smash Portal v3.3.0 · 2026-10-22
+# Release verification · Smash Portal v3.4.0 · 2026-10-22
+
+- **23 Node tests pass**, including the exact DragonRise 0079:0006 preset, normalized controller identifiers, the trusted permanent frontend's API/preflight/WebSocket access, foreign-origin rejection and the existing rooms, winner, media and tunnel-recovery checks.
+- **6 refinement checks pass** using an isolated persistent Chrome profile: opening audio enabled, silent fire looping behind the ROM modal, no How to Play transition, native menu hover without an HTML overlay, continuous non-silent native menu music in the room browser, N64 buttons and up/down navigation, on-screen name keyboard, saved funny default and edited names, controller-selected room joining, and ROM/name/custom calibration retained after a full browser process restart with changed gamepad index and identifier spacing. `artifacts/portal-refinements.json` and `refinements-*.png`.
+- **17 public-route four-browser checks pass** through the permanent GitHub frontend and Cloudflare backend on v3.4.0: real four-human battle, two-player rematch, relay recovery, deliberate desync repair, shared pause/resume, reserved reconnect, host exit and save/ROM/controller persistence. Zero uncaught errors; 120 matching checks and zero unexpected repairs in the measured rematch. The same-laptop workload rendered at 25 FPS with all four browser emulators kept visible, including lobby music after two players left. This is a correctness/stress result, not evidence of full-speed remote play. `artifacts/portal-v3.4-public-four.json`.
+- **7 entry/branding checks** and **4 autoplay/keyboard checks pass**: actual 1P Mode, held-button guards, desktop/phone/landscape layouts, click-to-replay audible opening when autoplay is blocked, controller-only startup and unclipped phone keyboard labels. `artifacts/portal-check.json`, `portal-autoplay.json`.
+- The permanent URL remains the game origin, has no iframe, permits fullscreen/gamepad input and rejects an incorrect testing password through the trusted cross-origin API. `artifacts/direct-check.json`.
+- Ryker's GitHub write access is confirmed. Windows x64 cloudflared download metadata and SHA-256 came from the official 2026.10.3 release. Windows startup was prepared on macOS; actual Windows execution and Task Scheduler behavior remain unverified. Multi-machine failover is documented in `HOSTING.md` and has not been implemented.
+
+The permanent frontend serves `public/` directly at `https://danielkimball.github.io/smash-together/`, with a changing Cloudflare backend discovered through `server.json`. There is no iframe. Browser-local storage remains on one origin across tunnel changes; localhost and old temporary origins retain their own separate data. Private browsing and clearing site storage still remove saved data.
+
+Dan's Mac GameController preference `bluetoothPrefsMenuLongPressAction` was changed to `0` to disable the Launchpad shortcut; its previous domain was backed up to ignored `.local/mac-controller-settings-before.plist`. Dan could not physically test B yet. The code's exact mapping and persistence are tested, but this operating-system shortcut change is not physically confirmed.
+
+The title clip has no audio stream. Only the original opening carries recorded music. Browser policy may require a click/keypress before audio is allowed; the UI then offers to replay the intro with sound. Live menu music comes from the verified ROM and continues through the room browser. The supplied logo/fonts/palette, pinned emulator binaries and multiplayer protocol are unchanged.
+
+Practical limits: tests use isolated simulated controllers and browsers on this laptop, not physical controllers, phones or geographically separated networks. Delayed lockstep still depends on device speed and network latency. The laptop must stay awake and online for live rooms; static assets are hosted separately. No ROM, savestate or private configuration is distributed in Git, Pages or the source archive. QA screenshots/reports remain in ignored `artifacts/`.
+
+# Previous release · v3.3.0 · 2026-10-22
 
 - **21 Node tests** pass, including seekable H.264 video delivery (byte ranges, suffixes, HEAD, malformed ranges), revoked-tunnel log detection, outage thresholds, and the existing controller/room/winner tests.
 - **17 public-route checks** pass on v3.3.0 using four isolated Chrome browsers and `https://give-legislation-stationery-foot.trycloudflare.com`: actual four-human battle, two-player rematch, direct-to-relay packet recovery, deliberate desync repair, shared pause, reserved reconnect, host exit, saves and reload persistence. The synchronized rematch recorded 124 matching state checks and zero unexpected repairs at 53 FPS; after the reconnect segment the two clients reported 57/58 FPS. All clients ran on this laptop, so this measures the public route under a multi-browser workload, not geographically separated play. Zero uncaught browser errors. `artifacts/portal-public-four.json`.
@@ -13,39 +30,3 @@
 The supplied logo is used without repainting. Josefin Sans Semibold, Instrument Sans Condensed Medium Italic and Orbitron Medium are served locally with OFL notices. Native game pixels and rules remain native. Startup recordings stop decoding and release their network sources before gameplay. New rooms default to four input-buffer frames; larger buffers remain available for distant connections. The emulator binaries and netplay protocol are unchanged.
 
 The Cloudflare host now waits for a publicly verified endpoint before advertising it. Log detection recreates a revoked Quick Tunnel even when cloudflared keeps retrying without exiting. Health checks are spaced at 20 seconds; startup has a three-minute DNS/registration grace period, and three consecutive failures recycle an established connection. Initial tests exposed macOS negative DNS caching for new tunnel names; the grace period prevents premature rotation. No system DNS settings were changed.
-
-# Previous release · v3.2.0 · 2026-10-21
-
-Tests use Dan's locally supplied original US ROM. No ROM or savestate is committed or served as a static asset. The v3.3.0 opening/title/attract recordings are intentionally served audiovisual previews; live emulation still requires ROM verification. QA reports and screenshots stay in ignored `artifacts/`.
-
-## Completed checks
-
-- **17 public-route four-browser checks** passed on v3.2.0 at `https://wider-reduced-makers-aims.trycloudflare.com`: four-human battle, two-player rematch at 60 FPS, zero unexpected repairs, a deliberately corrupted state repaired, relay fallback after a dropped input, pause/resume, reserved reconnect, host exit, saves and controller persistence. Zero uncaught browser errors. `artifacts/e2e-native-public-four.json`.
-- **Direct public sharing verified:** the old GitHub bookmark redirects to the current Cloudflare origin with no iframe; fullscreen/Gamepad permissions and incorrect-password rejection pass. The desktop shortcut matches the tunnel and all eight checked public assets match the release. `artifacts/direct-check.json`, `artifacts/public-assets-check.json`. A full service reinstall was verified after fixing launchd's asynchronous removal race.
-- **18 Node tests**: Xbox/N64 mapping and ROM normalization; HTTP confinement, room lifecycle, host authority, reserved reconnects, revision checks, protocol 4, direct sharing and password gating; winner choice for time/stock/teams, no contest, synchronization and replacement ports.
-- **11 phone/gameplay checks** in Chrome using independent desktop and mobile contexts. Real multi-touch events verify stick + A + B together, all 14 N64 buttons, pointer cancellation and rotation. The phone joins a shared lobby, chooses a fighter and wins a real one-stock match against an unlocked Luigi. On the next stage screen only the winner can move or confirm. Shared Menu/resume preserves that choice. The winner starts an actual battle on unlocked Mushroom Kingdom. Zero browser errors or unexpected state repairs; the final two-browser segment rendered at 60 FPS. `artifacts/mobile-check.json`.
-- **3 WebKit checks** with a phone viewport: the pinned WASM core loads and renders the native menu, all fighters are unlocked, a multiplayer room opens, pointer input selects Luigi, portrait/landscape fit, and Menu/resume works. `artifacts/webkit-check.json`. This exercises desktop WebKit with mobile emulation, not physical iPhone hardware.
-- **7 native rules checks**: testing password, real name typing, rename propagation, guest inheritance, a real two-human four-stock/no-items battle, rematch rule preservation and unlimited Time. `artifacts/settings-check.json`.
-- Visual inspection of portrait 390 × 844 and landscape 844 × 390 menus, character selection, stage selection and battle. A compact 375 × 667 portrait check also verifies separate face-button targets. All 12 portraits and Mushroom Kingdom are visible. Controls remain outside the 4:3 game area; landscape Menu/Start overlay the picture as in the supplied reference.
-- Syntax, linked assets, pinned JS/WASM hashes and ROM exclusion pass. Corresponding source is rebuilt before release.
-
-## Multiplayer behavior
-
-Native results (scene 24) supply ranking, points and KOs. The host picks first; afterward the winner picks. Teams use points, KOs, then controller port to select the winning team's representative. No contest retains the previous choice; if that person leaves, the host chooses. Identity, not just port number, persists in synchronization metadata.
-
-Every peer reads at a fixed simulation-frame cadence and neutralizes other players' stage-selection inputs before advancing the emulator. Menu polling occurs every six frames, before stage selection's native ten-tick input guard. Battle/results polling occurs every thirty frames to reduce copying on phones. UI reads reuse those observations. Character-selection Start waits until the native first-second input guard expires, including on rematches.
-
-Session preparation sets native backup unlock flags and the twelve-fighter mask through the official serializer. Online room setup keeps Stage Select enabled. ROM bytes and shipped runtime binaries are unchanged. Canvas rendering remains active underneath loading overlays.
-
-## Sharing
-
-Invites and the desktop Friends Link use the current direct Cloudflare URL. Framing is disabled. The old GitHub page only redirects to Cloudflare and preserves room invitations. Routine backend restarts retain the tunnel; a full service restart can rotate it and refreshes the desktop shortcut and optional legacy redirect.
-
-## Practical limits
-
-- Delayed lockstep, no rollback. Physical phone speed and geographically separated networks still affect responsiveness; local multi-browser tests do not certify those conditions.
-- Physical Xbox/N64 pairing requires the actual devices. Test contexts exclude Dan's real paired controllers and use isolated simulated inputs.
-- The pinned core exposes four native controller ports; unused hands can appear before friends join. Named indicators show actual people. New arrivals wait for character selection during an active match.
-- The renderer emits nonfatal WebGL uniform warnings; screenshots must have a live rendering context.
-- Storage is per game origin. A new tunnel address can require the ROM or testing password again. Host localhost storage stays stable.
-- The laptop must stay on and awake while hosting. Moving the service to an awake Mac mini allows the laptop to be off.

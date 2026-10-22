@@ -46,41 +46,13 @@ if (command === "install") {
   );
   await stop();
   await start();
-  const quote = (s) => "'" + s.replaceAll("'", "'\\''") + "'";
-  const desktop = path.join(os.homedir(), "Desktop/Smash Together");
-  await mkdir(desktop, { recursive: true });
-  for (const [name, cmd] of [
-    [
-      "Play Smash",
-      `${quote(process.execPath)} ${quote(path.join(root, "scripts/service.mjs"))} start\n/usr/bin/open -a 'Google Chrome' 'http://localhost:8787'`,
-    ],
-    [
-      "Start Sharing",
-      `${quote(process.execPath)} ${quote(path.join(root, "scripts/service.mjs"))} start`,
-    ],
-    [
-      "Stop Sharing",
-      `${quote(process.execPath)} ${quote(path.join(root, "scripts/service.mjs"))} stop`,
-    ],
-  ])
-    await writeFile(
-      path.join(desktop, name + ".command"),
-      `#!/bin/zsh\n${cmd}\n`,
-      { mode: 0o755 },
-    );
-  await writeFile(
-    path.join(desktop, "READ ME.txt"),
-    `Smash Portal\n\nDouble-click Play Smash.command to open your game.\nPair your Xbox or N64 controller, press a button, then choose Controller setup.\nPress Start to open the original Smash menu. Choose VS Mode / Multiplayer, then create a room.\nYour friends open the link in Chrome/Edge, load their own ROMs and join.\nSet Time/Stock, lives or minutes, and VS Options / Item Switch first. Choose VS START.\nThen choose your fighter while friends join. Invite friends copies your direct Cloudflare room link.\nEach friend joins the next controller port. When everyone has chosen, the host presses Start.\nRename beside the room title changes its name for everyone.\nShare the current Friends Link.webloc or use Invite friends.\nAll 12 fighters and all 9 VS stages are unlocked. The winner picks the next stage.\nPhone touch controls appear automatically; rotate for landscape.\nThe small diamond in the bottom-right corner opens password testing access.\nUse Esc or L + R + Start for the overlay menu; Fullscreen hides browser chrome.\n\nKeep this laptop plugged in, its lid open, and both game tabs visible.\nThe service prevents idle sleep while running. Stop Sharing.command stops\nthe website, relay and sleep prevention. Start Sharing.command starts them.\nThe sharing address can change after a full restart. Friends Link.webloc updates automatically.\nRooms reset after a restart, so copy a fresh room invite.\n\nFull instructions and Mac mini migration: ${path.join(root, "README.md")}\nSource code: ${root}\n`,
-  );
-  try {
-    const shared = JSON.parse(
-      await readFile(path.join(root, ".local/share.json"), "utf8"),
-    );
-    await writeFriendsShortcut(shared.url);
-  } catch {} // The sharing process writes the shortcut as soon as its URL arrives.
+  await writeShortcuts();
   console.log(
-    "Installed. The game runs at login. Desktop shortcuts: " + desktop,
+    "Installed. The game runs at login. Desktop shortcuts are ready.",
   );
+} else if (command === "shortcuts") {
+  await writeShortcuts();
+  console.log("Desktop shortcuts refreshed without restarting the service.");
 } else if (command === "start") {
   await start();
   console.log("Smash Portal is running: http://localhost:8787");
@@ -103,4 +75,50 @@ if (command === "install") {
   } catch {
     console.log("Smash Portal is stopped.");
   }
-} else throw Error("Use install, start, restart, stop, status or uninstall.");
+} else
+  throw Error(
+    "Use install, shortcuts, start, restart, stop, status or uninstall.",
+  );
+
+async function writeShortcuts() {
+  const quote = (s) => "'" + s.replaceAll("'", "'\\''") + "'";
+  let playURL = "http://localhost:8787";
+  try {
+    const config = JSON.parse(
+      await readFile(path.join(root, ".local/config.json"), "utf8"),
+    );
+    if (config.frontendUrl && new URL(config.frontendUrl).protocol === "https:")
+      playURL = new URL(config.frontendUrl).href;
+  } catch {}
+  const desktop = path.join(os.homedir(), "Desktop/Smash Together");
+  await mkdir(desktop, { recursive: true });
+  for (const [name, cmd] of [
+    [
+      "Play Smash",
+      `${quote(process.execPath)} ${quote(path.join(root, "scripts/service.mjs"))} start\n/usr/bin/open -a 'Google Chrome' ${quote(playURL)}`,
+    ],
+    [
+      "Start Sharing",
+      `${quote(process.execPath)} ${quote(path.join(root, "scripts/service.mjs"))} start`,
+    ],
+    [
+      "Stop Sharing",
+      `${quote(process.execPath)} ${quote(path.join(root, "scripts/service.mjs"))} stop`,
+    ],
+  ])
+    await writeFile(
+      path.join(desktop, name + ".command"),
+      `#!/bin/zsh\n${cmd}\n`,
+      { mode: 0o755 },
+    );
+  await writeFile(
+    path.join(desktop, "READ ME.txt"),
+    `Smash Portal\n\nDouble-click Play Smash.command to open your game.\nPair your Xbox or N64 controller, then press a button. Mappings save automatically.\nPress Start to open the original Smash menu. Choose VS Mode, then create a room or select one below.\nYour friends open the link in Chrome/Edge, load their own ROMs and join.\nSet Time/Stock, lives or minutes, and VS Options / Item Switch first. Choose VS START.\nThen choose your fighter while friends join. Invite friends copies your permanent-site room link.\nEach friend joins the next controller port. When everyone has chosen, the host presses Start.\nRename beside the room title changes its name for everyone.\nShare Friends Link.webloc or use Invite friends.\nUse the same address each time to retain your ROM, name and controller settings.\nChange your name accepts typing; controller A opens the on-screen keyboard.\nAll 12 fighters and all 9 VS stages are unlocked. The winner picks the next stage.\nPhone touch controls appear automatically; rotate for landscape.\nThe small diamond in the bottom-right corner opens password testing access.\nUse Esc or L + R + Start for the overlay menu; Fullscreen hides browser chrome.\n\nKeep this laptop plugged in, its lid open, and both game tabs visible.\nThe service prevents idle sleep while running. Stop Sharing.command stops\nthe website, relay and sleep prevention. Start Sharing.command starts them.\nThe permanent site stays the same when the underlying Cloudflare connection changes.\nRooms reset after a restart, so copy a fresh room invite.\n\nFull instructions and Mac mini migration: ${path.join(root, "README.md")}\nSource code: ${root}\n`,
+  );
+  try {
+    const shared = JSON.parse(
+      await readFile(path.join(root, ".local/share.json"), "utf8"),
+    );
+    await writeFriendsShortcut(shared.url);
+  } catch {} // The sharing process writes the shortcut as soon as its URL arrives.
+}

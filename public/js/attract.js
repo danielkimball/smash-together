@@ -1,16 +1,17 @@
-// Footage of the native opening lets new visitors see it before selecting a
-// cartridge. Gameplay always boots from their verified, browser-local ROM.
+// Only the opening has audio. The title is a separate, silent fire loop;
+// live menus and gameplay always come from the verified browser-local ROM.
 export class Attract {
   constructor({ start, hasDialog }) {
     this.start = start;
     this.hasDialog = hasDialog;
     this.phase = "opening";
     this.active = true;
-    this.sound = false;
+    this.sound = true;
+    this.audioBlocked = false;
     this.lastPress = -Infinity;
     this.held = false;
     this.videos = Object.fromEntries(
-      ["opening", "title", "how-to-play"].map((name) => [
+      ["opening", "title"].map((name) => [
         name,
         document.getElementById("attract-" + name),
       ]),
@@ -21,30 +22,21 @@ export class Attract {
     for (const [name, video] of Object.entries(this.videos)) {
       video.dataset.source = video.getAttribute("src");
       video.volume = 0.55;
+      video.loop = name === "title";
       video.addEventListener("ended", () => {
-        if (!this.active || name !== this.phase) return;
-        this.show(
-          name === "title" && !this.hasDialog() ? "how-to-play" : "title",
-        );
+        if (this.active && name === "opening") this.show("title");
       });
       video.addEventListener("error", () => {
-        if (this.phase === name)
+        if (this.active && this.phase === name)
           document.getElementById("attract-fallback").hidden = false;
-      });
-      video.addEventListener("timeupdate", () => {
-        if (
-          name === "title" &&
-          this.hasDialog() &&
-          video.currentTime > video.duration - 0.25
-        )
-          video.currentTime = 4;
       });
     }
     this.soundButton.onclick = () => {
+      this.audioBlocked = false;
       this.setSound(!this.sound);
       if (this.active) this.play();
     };
-    this.button.onclick = () => this.press();
+    this.button.onclick = () => this.press("pointer");
     document.addEventListener("keydown", (event) => {
       if (
         !this.active ||
@@ -70,29 +62,36 @@ export class Attract {
       )
         return;
       event.preventDefault();
-      this.press();
+      this.press("keyboard");
     });
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) this.pause();
       else if (this.active) this.play();
     });
-    new MutationObserver(() => {
-      this.videos.title.loop = this.hasDialog();
-    }).observe(document.body, {
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["open"],
-    });
+    this.setSound(true);
+    this.play();
+  }
+  updateHint() {
+    this.hint.textContent =
+      this.phase === "title"
+        ? "PRESS ANY BUTTON TO START"
+        : this.audioBlocked
+          ? "PLAY INTRO WITH SOUND"
+          : "PRESS ANY BUTTON TO SKIP";
+    this.button.setAttribute("aria-label", this.hint.textContent);
+    this.soundButton.hidden = !this.active || this.phase !== "opening";
   }
   setSound(enabled) {
     this.sound = enabled;
-    for (const video of Object.values(this.videos)) video.muted = !enabled;
+    this.videos.opening.muted = !enabled;
+    this.videos.title.muted = true;
     this.soundButton.textContent = enabled ? "Sound on" : "Sound off";
     this.soundButton.setAttribute("aria-pressed", String(enabled));
     this.soundButton.setAttribute(
       "aria-label",
       `Turn opening sound ${enabled ? "off" : "on"}`,
     );
+    this.updateHint();
   }
   pause() {
     for (const video of Object.values(this.videos)) video.pause();
@@ -100,27 +99,25 @@ export class Attract {
   play() {
     const video = this.videos[this.phase];
     video.play().catch((error) => {
-      // A gamepad press is not a browser audio-unlock gesture. Keep the
-      // opening moving silently until a click/key can enable its sound.
       if (
         error.name !== "NotAllowedError" ||
         !this.active ||
         video !== this.videos[this.phase]
       )
         return;
+      this.audioBlocked = this.phase === "opening";
       this.setSound(false);
       video.play().catch(() => {});
     });
   }
   setActive(active) {
     this.active = active;
-    this.soundButton.hidden = !active;
+    this.updateHint();
     if (active) {
       const video = this.videos[this.phase];
       if (!video.getAttribute("src")) video.src = video.dataset.source;
       if (!document.hidden) this.play();
     } else {
-      // Stop decoders AND media downloads before netplay starts.
       this.pause();
       for (const video of Object.values(this.videos)) {
         video.removeAttribute("src");
@@ -129,6 +126,7 @@ export class Attract {
     }
   }
   show(phase) {
+    if (!this.videos[phase]) return;
     this.pause();
     this.phase = phase;
     document.body.dataset.attract = phase;
@@ -139,25 +137,14 @@ export class Attract {
     const video = this.videos[phase];
     if (!video.getAttribute("src")) video.src = video.dataset.source;
     video.currentTime = 0;
-    video.loop = phase === "title" && this.hasDialog();
-    this.button.setAttribute(
-      "aria-label",
-      phase === "title"
-        ? "Press Start — open your cartridge"
-        : "Skip opening to title screen",
-    );
-    this.hint.textContent =
-      phase === "title" ? "PRESS ANY BUTTON TO START" : "PRESS ANY BUTTON";
+    this.updateHint();
     if (this.active && !document.hidden) this.play();
   }
   holdTitle() {
     if (this.phase !== "title") this.show("title");
-    const video = this.videos.title;
-    // Skip the native logo entrance so the ROM modal sits over the fire.
-    if (video.readyState && video.currentTime < 4) video.currentTime = 4;
-    video.loop = true;
+    if (this.active) this.play();
   }
-  press() {
+  press(source = "pointer") {
     if (
       !this.active ||
       this.hasDialog() ||
@@ -165,13 +152,24 @@ export class Attract {
     )
       return;
     this.lastPress = performance.now();
-    this.setSound(true);
+    if (
+      this.phase === "opening" &&
+      this.audioBlocked &&
+      source !== "controller"
+    ) {
+      this.audioBlocked = false;
+      this.setSound(true);
+      this.videos.opening.currentTime = 0;
+      this.play();
+      return;
+    }
     if (this.phase !== "title") this.show("title");
     else this.start();
   }
   tick(pad) {
     const pressed = !!pad?.buttons.some((button) => button.pressed);
-    if (pressed && !this.held && this.active && !this.hasDialog()) this.press();
+    if (pressed && !this.held && this.active && !this.hasDialog())
+      this.press("controller");
     this.held = pressed;
   }
 }

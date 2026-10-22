@@ -31,4 +31,6 @@ export async function put(key, value) {
   } finally {
     d.close();
   }
+  // Ask the browser to retain verified cartridges and saves across visits.
+  navigator.storage?.persist?.().catch(() => {});
 }

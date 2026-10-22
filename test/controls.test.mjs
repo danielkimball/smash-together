@@ -1,10 +1,56 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultProfile, evaluate, BITS } from "../public/js/controls.js";
+import {
+  defaultProfile,
+  evaluate,
+  BITS,
+  controllerKey,
+  profileKind,
+} from "../public/js/controls.js";
 import { normalizeROM } from "../public/js/engine.js";
 const gamepad = () => ({
   buttons: Array.from({ length: 17 }, () => ({ value: 0 })),
   axes: [0, 0, 0, 0],
+});
+test("DragonRise 0079:0006 preset follows Dan's N64 buttons without Xbox substitutions", () => {
+  const id =
+    "Generic   USB  Joystick   (STANDARD GAMEPAD Vendor: 0079 Product: 0006)";
+  assert.equal(controllerKey(id), "usb:0079:0006");
+  assert.equal(
+    controllerKey("0079-0006-Generic USB Joystick"),
+    controllerKey(id),
+  );
+  assert.equal(profileKind(id), "n64-usb");
+  const profile = defaultProfile(profileKind(id)),
+    pad = gamepad();
+  for (const [index, bit] of [
+    [6, BITS.a],
+    [8, BITS.b],
+    [7, BITS.z],
+    [5, BITS.r],
+    [4, BITS.l],
+    [9, BITS.start],
+    [0, BITS.cu],
+    [2, BITS.cd],
+    [3, BITS.cl],
+    [1, BITS.cr],
+    [12, BITS.du],
+    [13, BITS.dd],
+    [14, BITS.dl],
+    [15, BITS.dr],
+  ]) {
+    pad.buttons[index].value = 1;
+    assert.equal(evaluate(profile, pad).buttons, bit);
+    pad.buttons[index].value = 0;
+  }
+  pad.axes = [1, -1, 0.09, 0];
+  const input = evaluate(profile, pad);
+  assert.ok(input.x > 60 && input.y > 60);
+  assert.equal(
+    input.buttons,
+    0,
+    "The unused third axis cannot become a C-button",
+  );
 });
 test("Xbox preset provides attack, special, trigger grab, shield, jump and start", () => {
   const p = gamepad(),

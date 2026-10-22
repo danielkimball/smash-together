@@ -23,13 +23,9 @@ try {
     }),
   );
   page.on("pageerror", (e) => errors.push(e.message));
-  assert.equal(
-    publicUrl,
-    shareUrl,
-    "Invitations use the direct Cloudflare URL",
-  );
+  assert.ok(publicUrl && shareUrl, "Stable UI and live relay are available");
   await page.goto(process.env.SMASH_LEGACY_URL || publicUrl);
-  await page.waitForURL(shareUrl + "/", { timeout: 90000 });
+  await page.waitForURL(publicUrl, { timeout: 90000 });
   const game = page;
   await game.locator("#power-on").waitFor({ state: "visible", timeout: 60000 });
   assert.equal(
@@ -37,7 +33,7 @@ try {
     1,
     "The game is not embedded in an iframe",
   );
-  assert.equal(new URL(page.url()).origin, new URL(shareUrl).origin);
+  assert.equal(new URL(page.url()).origin, new URL(publicUrl).origin);
   assert.equal(await game.evaluate(() => document.fullscreenEnabled), true);
   assert.equal(
     await game.evaluate(() =>
@@ -59,7 +55,7 @@ try {
   await page.screenshot({ path: "artifacts/direct-testing-entry.png" });
   assert.deepEqual(errors, []);
   console.log(
-    "PASS direct Cloudflare game has no iframe, allows fullscreen/gamepad access and rejects an incorrect testing password",
+    "PASS stable game origin has no iframe, allows fullscreen/gamepad access and rejects an incorrect testing password through Cloudflare",
   );
   await writeFile(
     "artifacts/direct-check.json",

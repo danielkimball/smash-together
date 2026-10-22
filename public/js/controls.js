@@ -37,6 +37,22 @@ export const BITS = {
 const b = (index) => ({ kind: "button", index }),
   axis = (index, sign) => ({ kind: "axis", index, sign }),
   key = (code) => ({ kind: "key", code });
+export function controllerKey(id) {
+  if (!id || id === "keyboard") return "keyboard";
+  const usb =
+    id.match(/vendor:\s*([0-9a-f]{4})\s+product:\s*([0-9a-f]{4})/i) ||
+    id.match(/^([0-9a-f]{4})-([0-9a-f]{4})-/i);
+  return usb
+    ? `usb:${usb[1]}:${usb[2]}`.toLowerCase()
+    : id.replace(/\s+/g, " ").trim();
+}
+export function profileKind(id) {
+  return id === "keyboard"
+    ? "keyboard"
+    : controllerKey(id) === "usb:0079:0006"
+      ? "n64-usb"
+      : "xbox";
+}
 export function defaultProfile(kind = "xbox") {
   const map =
     kind === "keyboard"
@@ -60,26 +76,47 @@ export function defaultProfile(kind = "xbox") {
           dl: key("ArrowLeft"),
           dr: key("ArrowRight"),
         }
-      : {
-          a: b(0),
-          b: b(2),
-          z: b(6),
-          l: b(4),
-          r: b(5),
-          start: b(9),
-          cu: b(3),
-          cd: b(1),
-          cl: axis(2, -1),
-          cr: axis(2, 1),
-          up: axis(1, -1),
-          down: axis(1, 1),
-          left: axis(0, -1),
-          right: axis(0, 1),
-          du: b(12),
-          dd: b(13),
-          dl: b(14),
-          dr: b(15),
-        };
+      : kind === "n64-usb"
+        ? {
+            a: b(6),
+            b: b(8),
+            z: b(7),
+            r: b(5),
+            l: b(4),
+            start: b(9),
+            cu: b(0),
+            cd: b(2),
+            cl: b(3),
+            cr: b(1),
+            up: axis(1, -1),
+            down: axis(1, 1),
+            left: axis(0, -1),
+            right: axis(0, 1),
+            du: b(12),
+            dd: b(13),
+            dl: b(14),
+            dr: b(15),
+          }
+        : {
+            a: b(0),
+            b: b(2),
+            z: b(6),
+            l: b(4),
+            r: b(5),
+            start: b(9),
+            cu: b(3),
+            cd: b(1),
+            cl: axis(2, -1),
+            cr: axis(2, 1),
+            up: axis(1, -1),
+            down: axis(1, 1),
+            left: axis(0, -1),
+            right: axis(0, 1),
+            du: b(12),
+            dd: b(13),
+            dl: b(14),
+            dr: b(15),
+          };
   return { map, deadzone: 0.12, range: 1, center: [], invertY: false };
 }
 export function bindingLabel(binding) {
@@ -171,9 +208,21 @@ export class Controls extends EventTarget {
       : this.pad()?.id || "generic";
   }
   loadProfile() {
+    const id = this.id(),
+      key = controllerKey(id);
+    const saved =
+      this.saved[key] ||
+      this.saved[id] ||
+      Object.entries(this.saved).find(
+        ([name]) => controllerKey(name) === key,
+      )?.[1];
+    // Replace only the old untouched Xbox preset for this N64 adapter.
+    const legacyXbox =
+      profileKind(id) === "n64-usb" &&
+      saved &&
+      JSON.stringify(saved.map) === JSON.stringify(defaultProfile("xbox").map);
     return structuredClone(
-      this.saved[this.id()] ||
-        defaultProfile(this.selected === "keyboard" ? "keyboard" : "xbox"),
+      saved && !legacyXbox ? saved : defaultProfile(profileKind(id)),
     );
   }
   select(id) {
@@ -183,7 +232,10 @@ export class Controls extends EventTarget {
   }
   persist() {
     this.saved[this.id()] = structuredClone(this.profile);
+    this.saved[controllerKey(this.id())] = structuredClone(this.profile);
     localStorage.setItem("smash.controls.v1", JSON.stringify(this.saved));
+    localStorage.setItem("smash.inputChoice", controllerKey(this.id()));
+    navigator.storage?.persist?.().catch(() => {});
   }
   sample() {
     if (this.blocked || this.capture) return { buttons: 0, x: 0, y: 0 };
@@ -204,7 +256,12 @@ export class Controls extends EventTarget {
     return input;
   }
   sampleOther(pad) {
-    return evaluate(this.saved[pad.id] || defaultProfile("xbox"), pad);
+    return evaluate(
+      this.saved[controllerKey(pad.id)] ||
+        this.saved[pad.id] ||
+        defaultProfile(profileKind(pad.id)),
+      pad,
+    );
   }
   beginCapture(action) {
     this.keys.clear();

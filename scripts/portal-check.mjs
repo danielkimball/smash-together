@@ -55,7 +55,7 @@ try {
   await p.keyboard.press("KeyQ");
   await p.waitForFunction(() => smash.attract.phase === "title");
   await p.waitForFunction(
-    () => document.getElementById("attract-title").currentTime > 5,
+    () => document.getElementById("attract-title").currentTime > 1,
   );
   await shot("title");
   await p.keyboard.press("Enter");
@@ -73,16 +73,14 @@ try {
     const v = document.getElementById("attract-title");
     v.currentTime = v.duration - 0.3;
   });
-  await p.waitForFunction(() => smash.attract.phase === "how-to-play");
   await p.waitForFunction(
-    () => document.getElementById("attract-how-to-play").currentTime > 2,
+    () => document.getElementById("attract-title").currentTime < 1,
   );
-  await shot("tutorial");
-  await p.locator("#power-on").click();
-  await p.waitForFunction(() => smash.attract.phase === "title");
+  await shot("fire-loop");
+  assert.equal(await p.evaluate(() => smash.attract.phase), "title");
   assert.equal(await p.locator("#rom-dialog").evaluate((d) => d.open), false);
   record(
-    "Idle title enters the native How to Play footage; a tap returns to title",
+    "Idle fire stays silent and loops continuously without a tutorial transition",
   );
   await p.waitForTimeout(400);
   await p.locator("#power-on").click();
@@ -132,7 +130,11 @@ try {
     "rgb(130, 130, 170)",
   );
   await p.locator("#create-open").hover();
-  await p.waitForTimeout(200);
+  await p.waitForFunction(
+    () =>
+      getComputedStyle(document.getElementById("create-open"))
+        .backgroundColor === "rgb(255, 0, 40)",
+  );
   assert.equal(
     await p
       .locator("#create-open")

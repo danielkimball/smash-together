@@ -6,11 +6,14 @@ import {
   bindingLabel,
   defaultProfile,
   evaluate,
+  controllerKey,
+  profileKind,
 } from "./controls.js";
 import { Netplay, compress, decompress } from "./netplay.js";
 import { TouchControls } from "./touch.js";
 import { Attract } from "./attract.js";
 import * as storage from "./storage.js";
+import { serviceFetch, appBase } from "./service.js";
 
 const $ = (id) => document.getElementById(id);
 const neutral = { buttons: 0, x: 0, y: 0 };
@@ -146,6 +149,12 @@ function setView(name) {
   }
   if (name === "browse") {
     paused = true;
+    if (changed && engine.loaded && net.state === "offline" && !preparing) {
+      if (![7, 9].includes(engine.inspect().scene) && menuState)
+        engine.restore(menuState);
+      engine.audioStart().catch(() => {});
+      next = performance.now();
+    }
     refreshRooms();
   }
 }
@@ -214,10 +223,19 @@ $("brand-home").onclick = () => {
   if (!net.room) attempt(showMainMenu)();
   else toast("Leave your room to return to the main menu.");
 };
-$("native-online").onclick = () => setView("browse");
+$("native-online").onclick = () => chooseNative(1);
 $("native-single").onclick = () => chooseNative(0);
 $("native-options").onclick = () => chooseNative(2);
 $("native-data").onclick = () => chooseNative(3);
+for (const [option, id] of [
+  "native-single",
+  "native-online",
+  "native-options",
+  "native-data",
+].entries()) {
+  $(id).onpointerenter = () => highlightNative(option);
+  $(id).onfocus = () => highlightNative(option);
+}
 $("help-open").onclick = () => dialog("help-dialog");
 document.querySelectorAll("[data-testing]").forEach(
   (button) =>
@@ -235,7 +253,7 @@ $("testing-form").onsubmit = async (event) => {
   $("testing-enter").textContent = "Loading…";
   $("testing-error").hidden = true;
   try {
-    const response = await fetch("/api/testing/cartridge", {
+    const response = await serviceFetch("/api/testing/cartridge", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: $("testing-password").value }),
@@ -300,7 +318,8 @@ async function loadFile(file) {
   if (action) await action();
   else await showMainMenu();
 }
-function withCartridge(action) {
+async function withCartridge(action) {
+  await savedCartridge;
   if (rom || engine.loaded) return action();
   pendingAction = action;
   if (view === "home") attract.holdTitle();
@@ -393,16 +412,26 @@ async function showMainMenu() {
     $("busy").hidden = true;
   }
 }
-function chooseNative(option) {
-  if (!menuState || preparing) return;
-  engine.restore(menuState);
-  menuInput = [];
-  for (let i = 0; i < option; i++) {
+function highlightNative(option) {
+  if (!menuState || preparing || view !== "native") return;
+  const info = engine.inspect();
+  if (info.scene !== 7) return;
+  const current = info.menu.row;
+  menuInput = Array(3).fill(neutral);
+  for (let i = 0; i < Math.abs(option - current); i++) {
     menuInput.push(
-      ...Array.from({ length: 3 }, () => ({ buttons: 0, x: 0, y: -85 })),
+      ...Array.from({ length: 3 }, () => ({
+        buttons: 0,
+        x: 0,
+        y: option > current ? -85 : 85,
+      })),
       ...Array(18).fill(neutral),
     );
   }
+}
+function chooseNative(option) {
+  if (!menuState || preparing) return;
+  highlightNative(option);
   menuInput.push(
     ...Array(3).fill({ buttons: BITS.a, x: 0, y: 0 }),
     ...Array(20).fill(neutral),
@@ -584,12 +613,71 @@ $("start-game").onclick = requestMatch;
 function playerName() {
   return $("player-name").value.trim() || "Player";
 }
+function funnyName() {
+  const pick = (values) =>
+    values[crypto.getRandomValues(new Uint32Array(1))[0] % values.length];
+  return `${pick(["Wobbly", "Spicy", "Turbo", "Sleepy", "Sneaky", "Bouncy", "Captain", "Cosmic", "Soggy", "Sir"])} ${pick(["Noodle", "Turnip", "Goose", "Potato", "Pickle", "Bonk", "Waffle", "Goblin", "Nugget", "Banana"])}`;
+}
+function savePlayerName() {
+  if ($("player-name").value.trim())
+    localStorage.setItem("smash.name", playerName());
+}
+function openNameKeyboard() {
+  $("name-draft").value = playerName();
+  dialog("name-dialog");
+  $("name-keys").querySelector("button").focus();
+}
+function finishName() {
+  $("player-name").value = $("name-draft").value.trim() || funnyName();
+  savePlayerName();
+  $("name-dialog").close();
+  $("player-name").focus();
+}
+const nameKeys = [
+  ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+  "Space",
+  "Delete",
+  "Clear",
+  "Random",
+  "Done",
+  "Cancel",
+];
+$("name-keys").replaceChildren(
+  ...nameKeys.map((value, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = value === "Random" ? "Rand" : value;
+    if (value === "Random") {
+      button.title = "Choose a random name";
+      button.setAttribute("aria-label", "Choose a random name");
+    }
+    button.dataset.key = value;
+    button.dataset.keyIndex = index;
+    button.onclick = () => {
+      const input = $("name-draft");
+      if (value === "Done") return finishName();
+      if (value === "Cancel") return $("name-dialog").close();
+      if (value === "Delete") input.value = input.value.slice(0, -1);
+      else if (value === "Clear") input.value = "";
+      else if (value === "Random") input.value = funnyName();
+      else if (input.value.length < 30)
+        input.value += value === "Space" ? " " : value;
+    };
+    return button;
+  }),
+);
+$("name-form").onsubmit = (event) => {
+  event.preventDefault();
+  finishName();
+};
 function controllerName() {
   if (controls.touch.enabled && controls.selected === "keyboard")
     return "Touch controller";
   return controls.selected === "keyboard"
     ? "Keyboard"
-    : controls.pad()?.id || "Controller disconnected";
+    : profileKind(controls.id()) === "n64-usb"
+      ? "N64 USB Controller"
+      : controls.pad()?.id || "Controller disconnected";
 }
 function inviteToken(value = location.hash) {
   return String(value).match(/(?:room=)?([a-f0-9]{36})/)?.[1] || "";
@@ -632,19 +720,21 @@ $("join-form").onsubmit = attempt((e) => {
   $("join-dialog").close();
   return withCartridge(() => joinRoom({ token }));
 });
-$("player-name").value = localStorage.getItem("smash.name") || "";
-$("player-name").onchange = () =>
-  localStorage.setItem("smash.name", playerName());
+$("player-name").value = localStorage.getItem("smash.name") || funnyName();
+savePlayerName();
+$("player-name").oninput = savePlayerName;
+$("player-name").onchange = savePlayerName;
 async function refreshRooms() {
   if (view !== "browse" || polling) return;
   polling = true;
   try {
-    const response = await fetch("/api/rooms", { cache: "no-store" });
+    const response = await serviceFetch("/api/rooms", { cache: "no-store" });
     if (!response.ok) throw Error("Room server unavailable");
     const { rooms } = await response.json();
     const signature = JSON.stringify(rooms);
     if (signature !== lastRoomList) {
       lastRoomList = signature;
+      const focusedRoom = document.activeElement?.dataset.room;
       $("room-list").replaceChildren(
         ...rooms.map((r) => {
           const row = document.createElement("button");
@@ -674,6 +764,10 @@ async function refreshRooms() {
           return row;
         }),
       );
+      if (focusedRoom)
+        [...$("room-list").children]
+          .find((row) => row.dataset.room === focusedRoom && !row.disabled)
+          ?.focus({ preventScroll: true });
     }
     $("rooms-empty").hidden = rooms.length > 0;
     $("browser-status").textContent =
@@ -689,10 +783,10 @@ async function refreshRooms() {
 setInterval(refreshRooms, 2500);
 $("refresh-rooms").onclick = refreshRooms;
 async function copyInvite() {
-  let base = location.origin;
+  let base = appBase.href;
   if (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) {
     try {
-      const status = await (await fetch("/api/status")).json();
+      const status = await (await serviceFetch("/api/status")).json();
       shareUrl = status.shareUrl;
       publicUrl = status.publicUrl;
     } catch {}
@@ -974,7 +1068,7 @@ function refreshDevices() {
     preferred !== "keyboard"
   ) {
     const pad =
-      devices.find((p) => p.id === preferred) ||
+      devices.find((p) => controllerKey(p.id) === controllerKey(preferred)) ||
       (!preferred ? devices[0] : null);
     if (pad) {
       controls.select(String(pad.index));
@@ -983,7 +1077,15 @@ function refreshDevices() {
   }
   $("device").replaceChildren(
     new Option("Keyboard", "keyboard"),
-    ...devices.map((p) => new Option(p.id, String(p.index))),
+    ...devices.map(
+      (p) =>
+        new Option(
+          profileKind(p.id) === "n64-usb"
+            ? "N64 USB Controller · DragonRise 0079:0006"
+            : p.id,
+          String(p.index),
+        ),
+    ),
   );
   $("device").value = controls.selected;
   $("footer-input").textContent =
@@ -994,6 +1096,12 @@ function refreshDevices() {
   if ($("controls-dialog").open) renderBindings();
 }
 function renderBindings() {
+  const kind = profileKind(controls.id());
+  $("controller-saved").textContent =
+    `${kind === "n64-usb" ? "N64 USB preset" : kind === "keyboard" ? "Keyboard" : "Xbox / standard preset"} · Changes saved automatically in this browser`;
+  $("mac-controller-help").hidden = !(
+    kind === "n64-usb" && /Mac/.test(navigator.platform)
+  );
   $("bindings").replaceChildren(
     ...ACTIONS.map(([action, label]) => {
       const row = document.createElement("div");
@@ -1039,7 +1147,7 @@ controls.addEventListener("mapped", () => {
 controls.addEventListener("devices", refreshDevices);
 $("device").onchange = () => {
   controls.select($("device").value);
-  localStorage.setItem("smash.inputChoice", controls.id());
+  localStorage.setItem("smash.inputChoice", controllerKey(controls.id()));
   $("footer-input").textContent = controllerName();
   if (net.room) net.send({ type: "profile", controller: controllerName() });
   wizardIndex = -1;
@@ -1051,9 +1159,7 @@ $("wizard").onclick = () => {
   beginMapping(...ACTIONS[0]);
 };
 $("preset").onclick = () => {
-  controls.profile = defaultProfile(
-    controls.selected === "keyboard" ? "keyboard" : "xbox",
-  );
+  controls.profile = defaultProfile(profileKind(controls.id()));
   controls.persist();
   renderBindings();
   toast("Default mapping restored.");
@@ -1190,7 +1296,7 @@ $("reset").onclick = () => {
 };
 function diagnostics() {
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nRelay: available for every player\nLatency: ${net.rtt || "—"} ms\nInput buffer: ${net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.3.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nRelay: available for every player\nLatency: ${net.rtt || "—"} ms\nInput buffer: ${net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.4.0`;
 }
 function menuController(time) {
   const pad = controls.pad();
@@ -1218,7 +1324,34 @@ function menuController(time) {
     right: input.x > 45 || !!(buttons & BITS.dr),
     a: !!(buttons & BITS.a),
     b: !!(buttons & BITS.b),
+    start: !!(buttons & BITS.start),
   };
+  if (Object.values(active).some(Boolean))
+    document.body.dataset.navigation = "controller";
+  if ($("name-dialog").open) {
+    const keys = [...$("name-keys").children];
+    let index = keys.indexOf(document.activeElement);
+    const delta = active.down
+      ? 7
+      : active.up
+        ? -7
+        : active.right
+          ? 1
+          : active.left
+            ? -1
+            : 0;
+    if (delta && time - lastMenuMove > 240) {
+      index = index < 0 ? 0 : (index + delta + keys.length) % keys.length;
+      keys[index].focus();
+      lastMenuMove = time;
+    }
+    if (active.a && !menuEdges.a && index >= 0) keys[index].click();
+    if (active.b && !menuEdges.b)
+      $("name-draft").value = $("name-draft").value.slice(0, -1);
+    if (active.start && !menuEdges.start) finishName();
+    menuEdges = active;
+    return;
+  }
   const chord =
     (buttons & (BITS.l | BITS.r | BITS.start)) ===
     (BITS.l | BITS.r | BITS.start);
@@ -1244,7 +1377,10 @@ function menuController(time) {
         ...scope.querySelectorAll(
           "button:not(:disabled),input:not([type=hidden]),select,summary",
         ),
-      ].filter((e) => e.getClientRects().length);
+      ].filter(
+        (e) =>
+          e.getClientRects().length && !e.hasAttribute("data-controller-skip"),
+      );
       const delta =
         active.down || active.right ? 1 : active.up || active.left ? -1 : 0;
       if (delta && time - lastMenuMove > 240 && focusable.length) {
@@ -1253,12 +1389,11 @@ function menuController(time) {
         focusable[at].focus();
         lastMenuMove = time;
       }
-      if (
-        active.a &&
-        !menuEdges.a &&
-        document.activeElement?.tagName === "BUTTON"
-      )
-        document.activeElement.click();
+      if (active.a && !menuEdges.a) {
+        if (document.activeElement === $("player-name")) openNameKeyboard();
+        else if (document.activeElement?.tagName === "BUTTON")
+          document.activeElement.click();
+      }
       if (active.b && !menuEdges.b) {
         const top = [...document.querySelectorAll("dialog[open]")].at(-1);
         if (top) top.close();
@@ -1282,6 +1417,9 @@ window.addEventListener("keydown", (e) => {
     renderGame();
   } else if (view === "browse") attempt(showMainMenu)();
 });
+document.addEventListener("pointerdown", () => {
+  document.body.dataset.navigation = "pointer";
+});
 document.addEventListener("pointermove", () => {
   lastPointer = performance.now();
   $("game-view").classList.remove("idle");
@@ -1297,6 +1435,21 @@ document.addEventListener("drop", (e) => {
 function tick(time) {
   requestAnimationFrame(tick);
   try {
+    // Keep the original menu soundtrack continuous through the room browser.
+    // A harmless R pulse every four minutes prevents its idle title transition.
+    if (
+      engine.loaded &&
+      !preparing &&
+      view === "browse" &&
+      net.state === "offline" &&
+      !document.hidden &&
+      time + 1 >= next
+    ) {
+      engine.frame([
+        { ...neutral, buttons: engine.frames % 14400 === 0 ? BITS.r : 0 },
+      ]);
+      next = Math.max(next + 1000 / engine.fps, time - 1000 / engine.fps);
+    }
     if (engine.loaded && !preparing && ["game", "native"].includes(view)) {
       if (net.state !== "offline") net.tick(time);
       else if (!paused && time + 1 >= next) {
@@ -1441,7 +1594,7 @@ const savedCartridge = storage
     }
   })
   .catch(() => {});
-fetch("/api/status")
+serviceFetch("/api/status")
   .then((r) => r.json())
   .then((s) => {
     shareUrl = s.shareUrl;
