@@ -10,7 +10,7 @@ with zipfile.ZipFile(upstream/'dist/assets.zip') as src,zipfile.ZipFile(root/'pu
  for name in src.namelist():
   info=zipfile.ZipInfo(name,(2026,10,21,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED
   out.writestr(info,font if name.endswith('.ttf') else src.read(name))
-manifest={'application':'Smash Together','version':'1.0.0','engine_source':'https://github.com/waveplate/M64Wasm','engine_commit':commit,'emscripten':'2.0.7','font':'Abel Regular / SIL OFL','files':{}}
+manifest={'application':'Smash Together','version':json.loads((root/'package.json').read_text())['version'],'engine_source':'https://github.com/waveplate/M64Wasm','engine_commit':commit,'emscripten':'2.0.7','font':'Abel Regular / SIL OFL','files':{}}
 for name in ['n64wasm.js','n64wasm.wasm','assets.zip']:
  data=(root/'public/engine'/name).read_bytes();manifest['files']['engine/'+name]={'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data),'modified':name=='assets.zip'}
  if name!='assets.zip':assert data==(upstream/'dist'/name).read_bytes(),'Unexpected engine binary change'

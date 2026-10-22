@@ -9,3 +9,5 @@ upstream/battleship/
 *.state
 .DS_Store
 *.smash64
+
+/node_modules

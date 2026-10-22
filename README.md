@@ -1,18 +1,22 @@
 # Smash Together · 64
 
-A free, self-hosted browser app for two friends to play the original US Super Smash Bros. N64 game online. Each player supplies their own ROM. Includes private invitations, Xbox and remappable N64 controllers, keyboard controls, direct WebRTC connections, a WebSocket fallback, synchronized save states, local progress saves, and free HTTPS sharing from a Mac.
+A free, self-hosted, full-window browser app for two to four friends to play the original US Super Smash Bros. N64 game online. Each player supplies their own ROM. Includes a room browser, waiting lobbies, ready checks, player port selection, private invitations, Xbox and remappable N64 controllers, keyboard controls, direct WebRTC connections, a WebSocket fallback, synchronized save states, local progress saves, and free HTTPS sharing from a Mac.
 
 ## Play on this laptop
 
 Open **http://localhost:8787**, or double-click **Desktop → Smash Together → Play Smash.command**. Use Google Chrome or Microsoft Edge on both computers.
 
-1. Choose your original US `.z64`, `.v64`, or `.n64` ROM. It is verified and remembered in this browser. It is never uploaded or served by the app. On later visits click **Power on**.
-2. Pair a controller in macOS/Windows Bluetooth settings, or plug it in by USB. Press a button, open **Controller setup**, and select it. Xbox controllers have a preset. For an N64 controller/USB adapter, use **Guided setup** or click individual mappings. Calibrate with the stick released. Mappings are remembered per device.
-3. Enter your name, select a connection buffer, and click **Create private room**. Use **Copy invite link** and send that link to your friend. The app copies the public HTTPS address even when you play through localhost.
-4. Your friend opens the invitation, loads their own ROM, configures their controller, and clicks **Join your friend**. You control player 1; your friend controls player 2.
-5. Press **Start** to skip the intro, then Start again for the main menu. Choose **VS Mode → VS Start**. Move each hand to a fighter and press **A** to select; press Start, choose a stage with A, and play. Unselected player 3/4 slots are ignored by the game.
+1. Choose **Multiplayer**. Enter your name, then join an open room or **Create a room**. Rooms hold 2–4 players. Choose **Invite only** to hide your room from the browser.
+2. Load your original US `.z64`, `.v64`, or `.n64` ROM when prompted. It is verified and remembered in this browser; never uploaded or served.
+3. Pair a controller in your computer’s Bluetooth settings or plug it in by USB. Press a button and open **Controller setup** to test it. Xbox has a preset; use **Guided setup** for an N64 controller or adapter. Keyboard works too.
+4. **Copy invite** and send the link to your brother. He can also choose your room from the same site’s room browser. Each player loads their own ROM and appears in a colored controller port in the lobby. Choose an empty port to change your player number.
+5. Everyone clicks **I’m ready**. The host clicks **Choose fighters**. The game fills the window and skips directly to multiplayer character selection. Move your colored hand to a fighter, press **A** to choose, then **Start** and select a stage with A.
 
-Keep both game tabs visible. Opening controller setup pauses both players and resumes with a synchronized state. Either player can pause or request a resync. If a guest disconnects, the host retains the invitation and current game so the guest can leave/rejoin. If the host leaves, create a new room.
+The game preserves its original 4:3 aspect ratio, using the full available height or width. **Fullscreen** also hides browser chrome. Move the mouse for the small HUD; **Esc**, or **L + R + Start** on a mapped controller, opens the overlay menu. No sidebar reduces the game area.
+
+Keep every game tab visible. Opening a menu pauses everyone; Resume synchronizes everyone again. The host can return the whole group to the waiting lobby and start another match. A disconnected guest’s controller port is reserved during a game: **Reconnect** restores it using a ticket in that browser tab. New players join when the host returns to the lobby. The host leaving closes the room; there is no host migration.
+
+Only joined players send inputs. The original emulator exposes four native controller ports, so empty hands may still appear in the game’s character screen; unselected slots do not prevent a match. The lobby and overlay show exactly who is connected.
 
 ### Controls
 
@@ -31,7 +35,7 @@ N64 adapters differ: the guided mapper accepts any exposed button or signed axis
 
 ### Saves
 
-**Save progress / Load save** keeps a full snapshot in the current browser. **Export save / Import save** transfers a `.smash64` snapshot between computers or origins. These controls are available outside multiplayer. Load a local save before creating a room if you want to continue it with your friend. A new temporary sharing URL has separate browser storage; the host should use localhost for stable saved data. Export saves before clearing browser data.
+The local game’s overlay menu offers **Save progress / Load progress** to keep a full snapshot in the current browser. **Export save / Import save** transfers a `.smash64` snapshot between computers or origins. These controls are available outside multiplayer. Each new online match starts at character selection; local saves are separate from online matches. A new temporary sharing URL has separate browser storage; the host should use localhost for stable saved data. Export saves before clearing browser data.
 
 ## Hosting, cost and stopping
 
@@ -64,11 +68,11 @@ For foreground development, run `npm ci`, `npm start` and, in a second terminal,
 
 ## How multiplayer works
 
-Each browser runs the same pinned N64Wasm emulator locally. The room checks ROM and engine identities. The host sends a compressed complete snapshot; **both** peers restore it so the interpreter begins from the same boundary. Each frame is executed only once both frame-numbered inputs are available. Inputs are delayed by 4/6/9/12 frames (about 67/100/150/200 ms at 60 FPS); choose a larger buffer for high latency. A short repeated input history covers direct-to-relay transitions. State hashes are compared every 60 frames; mismatches pause and restore the host's authoritative state automatically.
+Each browser runs the same pinned N64Wasm emulator locally. The room checks ROM and engine identities. The host sends a compressed complete snapshot; **all** players restore it so the interpreter begins from the same boundary. Each frame is executed only once every active player’s frame-numbered input is available. Inputs are delayed by 4/6/9/12 frames (about 67/100/150/200 ms at 60 FPS); choose a larger buffer for high latency. A short repeated input history covers direct-to-relay transitions. State hashes are compared every 60 frames; mismatches pause and restore the host's authoritative state automatically.
 
 This is **delayed lockstep, not rollback**. Slow hardware or a slow connection can cause stalls and audio underruns. Direct peer connections use a public Cloudflare STUN service. When that is unavailable or blocked, the laptop's WebSocket relay carries inputs, avoiding a paid TURN service. Snapshots use the relay even with a direct input connection. Ordinary save states are roughly 16 MB before compression.
 
-Rooms have unguessable invitation tokens, two seats, build/ROM checks, message limits, origin checking and host-only snapshot authority. The server forwards state without writing it to disk. Only the `public` directory is served. It has no ROM upload route, analytics or user accounts. Anyone with an invitation can occupy the second seat. Public internet traffic traverses the tunnel provider, and direct WebRTC connections can reveal peer network addresses to the other player. Keep invitations between the intended players.
+Rooms have unguessable invitation tokens, two to four seats, build/ROM checks, message limits, origin checking and host-only snapshot authority. The server forwards state without writing it to disk. Only the `public` directory is served. It has no ROM upload route, analytics or user accounts. Public rooms are listed on this server; invite-only rooms require the invitation token. Active match reconnects also require the reserved player’s per-tab ticket. The server stamps each sender’s identity and controls seat assignments and lifecycle messages. Public internet traffic traverses the tunnel provider, and direct WebRTC connections can reveal peer network addresses to the other player. Keep invitations between the intended players.
 
 ## Verification
 
@@ -78,7 +82,7 @@ npm run check                  # syntax, runtime provenance, served-file audit
 SMASH_ROM='/absolute/path/your.z64' npm run test:e2e
 ```
 
-The end-to-end test needs a locally supplied ROM and Chrome. It never places that ROM in the project or server. It exercises two isolated browsers, actual game frames, state checks, transport fallback, pause/resume, deliberate desync repair, guest rejoin, controller mapping, and save persistence. Screenshots and results go to the ignored `artifacts/` folder. See `QA.md` for the completed checks and practical limits.
+The end-to-end test needs a locally supplied ROM and Chrome. It never places that ROM in the project or server. It exercises four isolated browsers (set `SMASH_PLAYERS=2` for a two-browser check), room browsing, readiness, player ports, return to lobby, actual game frames, state checks, transport fallback, pause/resume, deliberate desync repair, guest rejoin, controller mapping, and save persistence. Screenshots and results go to the ignored `artifacts/` folder. See `QA.md` for the completed checks and practical limits.
 
 ## Source, engine and licenses
 

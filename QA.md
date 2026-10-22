@@ -1,44 +1,40 @@
-# Release verification · 2026-10-21
+# Release verification · v2.0.0 · 2026-10-21
 
-The checks below use the original, locally supplied US ROM. No ROM or save files are committed, distributed, or placed in the public directory. Test screenshots and snapshots stay in the ignored `artifacts/` folder.
+The checks use Dan’s locally supplied original US ROM. No ROM, save, screenshot, or extracted game data is committed or served. Evidence remains in ignored `artifacts/`.
 
-## Environment
+## Environment and scope
 
-- Intel MacBook Pro, macOS 15.6.1, 64 GB RAM.
-- Node.js 20.11.0; installed Google Chrome through Playwright.
-- Two isolated browser contexts. Host through localhost; guest through the live public HTTPS tunnel.
-- Both simulated players execute the emulator on this laptop. This verifies the public route and protocol, but does not reproduce two geographically separated networks.
+- Intel MacBook Pro, macOS 15.6.1, Node 20.11.0, installed Chrome driven through Playwright.
+- Four isolated browser contexts represent four computers. All emulators execute on this laptop; this does not reproduce geographically separated networks.
+- Desktop 1440 × 900 and phone 390 × 844 layouts checked. Fullscreen API toggle and a viewport-sized game canvas verified. The game preserves its 4:3 ratio.
 
-## Completed result
+## Checks
 
-Latest full browser run: **passed**, 2026-10-21 23:41:59–23:43:10 UTC. Fourteen browser checks passed with no uncaught application errors. The gameplay measurement averaged **58 FPS**, with 40 matching state comparisons before fault injection and 52 by the end of the session. There were zero unexpected repairs; the single intentional memory corruption produced exactly one successful automatic repair.
+- Ten Node tests pass: ROM byte order, Xbox preset, custom N64 buttons/axes, calibration, static-file confinement, no upload routes, same-origin upgrades, public/private listing, capacity, matching ROM/build, port conflicts, host-only lifecycle, readiness, relay isolation and reconnect tickets.
+- Browser flow covers the room browser, four live controller cards, choosing an empty port, readiness, automatic character selection, four-player inputs, returning to the lobby, and a two-player rematch.
+- Read-only checks against the verified US ROM’s scene state distinguish character selection (16) from a VS battle (22). The actual battle reports four human players, then two for the rematch. These assertions prevent advancing menus from being mistaken for gameplay.
+- Screenshots visually confirm Mario, Donkey Kong, Link and Samus in Hyrule Castle, and a subsequent Mario/DK match. Desktop, mobile, controller setup and lobby layouts were reviewed.
+- Multiplayer recovery covers loss of a direct channel with a dropped input, relay fallback, deliberate memory corruption and automatic repair, menu/controller pause and resume, a guest reconnecting to their original port, and the host closing the room.
+- Local save/load/export/import, cached ROM reload, and saved per-device mappings pass. Gamepad API inputs are simulated; actual hardware pairing still needs the users’ devices.
+- Syntax, asset links, pinned engine checksums, source archive contents and served-file confinement are checked before release.
 
-The final screenshots were visually checked: Mario and Donkey Kong are selected independently, enter Hyrule Castle, and both move during the live match. The two browsers show the same positions and running match timer. Responsive desktop, phone and controller-setup layouts were also inspected.
+`artifacts/e2e-report.json` records the latest full browser run, counts, timings and errors. Separate `e2e-local-four.json` and `e2e-public-four.json` retain local and public-route results when both are run.
 
-## Automated checks
+## Fixes verified during this rework
 
-- 9 Node tests: ROM byte-order conversion, Xbox preset, configurable N64 axes/buttons, calibration/deadzone, static-file confinement, no ROM uploads, origin restrictions, private room compatibility/capacity, relay isolation, host authority, disconnect/rejoin and late-packet handling.
-- Browser checks: responsive desktop/mobile layout, rejected invalid ROM, real ROM boot in both contexts, Gamepad API preview, button/axis remapping and persistence, synchronized game startup, scripted game inputs, checksums, direct-channel loss with an intentionally dropped input, WebSocket fallback, deliberate memory corruption and automatic repair, controller-dialog pause/resume, guest rejoin, host leave, local saves, export/import and cached ROM reload.
-- Syntax, linked assets and pinned runtime SHA-256 checks.
-- Source archive scan: no ROMs, save states, credentials, `.local` files or proprietary upstream font binaries.
-- Source and license downloads available with the app.
-- Login service starts correctly, stops the server/tunnel cleanly, and restarts with a fresh public address. Idle sleep prevention is tied to the service's PID.
-
-`artifacts/e2e-report.json` records the latest browser run and measured FPS. Screenshots of character selection and the fight are reviewed separately: advancing synchronized menu frames alone does not prove gameplay. Earlier test-driver timing problems were corrected to count sampled input frames exactly.
-
-## Corrections made during verification
-
-- Restore both host and guest from the same synchronization boundary to normalize transient interpreter state.
-- Retain and repeat a bounded input history to recover packets crossing direct/relay transitions.
-- Reject already consumed input frames so retransmissions do not accumulate stale entries.
-- Drop late relay/ICE/snapshot packets after a guest leaves; they must not turn the waiting host into an error state.
-- Cancel obsolete synchronization work when leaving a room.
-- Allow a verified ROM to play even if the browser refuses persistent storage.
+- Wait through the Nintendo/HAL boot screen before the first Start input, so startup reliably reaches VS character selection.
+- Keep sender identity and controller slot assignment on the server; host authority does not depend on being player 1.
+- Restore every browser at the same snapshot boundary and wait for every connected player’s ready hash.
+- Use full-mesh direct input channels with per-peer relay fallback and bounded repeated input history.
+- Reserve disconnected players’ ports during a match; require their per-tab ticket to reclaim them. Return to lobby frees abandoned ports.
+- Cancel obsolete preparation/synchronization when leaving or changing rounds. Defer synchronization while the initial character screen is being prepared.
+- Preserve normal keyboard focus in menus and suppress the L + R + Start overlay chord from game inputs.
 
 ## Practical limits
 
-- Netplay uses delayed lockstep, with no rollback or input prediction. Network delay and slower computers affect responsiveness.
-- Physical Xbox/N64 hardware was not available to certify. Gamepad API behavior, button/axis mapping and persistence were tested with simulated devices. Pair and test the actual adapters in Controller setup.
-- Chrome was tested. Edge uses the same browser engine; Safari, Firefox and mobile gameplay were not certified. Phone layout was checked, but there is no touch-controller interface.
-- The legacy emulator emits nonfatal WebGL warnings in Chrome. Rendering and game-state progression are checked independently; no uncaught application errors are accepted.
-- Cloudflare Quick Tunnels are temporary and have no uptime guarantee. Hostname changes mean fresh invitations and separate browser storage for clients using the new origin.
+- Delayed lockstep, no rollback. Latency and the slowest player’s computer affect responsiveness.
+- The core exposes all four native controllers; unused character-selection hands may remain visible. The lobby/overlay accurately represent connected players. Untouched, unselected ports do not block a match.
+- Chrome tested. Physical Xbox/N64 controllers, Safari, Firefox and mobile gameplay are not certified. There are no touchscreen game controls.
+- Browser storage is per origin. A new tunnel hostname requires loading the ROM again; localhost keeps stable host storage. Export local saves before moving origins.
+- The hosting computer must remain awake. Cloudflare Quick Tunnels are free temporary addresses, change on restart, and have no uptime guarantee.
+- The legacy emulator emits nonfatal WebGL warnings; uncaught application errors are not accepted.

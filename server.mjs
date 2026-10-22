@@ -53,7 +53,25 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
         res.setHeader("Cache-Control", "no-store");
         res.setHeader("Content-Type", "application/json");
         return res.end(
-          JSON.stringify({ ok: true, version: "1.0.0", shareUrl }),
+          JSON.stringify({ ok: true, version: "2.0.0", shareUrl }),
+        );
+      }
+      if (url.pathname === "/api/rooms") {
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("Content-Type", "application/json");
+        return res.end(
+          JSON.stringify({
+            rooms: [...rooms.values()]
+              .filter((r) => r.listed)
+              .map((r) => ({
+                id: r.id,
+                name: r.name,
+                count: r.members.size,
+                capacity: r.capacity,
+                phase: r.phase,
+                host: r.members.get(r.hostId)?.name || "Host",
+              })),
+          }),
         );
       }
       const decoded = decodeURIComponent(url.pathname);
@@ -100,6 +118,34 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
     if (!valid || wss.clients.size >= 64) return socket.destroy();
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws));
   });
+  const publicRoom = (r) => ({
+    id: r.id,
+    name: r.name,
+    listed: r.listed,
+    capacity: r.capacity,
+    delay: r.delay,
+    phase: r.phase,
+    match: r.match,
+    hostId: r.hostId,
+    members: [...r.members.values()].map((p) => ({
+      id: p.id,
+      slot: p.slot,
+      name: p.name,
+      ready: p.ready,
+      connected: !!p.socket,
+      controller: p.controller,
+    })),
+  });
+  const broadcast = (r, message, except) => {
+    for (const p of r.members.values())
+      if (p.id !== except) send(p.socket, message);
+  };
+  const update = (r) => broadcast(r, { type: "room", room: publicRoom(r) });
+  const clean = (value, fallback, max = 40) =>
+    String(value || "")
+      .replace(/[\x00-\x1f\x7f]/g, "")
+      .trim()
+      .slice(0, max) || fallback;
   wss.on("connection", (socket) => {
     socket.alive = true;
     socket.meta = null;
@@ -115,18 +161,22 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
         windowStart = Date.now();
         messages = 0;
       }
-      if (++messages > 600) return socket.close(1008, "Rate limit");
+      if (++messages > 1200) return socket.close(1008, "Rate limit");
       const fail = (message) => send(socket, { type: "error", message });
       const meta = socket.meta,
         room = meta && rooms.get(meta.token);
-      const other = room && (meta.player === 0 ? room.guest : room.host);
+      const member = room?.members.get(meta.id);
+      const isHost = room?.hostId === meta?.id;
       if (binary) {
-        if (room && meta.player === 0 && !other) return; // Snapshot already in flight when a guest left.
-        if (!room || meta.player !== 0 || !other || data.length < 8)
-          return fail("A host and guest are required to sync.");
-        if (other.bufferedAmount > 24 * 1024 * 1024)
-          return socket.close(1008, "Connection too slow");
-        return other.send(data, { binary: true });
+        if (!room || !isHost) return fail("Only the host can synchronize.");
+        if (room.phase === "lobby" || data.length < 8) return;
+        for (const p of room.members.values()) {
+          if (p.id === meta.id || !p.socket) continue;
+          if (p.socket.bufferedAmount > 24 * 1024 * 1024)
+            p.socket.close(1008, "Connection too slow");
+          else p.socket.send(data, { binary: true });
+        }
+        return;
       }
       if (data.length > 16384) return socket.close(1009, "Message too large");
       let m;
@@ -143,115 +193,213 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
           typeof m.rom !== "string" ||
           !/^[a-f0-9]{40}$/.test(m.rom) ||
           typeof m.build !== "string" ||
+          !m.build ||
           m.build.length > 120
         )
           return fail("Load a supported ROM first.");
-        const name =
-          String(m.name || "Player")
-            .trim()
-            .slice(0, 30) || "Player";
+        const name = clean(m.name, "Player", 30);
+        let r, p;
         if (m.type === "create") {
           if (rooms.size >= 32) return fail("Server is full. Try again later.");
           const token = randomBytes(18).toString("hex");
-          const delay = Math.max(
-            2,
-            Math.min(15, Number.isInteger(m.delay) ? m.delay : 6),
-          );
-          rooms.set(token, {
-            host: socket,
-            guest: null,
+          r = {
+            token,
+            id: randomBytes(5).toString("hex"),
+            name: clean(m.roomName, `${name}’s room`),
+            listed: m.listed !== false,
+            capacity: [2, 3, 4].includes(m.capacity) ? m.capacity : 4,
+            delay: Math.max(
+              2,
+              Math.min(15, Number.isInteger(m.delay) ? m.delay : 6),
+            ),
             rom: m.rom,
             build: m.build,
-            delay,
-            name,
-          });
-          socket.meta = { token, player: 0, name };
-          send(socket, { type: "joined", token, player: 0, delay });
+            phase: "lobby",
+            match: 0,
+            members: new Map(),
+          };
+          rooms.set(token, r);
         } else {
-          if (!TOKEN.test(m.token || ""))
-            return fail("That invitation is invalid.");
-          const r = rooms.get(m.token);
-          if (!r || r.host.readyState !== 1)
-            return fail(
-              "This room has closed. Ask the host for a new invitation.",
-            );
-          if (r.guest) return fail("This room already has two players.");
+          r = TOKEN.test(m.token || "")
+            ? rooms.get(m.token)
+            : [...rooms.values()].find((r) => r.listed && r.id === m.roomId);
+          if (!r)
+            return fail("This room has closed or the invitation is invalid.");
           if (r.rom !== m.rom || r.build !== m.build)
             return fail(
-              "Both players need the same ROM and game build. Reload both pages and try again.",
+              "Everyone needs the same ROM and game build. Reload the pages and try again.",
             );
-          socket.meta = { token: m.token, player: 1, name };
-          r.guest = socket;
-          send(socket, {
-            type: "joined",
-            token: m.token,
-            player: 1,
-            delay: r.delay,
-            peer: r.name,
-          });
-          send(r.host, { type: "peer", name });
-          send(socket, { type: "peer", name: r.name });
+          p = [...r.members.values()].find(
+            (p) => m.ticket && p.ticket === m.ticket && !p.socket,
+          );
+          if (r.phase !== "lobby" && !p)
+            return fail(
+              "This game has started. Join when the host returns to the lobby.",
+            );
+          if (!p && r.members.size >= r.capacity)
+            return fail("This room is full. Choose another room.");
         }
+        if (!p) {
+          const used = new Set([...r.members.values()].map((p) => p.slot));
+          p = {
+            id: randomBytes(8).toString("hex"),
+            ticket: randomBytes(18).toString("hex"),
+            slot: [0, 1, 2, 3].find((i) => !used.has(i)),
+            name,
+            ready: false,
+            controller: clean(m.controller, "Keyboard", 80),
+          };
+          r.members.set(p.id, p);
+        }
+        if (!r.hostId) r.hostId = p.id;
+        p.socket = socket;
+        socket.meta = { token: r.token, id: p.id };
+        send(socket, {
+          type: "joined",
+          token: r.token,
+          id: p.id,
+          ticket: p.ticket,
+        });
         clearTimeout(joinTimeout);
+        update(r);
+        if (
+          r.phase === "paused" &&
+          [...r.members.values()].every((p) => p.socket)
+        )
+          broadcast(r, { type: "reconnected" });
         return;
       }
-      if (!room) return fail("Join a room first.");
-      if (!other) return; // Late input/ICE/heartbeat packets after disconnect are harmless.
+      if (!room || !member) return fail("Join a room first.");
+      if (m.type === "profile") {
+        const controller = clean(m.controller, "Keyboard", 80);
+        if (room.phase === "lobby" && controller !== member.controller)
+          member.ready = false;
+        member.controller = controller;
+        update(room);
+        return;
+      }
+      if (m.type === "seat" || m.type === "ready") {
+        if (room.phase !== "lobby")
+          return fail("Return to the lobby to change players.");
+        if (m.type === "seat") {
+          if (
+            !Number.isInteger(m.slot) ||
+            m.slot < 0 ||
+            m.slot >= room.capacity
+          )
+            return fail("Choose an available player slot.");
+          if (
+            [...room.members.values()].some(
+              (p) => p.id !== meta.id && p.slot === m.slot,
+            )
+          )
+            return fail("That controller port is taken.");
+          member.slot = m.slot;
+          member.ready = false;
+        } else member.ready = m.ready === true;
+        update(room);
+        return;
+      }
+      if (m.type === "launch") {
+        if (!isHost) return fail("Only the host can start the game.");
+        if (room.phase !== "lobby") return;
+        if (
+          room.members.size < 2 ||
+          ![...room.members.values()].every((p) => p.ready && p.socket)
+        )
+          return fail(
+            "At least two players must join, and everyone must be ready.",
+          );
+        room.phase = "starting";
+        room.match++;
+        update(room);
+        broadcast(room, { type: "launch", match: room.match });
+        return;
+      }
+      if (m.type === "lobby") {
+        if (!isHost)
+          return fail("Only the host can return everyone to the lobby.");
+        room.phase = "lobby";
+        room.match++;
+        for (const p of room.members.values()) {
+          if (!p.socket) room.members.delete(p.id);
+          else p.ready = false;
+        }
+        update(room);
+        return;
+      }
+      const recipients = [...room.members.values()].filter(
+        (p) => p.id !== meta.id && p.socket && (!m.to || p.id === m.to),
+      );
       if (m.type === "signal") {
-        if (!m.signal || JSON.stringify(m.signal).length > 12000)
-          return fail("Invalid connection signal");
-        return send(other, { type: "signal", signal: m.signal });
+        if (!m.to || !m.signal || JSON.stringify(m.signal).length > 12000)
+          return;
+        for (const p of recipients)
+          send(p.socket, { type: "signal", from: meta.id, signal: m.signal });
+        return;
       }
       if (m.type === "game") {
-        if (!m.payload || typeof m.payload !== "object")
-          return fail("Invalid game packet");
-        const allowed = [
-          "input",
-          "hash",
-          "start",
-          "ready",
-          "sync",
-          "pause",
-          "resume",
-          "resync",
-          "echo",
-          "echo-reply",
-        ];
-        if (!allowed.includes(m.payload.type))
-          return fail("Unknown game packet");
+        const g = m.payload;
+        if (!g || typeof g !== "object") return fail("Invalid game packet");
         if (
-          ["start", "sync", "resume"].includes(m.payload.type) &&
-          meta.player !== 0
+          ![
+            "input",
+            "hash",
+            "start",
+            "ready",
+            "sync",
+            "pause",
+            "resync",
+            "echo",
+            "echo-reply",
+          ].includes(g.type)
         )
+          return;
+        if (["start", "sync"].includes(g.type) && !isHost)
           return fail("Only the host can start or synchronize.");
-        if (other.bufferedAmount > 24 * 1024 * 1024)
-          return socket.close(1008, "Connection too slow");
-        send(other, { type: "game", payload: m.payload });
+        if (room.phase === "lobby" || g.match !== room.match) return;
+        if (g.type === "start") {
+          if (![...room.members.values()].every((p) => p.socket)) return;
+          room.phase = "playing";
+          update(room);
+        }
+        for (const p of recipients) {
+          if (p.socket.bufferedAmount > 24 * 1024 * 1024)
+            p.socket.close(1008, "Connection too slow");
+          else send(p.socket, { type: "game", from: meta.id, payload: g });
+        }
       }
     });
     socket.on("close", () => {
       clearTimeout(joinTimeout);
       const meta = socket.meta;
       if (!meta) return;
-      const room = rooms.get(meta.token);
-      if (!room) return;
-      if (meta.player === 0) {
-        send(room.guest, {
-          type: "closed",
-          message: "The host left. Ask for a new invitation.",
-        });
-        if (room.guest) {
-          room.guest.meta = null;
-          room.guest.close(1000);
-        }
+      const room = rooms.get(meta.token),
+        member = room?.members.get(meta.id);
+      if (!room || !member || member.socket !== socket) return;
+      if (meta.id === room.hostId) {
         rooms.delete(meta.token);
+        broadcast(
+          room,
+          {
+            type: "closed",
+            message:
+              "The host closed this room. Join another room or create your own.",
+          },
+          meta.id,
+        );
+        for (const p of room.members.values())
+          if (p.id !== meta.id && p.socket) {
+            p.socket.meta = null;
+            p.socket.close(1000);
+          }
       } else {
-        room.guest = null;
-        send(room.host, {
-          type: "left",
-          message:
-            "Your opponent disconnected. The game is paused; they can rejoin this link.",
-        });
+        if (room.phase === "lobby") room.members.delete(meta.id);
+        else {
+          member.socket = null;
+          room.phase = "paused";
+        }
+        update(room);
       }
     });
   });

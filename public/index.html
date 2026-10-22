@@ -2,220 +2,334 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="theme-color" content="#131918" />
-    <title>Smash Together · 64</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101319" />
+    <title>Smash Together · Smash 64 Online</title>
     <link rel="icon" href="/mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/js/app.js"></script>
   </head>
   <body>
-    <header class="site-header">
-      <a class="brand" href="/" aria-label="Smash Together home"
-        ><span class="brand-mark">64</span
-        ><span>SMASH<span class="brand-light">TOGETHER</span></span></a
-      ><span class="header-note"
-        ><span class="dot"></span> YOUR ROM. YOUR ROOM.</span
-      ><button class="text-button" id="help-open">
-        How it works <span>↗</span>
-      </button>
-    </header>
-    <main>
-      <section class="intro">
-        <div>
-          <div class="eyebrow">THE ORIGINAL RIVALRY, BACK ONLINE</div>
-          <h1>Same game.<br /><span>Different couches.</span></h1>
-          <p>
-            Bring your copy of Smash 64. Grab a controller.<br />There’s a seat
-            here for your favorite rival.
+    <div class="ambient" aria-hidden="true"><span>64</span></div>
+    <section id="game-view" hidden aria-label="Game">
+      <canvas
+        id="canvas"
+        width="640"
+        height="480"
+        tabindex="0"
+        aria-label="Super Smash Bros. game"
+      ></canvas>
+      <div class="game-hud" id="game-hud">
+        <button id="game-menu" class="glass">
+          ☰ <span>Menu</span> <kbd>Esc</kbd>
+        </button>
+        <div id="game-players" class="game-players"></div>
+        <button class="glass" data-fullscreen>⛶ <span>Fullscreen</span></button>
+      </div>
+      <div id="game-notice" class="game-notice" hidden>
+        <div class="notice-card">
+          <span class="eyebrow" id="game-notice-label"
+            >GETTING EVERYONE TOGETHER</span
+          >
+          <h2 id="game-notice-title">Preparing the arena…</h2>
+          <p id="game-notice-detail">
+            Opening character selection for everyone.
           </p>
+          <div class="actions">
+            <button id="game-resume" class="primary" hidden>Resume game</button
+            ><button id="game-rejoin" hidden>Reconnect</button
+            ><button id="game-back-lobby" hidden>Return to lobby</button
+            ><button id="game-leave" class="quiet">Leave game</button>
+          </div>
         </div>
-        <div class="intro-ticket">
-          <span>EST. 1999 / RECONNECTED</span><strong>1 <i>vs</i> 1</strong
-          ><span>FREE TO PLAY TOGETHER</span>
+      </div>
+      <p id="fighter-hint" class="fighter-hint" hidden>
+        Move your colored hand to a fighter · A to choose · Start when everyone
+        has chosen
+      </p>
+    </section>
+    <div id="shell" class="shell">
+      <header class="topbar">
+        <button id="brand-home" class="brand" aria-label="Home">
+          <span class="brand-mark">64</span> SMASH <b>TOGETHER</b>
+        </button>
+        <div class="header-actions">
+          <span id="cartridge-badge" class="status-badge">Bring your ROM</span
+          ><button class="quiet" data-controls>⌘ <span>Controller</span></button
+          ><button class="quiet" data-fullscreen>
+            ⛶ <span>Fullscreen</span>
+          </button>
         </div>
-      </section>
-      <section class="play-layout" aria-label="Game and room setup">
-        <div class="game-column">
-          <div class="stage" id="stage">
-            <div class="stage-top">
-              <span id="stage-label"
-                ><span class="dot"></span> READY WHEN YOU ARE</span
-              ><span id="fps-label">N64 / ORIGINAL US EDITION</span>
-            </div>
-            <div class="screen" id="screen">
-              <canvas
-                id="canvas"
-                width="640"
-                height="480"
-                tabindex="0"
-                aria-label="Smash 64 game screen"
-              ></canvas>
-              <div class="empty-screen" id="empty-screen">
-                <div class="orbital">
-                  <span>64</span><i></i><i></i><i></i><i></i>
-                </div>
-                <h2>Your next match starts here.</h2>
-                <p>Choose your game file to power on.</p>
-                <button class="button cream" id="choose-main">
-                  Choose your ROM <span>↗</span></button
-                ><small>.z64, .n64, or .v64 · stays on your device</small>
+      </header>
+      <main>
+        <section id="home-screen" class="screen home-screen">
+          <div class="home-copy">
+            <p class="eyebrow">YOUR FRIENDS. YOUR CARTRIDGE.</p>
+            <h1>ONE MORE<br /><span>MATCH.</span></h1>
+            <p class="intro">
+              The original Smash 64. A shared couch,<br class="desktop" />
+              wherever you are.
+            </p>
+            <nav class="main-menu" aria-label="Main menu">
+              <button id="multiplayer" class="menu-choice primary">
+                <span
+                  ><strong>Multiplayer</strong
+                  ><small>Find a room. Bring your friends.</small></span
+                ><span aria-hidden="true">↗</span>
+              </button>
+              <button id="local-play" class="menu-choice">
+                <span
+                  ><strong>Local play</strong
+                  ><small>One computer. Up to four controllers.</small></span
+                ><span aria-hidden="true">→</span>
+              </button>
+              <div class="menu-secondary">
+                <button data-controls class="quiet">Controller setup</button
+                ><button id="help-open" class="quiet">How to play</button>
               </div>
-              <div class="loading-screen" id="loading" hidden>
-                <span class="spinner"></span>
-                <h2 id="loading-text">Powering on…</h2>
-              </div>
+            </nav>
+          </div>
+          <div class="home-art" aria-hidden="true">
+            <div class="arena-ring ring-one"></div>
+            <div class="arena-ring ring-two"></div>
+            <span class="art-type">READY<br />TO<br /><i>RUMBLE.</i></span>
+            <div class="art-ports">
+              <span class="p1">01</span><span class="p2">02</span
+              ><span class="p3">03</span><span class="p4">04</span>
             </div>
-            <div class="stage-bottom">
-              <span id="game-state">NO CARTRIDGE LOADED</span>
+            <span class="art-caption">FOUR PORTS. ONE ARENA.</span>
+          </div>
+        </section>
+        <section id="browse-screen" class="screen" hidden>
+          <button class="back quiet" data-home>← Main menu</button>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">MULTIPLAYER</p>
+              <h1>Find your people.</h1>
+              <p>Join an open room or start one for your crew.</p>
+            </div>
+            <button id="create-open" class="primary">＋ Create a room</button>
+          </div>
+          <div class="browser-toolbar">
+            <label class="inline-label" for="player-name"
+              >YOUR NAME
+              <input
+                id="player-name"
+                maxlength="30"
+                placeholder="Player"
+                autocomplete="nickname"
+            /></label>
+            <div class="actions">
+              <button id="join-open">Join with an invite</button
+              ><button id="refresh-rooms" class="quiet">↻ Refresh</button>
+            </div>
+          </div>
+          <div class="list-heading">
+            <span>ROOM</span><span>PLAYERS</span><span>STATUS</span>
+          </div>
+          <div id="room-list" class="room-list" aria-live="polite"></div>
+          <div id="rooms-empty" class="empty-room">
+            <span class="empty-symbol" aria-hidden="true">＋</span>
+            <h2>The next match starts with you.</h2>
+            <p>
+              No open rooms yet. Create one and send your brother the invite.
+            </p>
+            <button id="create-empty" class="primary">Create a room</button>
+          </div>
+          <p id="browser-status" class="subtext">
+            Rooms on this server · No account needed
+          </p>
+        </section>
+        <section id="lobby-screen" class="screen" hidden>
+          <button id="leave-room" class="back quiet">← Leave room</button>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow" id="lobby-eyebrow">MULTIPLAYER LOBBY</p>
+              <h1 id="lobby-title">Your room</h1>
+              <p id="lobby-subtitle">Pick a controller port, then ready up.</p>
+            </div>
+            <button id="copy-invite">↗ Copy invite</button>
+          </div>
+          <div class="lobby-progress">
+            <span class="current"><b>1</b> Get together</span><i></i
+            ><span><b>2</b> Choose fighters</span><i></i
+            ><span><b>3</b> Smash</span>
+          </div>
+          <div id="player-slots" class="player-slots" aria-live="polite"></div>
+          <div class="lobby-bottom">
+            <div class="your-controller">
+              <span class="controller-icon" aria-hidden="true">✣</span>
               <div>
-                <button
-                  id="audio-toggle"
-                  class="icon-button"
-                  title="Toggle sound"
-                  aria-label="Toggle sound"
+                <span class="eyebrow">YOUR CONTROLLER</span
+                ><strong id="lobby-controller">Keyboard</strong
+                ><small id="lobby-controller-help"
+                  >Pair a controller, then press a button to connect.</small
                 >
-                  ♫</button
-                ><button
-                  id="fullscreen"
-                  class="icon-button"
-                  title="Full screen"
-                  aria-label="Full screen"
-                >
-                  ⛶
+              </div>
+              <button data-controls>Change / test</button>
+            </div>
+            <div class="ready-area">
+              <p id="lobby-status">Waiting for players…</p>
+              <div class="actions">
+                <button id="ready-button" class="primary">I'm ready</button
+                ><button id="start-game" class="start-button" disabled>
+                  Choose fighters →
                 </button>
               </div>
             </div>
           </div>
-          <div class="game-toolbar">
-            <button id="pause" class="subtle-button" disabled>Pause</button
-            ><button id="save" class="subtle-button" disabled>
-              Save progress</button
-            ><button id="load-save" class="subtle-button" disabled>
-              Load save</button
-            ><button id="export-save" class="subtle-button" disabled>
-              Export save</button
-            ><button id="import-save" class="subtle-button" disabled>
-              Import save</button
-            ><button id="reset" class="subtle-button" disabled>Restart</button>
-          </div>
-          <div class="below-game">
-            <span class="mini-tag">GOOD TO KNOW</span>
-            <p>
-              Each player brings their own ROM. Your ROM stays in your browser.
-              No accounts, ads, or subscriptions.
-            </p>
-          </div>
-        </div>
-        <aside class="setup-column">
-          <section class="card cartridge-card">
-            <div class="card-heading">
-              <span class="step">01</span>
-              <h2>Your cartridge</h2>
-              <span id="rom-check" class="check" hidden>✓</span>
-            </div>
-            <p id="rom-status">Load your original US Smash Bros. ROM.</p>
-            <button id="choose-rom" class="button outline">
-              Choose file <span>＋</span>
-            </button>
-            <div id="rom-loaded" hidden>
-              <button id="power-on" class="button primary">
-                Power on <span>→</span></button
-              ><button id="forget-rom" class="text-button small">
-                Forget saved ROM
-              </button>
-            </div>
-            <input id="rom-file" type="file" accept=".z64,.v64,.n64" hidden />
-          </section>
-          <section class="card">
-            <div class="card-heading">
-              <span class="step">02</span>
-              <h2>Your controls</h2>
-              <span class="tiny-pill" id="controller-count">KEYBOARD</span>
-            </div>
-            <p id="device-summary">
-              Keyboard is ready. Pair a controller to your computer, then press
-              any button.
-            </p>
-            <button id="controls-open" class="button outline">
-              Controller setup <span>↗</span>
-            </button>
-            <div class="key-hint">
-              <kbd>W A S D</kbd> move <span>·</span><kbd>J</kbd> attack
-              <span>·</span><kbd>K</kbd> special
-            </div>
-          </section>
-          <section class="card room-card">
-            <div class="card-heading">
-              <span class="step">03</span>
-              <h2>Your rival</h2>
-            </div>
-            <div id="room-setup">
-              <label for="player-name">YOUR NAME</label
-              ><input
-                id="player-name"
-                maxlength="30"
-                placeholder="Player one"
-                autocomplete="nickname"
-              />
-              <div class="room-options">
-                <label for="delay">CONNECTION BUFFER</label
-                ><select id="delay">
-                  <option value="4">Low · 4 frames</option>
-                  <option value="6" selected>Balanced · 6 frames</option>
-                  <option value="9">Long distance · 9 frames</option>
-                  <option value="12">Extra steady · 12 frames</option>
-                </select>
-              </div>
-              <button id="create-room" class="button primary" disabled>
-                Create private room <span>→</span>
-              </button>
-              <div class="or-divider"><span>HAVE AN INVITE?</span></div>
-              <label class="sr-only" for="invite-input"
-                >Invitation link or room code</label
-              ><input
-                id="invite-input"
-                placeholder="Paste an invite link or room code"
-              /><button id="join-room" class="button outline" disabled>
-                Join your friend <span>↗</span>
-              </button>
-            </div>
-            <div id="room-active" hidden>
-              <div class="room-status">
-                <span class="dot"></span
-                ><strong id="room-state">Waiting for your rival</strong>
-              </div>
-              <p id="room-detail">
-                Send the private invitation to your friend.
-              </p>
-              <button id="copy-invite" class="button cream">
-                Copy invite link <span>↗</span>
-              </button>
-              <div class="room-metrics">
-                <span id="connection-label">Private room</span
-                ><span id="ping">— ms</span>
-              </div>
-              <button id="resync" class="subtle-button">Resync match</button
-              ><button id="leave-room" class="text-button small">
-                Leave room
-              </button>
-            </div>
-            <p class="room-footnote">
-              2 players · original game rules · private invitations
-            </p>
-          </section>
-        </aside>
-      </section>
+          <p class="lobby-footnote">
+            Everyone uses their own ROM. Once you’re ready, you’ll choose your
+            fighter together in the game.
+          </p>
+        </section>
+      </main>
       <footer>
-        <span>Built for a little friendly competition.</span>
+        <span id="footer-input">Keyboard or paired controller</span>
         <div>
-          <button class="text-button" id="diagnostics-open">
-            Connection details</button
-          ><a href="/credits.html">Credits & source</a
-          ><span class="footer-mark">64</span>
+          <button id="cartridge-open" class="quiet">Your cartridge</button
+          ><button id="diagnostics-open" class="quiet">Connection</button
+          ><a href="/credits.html">Credits & source</a>
         </div>
       </footer>
-    </main>
+    </div>
+    <input id="rom-file" type="file" accept=".z64,.v64,.n64" hidden />
+    <input id="save-file" type="file" accept=".smash64" hidden />
+    <dialog id="rom-dialog">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">ONE-TIME SETUP</p>
+          <h2>Bring your cartridge.</h2>
+        </div>
+        <button
+          class="close"
+          data-close="rom-dialog"
+          aria-label="Close cartridge setup"
+        >
+          ×
+        </button>
+      </div>
+      <p>
+        Choose your original US Super Smash Bros. ROM. Your file stays in this
+        browser, and we’ll remember it for next time.
+      </p>
+      <div class="cartridge-card">
+        <span aria-hidden="true">64</span>
+        <div>
+          <strong>Super Smash Bros.</strong>
+          <p id="rom-status">Original US release · .z64, .v64 or .n64</p>
+        </div>
+      </div>
+      <p id="rom-error" class="error-text" role="alert" hidden></p>
+      <div class="actions">
+        <button id="choose-rom" class="primary">Choose ROM file</button
+        ><button id="rom-continue" class="primary" hidden>Continue →</button
+        ><button id="forget-rom" class="quiet" hidden>Forget saved ROM</button>
+      </div>
+      <p class="subtext">
+        No download, upload, account, or subscription required.
+      </p>
+    </dialog>
+    <dialog id="create-dialog">
+      <form id="create-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">HOST A MATCH</p>
+            <h2>Make some room.</h2>
+          </div>
+          <button
+            type="button"
+            class="close"
+            data-close="create-dialog"
+            aria-label="Close create room"
+          >
+            ×
+          </button>
+        </div>
+        <label for="room-name">ROOM NAME</label
+        ><input id="room-name" maxlength="40" placeholder="One more match" />
+        <div class="form-grid">
+          <div>
+            <label for="capacity">PLAYERS</label
+            ><select id="capacity">
+              <option value="4">Up to 4 players</option>
+              <option value="3">Up to 3 players</option>
+              <option value="2">Just us two</option>
+            </select>
+          </div>
+          <div>
+            <label for="visibility">WHO CAN JOIN</label
+            ><select id="visibility">
+              <option value="public">Anyone on this server</option>
+              <option value="private">Invite only</option>
+            </select>
+          </div>
+        </div>
+        <details>
+          <summary>Connection settings</summary>
+          <label for="delay">INPUT BUFFER</label
+          ><select id="delay">
+            <option value="4">Low · 4 frames</option>
+            <option value="6" selected>Balanced · 6 frames</option>
+            <option value="9">Long distance · 9 frames</option>
+            <option value="12">Extra steady · 12 frames</option>
+          </select>
+          <p class="subtext">
+            A higher buffer can smooth out a distant connection.
+          </p>
+        </details>
+        <button id="create-room" class="primary wide" type="submit">
+          Create room →
+        </button>
+      </form>
+    </dialog>
+    <dialog id="join-dialog">
+      <form id="join-form">
+        <div class="dialog-heading">
+          <h2>Join your friend.</h2>
+          <button
+            type="button"
+            class="close"
+            data-close="join-dialog"
+            aria-label="Close join room"
+          >
+            ×
+          </button>
+        </div>
+        <label for="invite-input">INVITATION LINK</label
+        ><input
+          id="invite-input"
+          placeholder="Paste the link your friend sent"
+        /><button id="join-room" class="primary wide" type="submit">
+          Join room →
+        </button>
+      </form>
+    </dialog>
+    <dialog id="menu-dialog">
+      <div class="dialog-heading">
+        <h2>Take a breather.</h2>
+        <button class="close" data-close="menu-dialog" aria-label="Resume game">
+          ×
+        </button>
+      </div>
+      <div class="pause-menu">
+        <button id="resume-menu" class="primary">Resume game</button
+        ><button data-controls>Controller setup</button
+        ><button data-fullscreen>Toggle fullscreen</button
+        ><label class="volume-label"
+          >VOLUME<input id="volume" type="range" min="0" max="100" value="55"
+        /></label>
+        <div id="local-save-actions" class="form-grid">
+          <button id="save">Save progress</button
+          ><button id="load-save">Load progress</button
+          ><button id="export-save">Export save</button
+          ><button id="import-save">Import save</button>
+        </div>
+        <button id="back-lobby">Return everyone to lobby</button
+        ><button id="reset">Restart local game</button
+        ><button id="quit-game" class="quiet">Leave game</button>
+      </div>
+    </dialog>
     <dialog id="controls-dialog">
       <div class="dialog-heading">
         <div>
@@ -278,44 +392,41 @@
     </dialog>
     <dialog id="help-dialog">
       <div class="dialog-heading">
-        <h2>A match in a few steps.</h2>
+        <h2>Get together. Smash.</h2>
         <button class="close" data-close="help-dialog" aria-label="Close help">
           ×
         </button>
       </div>
       <ol class="help-steps">
         <li>
-          <strong>Bring your cartridge.</strong>Choose the original US Smash 64
-          ROM on each computer. The game checks the file and remembers it in
-          this browser.
+          <strong>Choose Multiplayer.</strong> Join a room, create one, or open
+          your friend’s invitation.
         </li>
         <li>
-          <strong>Settle into your controls.</strong>Use a paired Xbox
-          controller, an N64 USB/Bluetooth controller, or the keyboard. Guided
-          setup handles unusual adapters.
+          <strong>Load your own ROM.</strong> We check the original US release
+          and keep it in your browser.
         </li>
         <li>
-          <strong>Invite your rival.</strong>Power on, create a room, copy the
-          invite and send it. Your friend opens it, loads their ROM, and joins.
-          The host is Player 1.
+          <strong>Pick your port and ready up.</strong> Friends appear in the
+          lobby as they join. Use an Xbox controller, an N64 controller or
+          adapter, or the keyboard.
         </li>
         <li>
-          <strong>Head to VS Mode.</strong>Use Start to pass the title screen,
-          choose VS Mode, and select your fighters. Your original game’s menus
-          and rules work as usual.
+          <strong>Choose your fighter.</strong> The host starts when everyone is
+          ready. You go straight to the game’s character selection. Move your
+          colored hand to a fighter and press A. Press Start when everyone has
+          chosen.
         </li>
       </ol>
       <p>
-        Keep both game tabs visible. Wired internet helps. If play stalls, pause
-        and resync; a larger connection buffer can help on distant connections.
+        <b>Keyboard:</b> WASD moves · J attacks / selects · K special / back ·
+        Space jumps · L grabs · O shields · Enter starts · Esc opens the menu.
+        On a controller, press L + R + Start together for the menu.
       </p>
       <p>
-        The laptop hosting the server must stay awake. The sharing address may
-        change when its tunnel restarts. No payment or account is required.
+        Keep the game tab visible. The hosting computer must stay awake. This
+        temporary sharing address may change when its tunnel restarts.
       </p>
-      <label class="volume-label"
-        >VOLUME <input id="volume" type="range" min="0" max="100" value="55"
-      /></label>
     </dialog>
     <dialog id="diagnostics-dialog">
       <div class="dialog-heading">
@@ -329,13 +440,16 @@
         </button>
       </div>
       <pre id="diagnostics"></pre>
-      <p class="small-print">
-        Synchronized input with a configurable delay. This release does not use
-        rollback. A direct connection is preferred; the laptop relay works when
-        direct connections cannot be made.
+      <p class="subtext">
+        Direct connections when available, with a free server relay as fallback.
+        Synchronized inputs with a configurable delay; this is not rollback.
       </p>
     </dialog>
-    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <input id="save-file" type="file" accept=".smash64" hidden />
+    <div id="busy" class="busy" hidden role="status">
+      <div class="spinner"></div>
+      <h2 id="busy-title">Powering on…</h2>
+      <p id="busy-detail">Loading your cartridge in this browser.</p>
+    </div>
+    <div id="toast" class="toast" role="status" hidden></div>
   </body>
 </html>

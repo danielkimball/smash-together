@@ -140,6 +140,7 @@ export class Controls extends EventTarget {
         return;
       }
       if (
+        !this.blocked &&
         Object.values(this.profile.map).some(
           (b) => b?.kind === "key" && b.code === event.code,
         )
@@ -186,7 +187,13 @@ export class Controls extends EventTarget {
   }
   sample() {
     if (this.blocked || this.capture) return { buttons: 0, x: 0, y: 0 };
-    return evaluate(this.profile, this.pad(), this.keys);
+    const input = evaluate(this.profile, this.pad(), this.keys);
+    if (
+      (input.buttons & (BITS.l | BITS.r | BITS.start)) ===
+      (BITS.l | BITS.r | BITS.start)
+    )
+      return { buttons: 0, x: 0, y: 0 };
+    return input;
   }
   sampleOther(pad) {
     return evaluate(this.saved[pad.id] || defaultProfile("xbox"), pad);

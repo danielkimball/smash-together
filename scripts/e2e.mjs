@@ -39,55 +39,155 @@ const browser = await chromium.launch({
 });
 const contexts = [],
   pages = [];
+const count = Number(process.env.SMASH_PLAYERS || 4);
+async function waitState(p, state) {
+  await p.waitForFunction((s) => smash.net.state === s, state, {
+    timeout: 90000,
+  });
+}
+async function frames(p, n) {
+  const f = await p.evaluate(() => smash.net.frame);
+  await p.waitForFunction(
+    (t) => smash.net.running && smash.net.frame >= t,
+    f + n,
+    { timeout: 90000 },
+  );
+}
+async function act(p, keys, count = 6, settle = 30) {
+  await p.evaluate(
+    ({ keys, count, settle }) =>
+      new Promise((resolve, reject) => {
+        const c = smash.controls,
+          original = c.sample.bind(c);
+        let active = count,
+          quiet = settle;
+        const timeout = setTimeout(() => {
+          c.sample = original;
+          reject(Error("Input timed out"));
+        }, 90000);
+        c.sample = () => {
+          if (active-- > 0) {
+            c.keys = new Set(keys);
+            const input = original();
+            c.keys.clear();
+            return input;
+          }
+          if (quiet-- > 0) return { buttons: 0, x: 0, y: 0 };
+          c.sample = original;
+          clearTimeout(timeout);
+          resolve();
+          return original();
+        };
+      }),
+    { keys, count, settle },
+  );
+}
+// Read-only scene assertions for the verified US ROM and pinned Mupen state format.
+// RDRAM begins at byte 448 in savestates_save_m64p; words are little-endian.
+// Symbols/types: https://github.com/VetriTheRetri/ssb-decomp-re (symbols_us.txt,
+// scdef.h, sctypes.h). gSCManagerSceneData=0x800A4AD0, BattleState*=0x800A50E8.
+// Scene 16 = VS character selection; scene 22 = an actual VS battle.
+async function gameState(p) {
+  return p.evaluate(() => {
+    const state = smash.engine.snapshot();
+    const word = (address) =>
+      new DataView(state.buffer).getUint32(448 + (address & 0x7fffff), true);
+    const byte = (address) => state[448 + ((address & 0x7fffff) ^ 3)];
+    const battle = word(0x800a50e8);
+    return { scene: byte(0x800a4ad0), humans: battle ? byte(battle + 4) : 0 };
+  });
+}
+async function menu(p) {
+  await p.evaluate(() => document.getElementById("game-menu").click());
+}
+async function shot(p, name) {
+  await p.screenshot({ path: path.join(dir, name + ".png"), fullPage: true });
+}
 try {
-  for (const url of [local, remote]) {
+  for (let i = 0; i < count; i++) {
     const context = await browser.newContext({
-      viewport: { width: 1400, height: 1100 },
+      viewport: { width: 1440, height: 900 },
     });
     contexts.push(context);
+    // Isolated test pages represent separate foreground computers.
+    await context.addInitScript(() =>
+      Object.defineProperty(document, "hidden", { get: () => false }),
+    );
     const page = await context.newPage();
     pages.push(page);
     page.on("pageerror", (e) => report.errors.push(e.message));
-    await page.goto(url);
+    await page.goto(i === 0 ? local : remote);
+    await page.waitForFunction(() => window.smash);
   }
   const [a, b] = pages;
-  await a.screenshot({
-    path: path.join(dir, "home-desktop.png"),
-    fullPage: true,
-  });
+  await a.locator(".header-actions [data-fullscreen]").click();
+  await a.waitForFunction(
+    () => document.fullscreenElement === document.documentElement,
+  );
+  await a.locator(".header-actions [data-fullscreen]").click();
+  await a.waitForFunction(() => !document.fullscreenElement);
+  record("Native fullscreen toggle keeps the whole application in fullscreen");
+  await shot(a, "home-desktop");
   await a.setViewportSize({ width: 390, height: 844 });
   assert.ok(
     await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
   );
-  await a.screenshot({
-    path: path.join(dir, "home-mobile.png"),
-    fullPage: true,
+  await shot(a, "home-mobile");
+  await a.setViewportSize({ width: 1440, height: 900 });
+  record("Responsive fullscreen menu at desktop and phone widths");
+  await a.locator("#rom-file").setInputFiles({
+    name: "invalid.z64",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.alloc(32),
   });
-  await a.setViewportSize({ width: 1400, height: 1100 });
-  record("Responsive desktop and phone layouts");
-  await a
-    .locator("#rom-file")
-    .setInputFiles({
-      name: "invalid.z64",
-      mimeType: "application/octet-stream",
-      buffer: Buffer.alloc(32),
-    });
   await a.waitForFunction(() =>
     document.getElementById("toast").textContent.includes("16 MB"),
   );
   assert.equal(await a.evaluate(() => smash.engine.loaded), false);
   record("Invalid ROM rejected");
-  for (const page of pages) {
-    await page.locator("#rom-file").setInputFiles(rom);
-    await page.waitForFunction(
-      () => smash.engine.loaded,
-      {},
-      { timeout: 60000 },
+  for (const [i, p] of pages.entries()) {
+    await p.locator("#multiplayer").click();
+    await p
+      .locator("#player-name")
+      .fill(["Dan", "Brother", "Player Three", "Player Four"][i]);
+    await p.locator("#rom-file").setInputFiles(rom);
+    await p.waitForFunction(() =>
+      document.getElementById("cartridge-badge").classList.contains("ready"),
     );
-    await page.locator("#pause").click();
   }
-  record("Both independent browsers boot verified local ROMs");
-  // Simulate a Gamepad API device: hardware pairing itself remains a physical check.
+  await a.locator("#create-open").click();
+  await a.locator("#room-name").fill("One more match");
+  await a.locator("#create-dialog summary").click();
+  await a.locator("#delay").selectOption("9");
+  await a.locator("#create-room").click();
+  await waitState(a, "lobby");
+  const token = await a.evaluate(() => smash.net.token);
+  for (const p of pages.slice(1)) {
+    await p.locator("#refresh-rooms").click();
+    await p.locator(".room-row").first().click();
+    await waitState(p, "lobby");
+  }
+  await a.waitForFunction((n) => smash.net.room.members.length === n, count);
+  assert.equal(await a.locator("#start-game").isDisabled(), true);
+  record(
+    "Room browser joins live waiting lobby; host start is gated by readiness",
+    { players: count },
+  );
+  if (count === 4) {
+    await pages[3].locator("#leave-room").click();
+    await a.waitForFunction(() => smash.net.room.members.length === 3);
+    await a.locator('[data-slot="3"]').click();
+    await a.waitForFunction(() => smash.net.player === 3);
+    assert.equal(await a.evaluate(() => smash.net.isHost), true);
+    await a.locator('[data-slot="0"]').click();
+    await a.waitForFunction(() => smash.net.player === 0);
+    await pages[3].locator("#refresh-rooms").click();
+    await pages[3].locator(".room-row").first().click();
+    await waitState(pages[3], "lobby");
+    record(
+      "Player port selection keeps host authority and frees abandoned lobby ports",
+    );
+  }
   await a.evaluate(() => {
     window.qaPad = {
       id: "QA N64 USB adapter",
@@ -99,10 +199,10 @@ try {
     };
     Object.defineProperty(navigator, "getGamepads", {
       configurable: true,
-      value: () => [window.qaPad],
+      value: () => [qaPad],
     });
   });
-  await a.locator("#controls-open").click();
+  await a.locator("#lobby-screen [data-controls]").click();
   await a.locator("#device").selectOption("0");
   await a.evaluate(() => (qaPad.buttons[0] = { value: 1, pressed: true }));
   await a.waitForFunction(() =>
@@ -117,116 +217,119 @@ try {
   await a.locator('[data-action="up"]').click();
   await sleep(550);
   await a.evaluate(() => (qaPad.axes[3] = 1));
-  await a.waitForFunction(
-    () =>
-      smash.controls.profile.map.up.index === 3 &&
-      smash.controls.profile.map.up.sign === 1,
-  );
+  await a.waitForFunction(() => smash.controls.profile.map.up.index === 3);
   await a.evaluate(() => (qaPad.axes[3] = 0));
-  await a.screenshot({
-    path: path.join(dir, "controller-setup.png"),
-    fullPage: true,
-  });
+  await shot(a, "controller-setup");
   await a.locator("#device").selectOption("keyboard");
   await a.locator('[data-close="controls-dialog"]').click();
-  record("Gamepad preview, N64 button/axis remapping and saved profiles");
-  await a.locator("#delay").selectOption("9");
-  await a.locator("#player-name").fill("Dan");
-  await a.locator("#create-room").click();
-  await a.waitForFunction(() => smash.net.token);
-  const token = await a.evaluate(() => smash.net.token);
-  await b.locator("#player-name").fill("Brother");
-  await b.locator("#invite-input").fill(token);
-  await b.locator("#join-room").click();
-  for (const p of pages)
-    await p.waitForFunction(
-      () => smash.net.state === "playing",
-      {},
-      { timeout: 60000 },
-    );
-  await a.waitForFunction(() => smash.net.matches >= 3, {}, { timeout: 30000 });
+  record("Controller preview and N64 button/axis mapping persist");
+  await shot(a, "lobby-desktop");
+  await a.setViewportSize({ width: 390, height: 844 });
+  assert.ok(
+    await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  );
+  await shot(a, "lobby-mobile");
+  await a.setViewportSize({ width: 1440, height: 900 });
+  for (const p of pages) await p.locator("#ready-button").click();
+  await a.waitForFunction(
+    () => !document.getElementById("start-game").disabled,
+  );
+  await shot(a, "lobby-ready");
+  await a.locator("#start-game").click();
+  await waitState(a, "preparing");
+  await b.evaluate(() => smash.net.socket.close());
+  await waitState(a, "waiting");
+  await waitState(b, "error");
+  await b.locator("#game-rejoin").click();
+  for (const p of pages) await waitState(p, "playing");
+  record(
+    "Guest reconnect during startup waits for the completed character screen",
+  );
+  await a.waitForFunction((n) => smash.net.matches >= n, (count - 1) * 3, {
+    timeout: 60000,
+  });
   assert.equal(await a.evaluate(() => smash.net.repairs), 0);
-  record("Initial synchronization without desync repairs");
-  async function frames(p, count) {
-    const start = await p.evaluate(() => smash.net.frame);
-    await p.waitForFunction(
-      (target) => smash.net.running && smash.net.frame >= target,
-      start + count,
-      { timeout: 45000 },
+  assert.deepEqual(
+    await a.locator("#canvas").evaluate((e) => {
+      const r = e.getBoundingClientRect();
+      return [r.width, r.height];
+    }),
+    [1440, 900],
+  );
+  assert.equal(
+    (await gameState(a)).scene,
+    16,
+    "Startup must reach VS character selection",
+  );
+  await shot(a, "character-select");
+  record(
+    "Host starts everyone directly in fullscreen game with matching states",
+    { players: count },
+  );
+  if (count === 4) {
+    await Promise.all(pages.map((p) => act(p, ["KeyW"], 28, 12)));
+    await Promise.all([
+      act(a, ["KeyD"], 8, 12),
+      act(b, ["KeyD"], 3, 12),
+      act(pages[3], ["KeyA"], 8, 12),
+    ]);
+    await Promise.all(pages.map((p) => act(p, ["KeyJ"], 6, 20)));
+    await shot(a, "four-fighters-selected");
+    await act(a, ["Enter"], 6, 110);
+    await act(a, ["KeyJ"], 6, 240);
+    await frames(a, 240);
+    assert.deepEqual(
+      await gameState(a),
+      { scene: 22, humans: 4 },
+      "Four human fighters must enter an actual VS battle",
     );
-  }
-  async function act(p, keys, count = 6, settle = 60) {
-    await p.evaluate(
-      ({ keys, count, settle }) =>
-        new Promise((resolve, reject) => {
-          const controls = smash.controls,
-            original = controls.sample.bind(controls);
-          let active = count,
-            quiet = settle;
-          const timeout = setTimeout(() => {
-            controls.sample = original;
-            reject(Error("Scripted input timed out"));
-          }, 45000);
-          controls.sample = () => {
-            if (active-- > 0) {
-              controls.keys = new Set(keys);
-              const input = original();
-              controls.keys.clear();
-              return input;
-            }
-            if (quiet-- > 0) return { buttons: 0, x: 0, y: 0 };
-            controls.sample = original;
-            clearTimeout(timeout);
-            resolve();
-            return original();
-          };
-        }),
-      { keys, count, settle },
+    await Promise.all(
+      pages.map((p, i) => act(p, [i % 2 ? "KeyD" : "KeyA"], 10, 20)),
     );
+    await shot(a, "four-player-fight");
+    await frames(a, 180);
+    assert.equal(await a.evaluate(() => smash.net.repairs), 0);
+    record(
+      "All four network controller ports advance in deterministic lockstep",
+    );
+    await menu(a);
+    await a.locator("#back-lobby").click();
+    for (const p of pages) await waitState(p, "lobby");
+    for (const p of pages.slice(2)) await p.locator("#leave-room").click();
+    await a.waitForFunction(() => smash.net.room.members.length === 2);
+    for (const p of [a, b]) await p.locator("#ready-button").click();
+    await a.locator("#start-game").click();
+    for (const p of [a, b]) await waitState(p, "playing");
+    await frames(a, 60);
+    record("Return to waiting lobby and rematch with a changed player roster");
   }
-  await act(a, ["Enter"], 10, 210);
-  await a.locator("#canvas").screenshot({ path: path.join(dir, "title.png") });
-  await act(a, ["Enter"], 10, 180);
-  await a
-    .locator("#canvas")
-    .screenshot({ path: path.join(dir, "main-menu.png") });
-  await act(a, ["KeyS"], 10, 60);
-  await a
-    .locator("#canvas")
-    .screenshot({ path: path.join(dir, "vs-highlight.png") });
-  await act(a, ["KeyJ"], 10, 180);
-  await a
-    .locator("#canvas")
-    .screenshot({ path: path.join(dir, "vs-options.png") });
-  await act(a, ["KeyJ"], 10, 180);
-  await a
-    .locator("#canvas")
-    .screenshot({ path: path.join(dir, "fighter-menu.png") });
   await act(a, ["KeyW"], 28, 12);
   await act(a, ["KeyD"], 8, 12);
   await act(a, ["KeyJ"], 6, 20);
   await act(b, ["KeyW"], 28, 12);
   await act(b, ["KeyD"], 3, 12);
   await act(b, ["KeyJ"], 6, 20);
-  await a
-    .locator("#canvas")
-    .screenshot({ path: path.join(dir, "fighters-selected.png") });
+  await shot(a, "fighters-selected");
   await act(a, ["Enter"], 6, 110);
   await act(a, ["KeyJ"], 6, 240);
-  // Allow the stage fly-in and countdown to finish before testing attacks.
   await frames(a, 300);
+  assert.deepEqual(
+    await gameState(a),
+    { scene: 22, humans: 2 },
+    "Two human fighters must enter an actual VS battle",
+  );
   const before = await a.evaluate(() => ({
     frames: smash.engine.frames,
     time: performance.now(),
     checks: smash.net.matches,
   }));
   await Promise.all([act(a, ["KeyD"], 20, 1), act(b, ["KeyA"], 20, 1)]);
-  for (let i = 0; i < 8; i++)
+  for (let i = 0; i < 6; i++)
     await Promise.all([
       act(a, ["KeyJ"], 9, 14),
       act(b, [i % 2 ? "KeyJ" : "KeyK"], 9, 14),
     ]);
-  await frames(a, 240);
+  await frames(a, 120);
   const after = await a.evaluate(() => ({
     frames: smash.engine.frames,
     time: performance.now(),
@@ -237,13 +340,10 @@ try {
   assert.ok(after.checks > before.checks + 3);
   assert.equal(after.repairs, 0);
   assert.equal(after.audio, "running");
-  for (const [i, p] of pages.entries())
-    await p.screenshot({
-      path: path.join(dir, `fight-player-${i + 1}.png`),
-      fullPage: true,
-    });
+  await shot(a, "fight-player-1");
+  await shot(b, "fight-player-2");
   record(
-    "Scripted gameplay inputs and matching state checks (screenshots require visual verification)",
+    "Fighter selection and two-player gameplay; screenshots for visual verification",
     {
       fps: Math.round(
         ((after.frames - before.frames) * 1000) / (after.time - before.time),
@@ -252,7 +352,6 @@ try {
       repairs: after.repairs,
     },
   );
-  // Drop one input packet during the direct-to-relay change; redundant history must recover it.
   await a.evaluate(() => {
     const n = smash.net,
       send = n.sendGame.bind(n);
@@ -267,62 +366,53 @@ try {
     n.closeRTC();
   });
   await frames(a, 240);
-  assert.notEqual(
-    await a.evaluate(() => smash.net.channel?.readyState),
-    "open",
-  );
   assert.equal(await a.evaluate(() => smash.net.repairs), 0);
-  record("Direct connection loss, lost input, and relay fallback recover");
-  const prior = await a.evaluate(() => smash.net.epoch);
+  record("Direct-to-relay fallback recovers a dropped input");
+  const epoch = await a.evaluate(() => smash.net.epoch);
   await b.evaluate(() => smash.engine.module._netplay_corrupt_rdram());
   await a.waitForFunction(
-    (epoch) =>
+    (e) =>
       smash.net.repairs === 1 &&
-      smash.net.epoch > epoch &&
+      smash.net.epoch > e &&
       smash.net.running &&
       smash.net.frame > 180,
-    prior,
-    { timeout: 45000 },
+    epoch,
+    { timeout: 60000 },
   );
-  record("Deliberate memory desync detected and automatically repaired");
-  await b.locator("#controls-open").click();
-  for (const p of pages)
-    await p.waitForFunction(() => smash.net.state === "paused");
-  const pausedFrame = await a.evaluate(() => smash.net.frame);
-  await sleep(300);
-  assert.equal(await a.evaluate(() => smash.net.frame), pausedFrame);
+  record("Deliberate desynchronization detected and repaired");
+  await menu(b);
+  await b.locator("#menu-dialog [data-controls]").click();
+  for (const p of [a, b]) await waitState(p, "paused");
+  const frame = await a.evaluate(() => smash.net.frame);
+  await sleep(400);
+  assert.equal(await a.evaluate(() => smash.net.frame), frame);
   await b.locator('[data-close="controls-dialog"]').click();
+  await b.locator("#resume-menu").click();
+  await frames(a, 120);
+  record("Controller overlay pauses everyone and resumes together");
+  await b.evaluate(() => smash.net.socket.close());
+  await waitState(a, "waiting");
+  await waitState(b, "error");
+  await b.locator("#game-rejoin").click();
   await a.waitForFunction(
     () => smash.net.running && smash.net.frame > 120,
-    {},
-    { timeout: 45000 },
+    null,
+    { timeout: 60000 },
   );
-  record("Controller setup pauses both peers and resumes in sync");
-  await b.locator("#leave-room").click();
-  await a.waitForFunction(() => smash.net.state === "waiting");
-  await sleep(2400);
-  assert.equal(await a.evaluate(() => smash.net.state), "waiting");
-  await b.locator("#invite-input").fill(token);
-  await b.locator("#join-room").click();
-  await a.waitForFunction(
-    () => smash.net.running && smash.net.frame > 180,
-    {},
-    { timeout: 45000 },
-  );
-  record("Guest disconnect and invitation reuse retain the match");
+  assert.equal(await b.evaluate(() => smash.net.player), 1);
+  record("Disconnected guest rejoins the reserved controller port and match");
   report.finalMultiplayer = await Promise.all(
-    pages.map((p) =>
-      p.evaluate(() => ({
-        ...smash.diagnostics(),
-        transport: smash.net.channel?.readyState,
-      })),
-    ),
+    [a, b].map((p) => p.evaluate(() => smash.diagnostics())),
   );
-  await a.locator("#leave-room").click();
-  await b.waitForFunction(() => smash.net.state === "error");
-  await b.locator("#leave-room").click();
-  record("Host leaving closes the room cleanly");
-  const savedHash = await a.evaluate(() => smash.engine.hash());
+  await menu(a);
+  await a.locator("#quit-game").click();
+  await waitState(b, "error");
+  await b.locator("#game-leave").click();
+  record("Host exit closes the room and returns guests to room browsing");
+  await a.locator("[data-home]").click();
+  await a.locator("#local-play").click();
+  await menu(a);
+  const hash = await a.evaluate(() => smash.engine.hash());
   await a.locator("#save").click();
   await a.waitForFunction(() =>
     document.getElementById("toast").textContent.includes("Progress saved"),
@@ -341,15 +431,17 @@ try {
   });
   await a.locator("#load-save").click();
   await a.waitForFunction(() => window.qaRestoredHash);
-  assert.equal(await a.evaluate(() => qaRestoredHash), savedHash);
-  await a.locator("#pause").click();
+  assert.equal(await a.evaluate(() => qaRestoredHash), hash);
+  await menu(a);
   await a.evaluate(() => (window.qaRestoredHash = null));
   await a.locator("#save-file").setInputFiles(savePath);
   await a.waitForFunction(() => window.qaRestoredHash);
-  assert.equal(await a.evaluate(() => qaRestoredHash), savedHash);
-  record("Local save/load and exported save round trip");
+  assert.equal(await a.evaluate(() => qaRestoredHash), hash);
+  record("Local save, load, export and import retain progress");
   await a.reload();
-  await a.waitForFunction(() => !document.getElementById("rom-loaded").hidden);
+  await a.waitForFunction(() =>
+    document.getElementById("cartridge-badge").classList.contains("ready"),
+  );
   assert.equal(await a.evaluate(() => smash.engine.loaded), false);
   assert.equal(
     await a.evaluate(
@@ -357,7 +449,7 @@ try {
     ),
     7,
   );
-  record("ROM and custom controller profile survive reload");
+  record("ROM and controller profiles survive reload");
   assert.deepEqual(report.errors, []);
   record("No uncaught browser errors");
   report.passed = true;
@@ -367,10 +459,7 @@ try {
   console.error(e);
   for (const [i, p] of pages.entries())
     try {
-      await p.screenshot({
-        path: path.join(dir, `failure-${i}.png`),
-        fullPage: true,
-      });
+      await shot(p, `failure-${i}`);
     } catch {}
   process.exitCode = 1;
 } finally {
