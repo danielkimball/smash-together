@@ -3,8 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="theme-color" content="#101319" />
-    <title>Smash Together</title>
+    <meta name="theme-color" content="#000000" />
+    <title>Smash Portal</title>
+    <style>
+      @font-face {
+        font-family: "Josefin Sans";
+        src: url("./josefinsans.ttf") format("truetype");
+        font-weight: 100 700;
+        font-display: swap;
+      }
+    </style>
     <style>
       * {
         box-sizing: border-box;
@@ -14,9 +22,10 @@
         margin: 0;
         width: 100%;
         height: 100%;
-        background: #0b101b;
-        color: #eee;
-        font-family: system-ui, sans-serif;
+        background: #000000;
+        color: #fafafa;
+        font-family: "Josefin Sans", sans-serif;
+        text-transform: uppercase;
       }
       #connection {
         position: fixed;
@@ -25,7 +34,7 @@
         place-content: center;
         text-align: center;
         padding: 24px;
-        background: #101725;
+        background: #000000;
         z-index: 2;
       }
       #connection[hidden] {
@@ -33,19 +42,19 @@
       }
       h1 {
         font-size: clamp(30px, 7vw, 58px);
-        font-style: italic;
-        color: #ffda67;
+        font-style: normal;
+        color: #ff0028;
         margin: 0;
       }
       p {
         max-width: 450px;
-        color: #c5cfe1;
+        color: #fafafa;
         line-height: 1.5;
       }
       button {
         border: 0;
-        border-radius: 4px;
-        background: #ffda67;
+        border-radius: 999px;
+        background: #ff0028;
         padding: 13px 24px;
         font-weight: 700;
         font-size: 16px;
@@ -55,7 +64,7 @@
   </head>
   <body>
     <div id="connection">
-      <h1>SMASH TOGETHER</h1>
+      <h1>SMASH PORTAL</h1>
       <p id="message">Connecting to the game…</p>
       <button id="retry" hidden>Try again</button>
     </div>
