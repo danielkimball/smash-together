@@ -131,6 +131,13 @@ async function update() {
   await gitRun(["fetch", "origin", "main"]);
   const current = await gitRun(["rev-parse", "HEAD"]);
   const target = await gitRun(["rev-parse", "origin/main"]);
+  let running;
+  try {
+    running = JSON.parse(
+      await readFile(path.join(local, "runtime.json"), "utf8"),
+    ).commit;
+    if (!/^[a-f0-9]{40}$/.test(running)) running = undefined;
+  } catch {}
   if (current === target) {
     let deployed;
     try {
@@ -138,14 +145,17 @@ async function update() {
         await readFile(path.join(local, "deployment.json"), "utf8"),
       ).commit;
     } catch {}
-    if (deployed !== current) {
+    if (deployed === current) return;
+    // A commit pushed from this checkout still needs a tested backend restart.
+    // A completed restart with a delayed Pages build only needs publication.
+    if (running === current) {
       await publishPages({ commit: current });
       await writeFile(
         path.join(local, "deployment.json"),
         JSON.stringify({ commit: current, at: new Date().toISOString() }),
       );
+      return;
     }
-    return;
   }
   await gitRun(["merge-base", "--is-ancestor", current, target]);
   await assertClean();
@@ -222,13 +232,23 @@ async function update() {
         await copyFile(path.join(candidate, file), path.join(root, file));
       await service("start");
       await waitHealthy();
+      await writeFile(
+        path.join(local, "runtime.json"),
+        JSON.stringify({ commit: target }),
+      );
     } catch (error) {
       console.error("Update failed; restoring the previous tested version.");
       await service("stop");
       // Source was clean before switching; generated outputs are disposable.
-      await gitRun(["reset", "--hard", current]);
+      const previous = current === target && running ? running : current;
+      await gitRun(["reset", "--hard", previous]);
       await execute(node, [npm, "ci"]);
       await service("start");
+      await waitHealthy();
+      await writeFile(
+        path.join(local, "runtime.json"),
+        JSON.stringify({ commit: previous }),
+      );
       throw error;
     }
     await publishPages({ commit: target });

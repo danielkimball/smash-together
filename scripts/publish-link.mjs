@@ -9,7 +9,11 @@ export async function ensurePagesBuild(config) {
   const gh = config.ghPath || "gh";
   const base = `repos/${config.pagesRepo}`;
   const latest = await ghJSON(gh, ["api", base + "/pages/builds/latest"]);
-  if (["queued", "building"].includes(latest.status)) return;
+  if (
+    ["queued", "building"].includes(latest.status) &&
+    Date.now() - Date.parse(latest.created_at) < 300000
+  )
+    return;
   const head = await ghJSON(gh, ["api", base + "/git/ref/heads/gh-pages"]);
   if (latest.status === "built" && latest.commit === head.object.sha) return;
   await ghJSON(gh, ["api", "--method", "POST", base + "/pages/builds"]);
