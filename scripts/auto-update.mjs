@@ -176,7 +176,19 @@ async function update() {
     await execute(node, [npm, "ci"], candidate);
     await execute(node, [npm, "test"], candidate);
     await execute(node, [npm, "run", "check"], candidate);
-    await gitRun(["submodule", "update", "--init"], candidate);
+    await gitRun(
+      ["-c", "core.autocrlf=false", "submodule", "update", "--init"],
+      candidate,
+    );
+    // Global Windows Git defaults must not transform pinned upstream bytes.
+    await gitRun(
+      ["-C", "upstream/m64wasm", "config", "core.autocrlf", "false"],
+      candidate,
+    );
+    await gitRun(
+      ["-C", "upstream/m64wasm", "checkout-index", "--all", "--force"],
+      candidate,
+    );
     if (!config.pythonPath)
       throw Error(
         "Configure pythonPath to package corresponding source before deployment.",
