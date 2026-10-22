@@ -67,7 +67,7 @@ try {
   await page.waitForFunction(
     () =>
       smash.engine.inspect().scene === 9 &&
-      !document.getElementById("busy").hidden === false,
+      document.getElementById("busy").hidden,
     null,
     { timeout: 90000 },
   );
