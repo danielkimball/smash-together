@@ -2051,3 +2051,124 @@ body:has(#character-room:not([hidden])) #game-view.idle .game-hud {
     transition: none !important;
   }
 }
+
+.room-name-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.room-name-line strong {
+  min-width: 0;
+}
+.room-ribbon .room-rename {
+  padding: 3px 7px;
+  font-size: 11px;
+  color: #d5def2;
+  background: transparent;
+  border-color: #8c9cbd55;
+}
+#rename-dialog {
+  max-width: 460px;
+}
+
+.room-setup {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.setup-heading {
+  position: absolute;
+  inset: 0 0 auto;
+  padding: 15px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(#141d32, transparent);
+}
+.setup-heading strong {
+  display: block;
+  color: #ffe390;
+  font-size: 22px;
+  font-style: italic;
+}
+.setup-heading .eyebrow {
+  font-size: 10px;
+}
+.room-setup button {
+  pointer-events: auto;
+}
+.setup-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  background: linear-gradient(transparent, #111a30 25%);
+  padding: 24px 15px 12px;
+}
+.setup-footer p {
+  margin: 0 auto 8px;
+  font-size: 13px;
+  max-width: 800px;
+}
+.setup-footer > span {
+  color: #b5c4dc;
+  font-size: 11px;
+}
+.setup-inputs {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+.setup-inputs button {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .setup-heading {
+    padding: 12px;
+  }
+  .setup-heading strong {
+    font-size: 16px;
+  }
+  .setup-footer p {
+    font-size: 11px;
+  }
+}
+
+.testing-corner {
+  position: fixed;
+  bottom: 6px;
+  right: 6px;
+  z-index: 5;
+  padding: 3px 7px;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0.3;
+  color: #c6d2e8;
+  font-size: 14px;
+}
+.testing-corner:hover,
+.testing-corner:focus-visible {
+  opacity: 1;
+}
+body[data-view="game"] .testing-corner,
+body[data-view="native"] .testing-corner {
+  display: none;
+}
+.testing-dot {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  opacity: 0.35;
+  background: transparent;
+  border: 0;
+  padding: 3px 6px;
+}
+#testing-dialog {
+  max-width: 420px;
+}

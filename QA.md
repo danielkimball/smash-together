@@ -1,4 +1,4 @@
-# Release verification · v3.0.0 · 2026-10-21
+# Release verification · v3.1.0 · 2026-10-21
 
 Checks use the user's locally supplied original US ROM. No ROM, save, screenshot or extracted game data is committed or served. Evidence stays in ignored `artifacts/`.
 
@@ -14,9 +14,21 @@ The focused selection check also passed: leaving recalls and parks only the depa
 
 Evidence: `artifacts/e2e-native-local-four.json`, `artifacts/selection-check.json`, native menu/character-selection/battle screenshots.
 
+## v3.1 additions
+
+- Host-only Rename updates every member and the room directory without changing fighter selections, the match, roster revision or synchronization epoch. Both the room header and pause menu expose it.
+- The core's redundant keyboard handlers are detached, restoring real text typing and Enter submission after loading a cartridge.
+- Creation walks through native VS rules/options/items before character selection. A joining player inherits all settings; rematches retain them. Focused checks cover Stock with four lives and no items, plus unlimited Time mode.
+- A password-gated testing endpoint loads the host cartridge in a fresh browser without file selection. Unit checks cover opt-in behavior, private config redaction, incorrect passwords, no-store responses and attempt limiting.
+- A stable GitHub Pages entry page loads the current host, and the host updates the public address record on tunnel rotation. Application restarts preserve the tunnel process.
+
+## Public route result
+
+The same **17 four-browser checks passed through the public Cloudflare route** on 2026-10-21, with zero browser errors, actual four-human and two-human battles, and zero unexpected repairs. The two-player segment averaged **48 FPS** while multiple emulators ran on this laptop; its deliberate corruption was repaired once. Evidence: `artifacts/e2e-native-public-four.json`.
+
 ## Covered behavior
 
-- Thirteen Node tests cover controllers and ROM byte order; HTTP confinement and no upload route; public/private listing, capacity, version/ROM agreement, host authority, reserved reconnect tickets, explicit departure, room isolation, and rejecting obsolete roster input/snapshots over both relay and direct connections.
+- Fifteen Node tests cover controllers and ROM byte order; HTTP confinement and no upload route; public/private listing, capacity, version/ROM agreement, host authority, reserved reconnect tickets, explicit departure, room isolation, and rejecting obsolete roster input/snapshots over both relay and direct connections.
 - Actual Smash Mode Select art/music with native controller/keyboard navigation. Selecting VS Mode opens the room browser. Accessible mouse targets also open native 1P/options/data or online play.
 - A solo host selects a native fighter while the room remains open. A fresh invited guest and two public-room guests receive distinct controller ports, the host's existing fighter choice and matching game states.
 - Guest reconnect preserves all selected fighters. Only the host starts, after connected members have chosen. Roster sealing precedes the native Start input. The room directory shows the battle as closed to new arrivals.
@@ -27,7 +39,7 @@ Evidence: `artifacts/e2e-native-local-four.json`, `artifacts/selection-check.jso
 
 ## Implementation safeguards
 
-The browser reads the verified US scene and selection state through the pinned core's official serializer. It never modifies ROM bytes or writes game memory. Menu preparation uses native controller inputs. Native graphics stay active underneath the loading overlay, preventing the hidden canvas from losing its WebGL context during preparation.
+The browser reads the verified US scene, selections and settings through the pinned core's official serializer. Room setup enables only the native Item Switch flag in a temporary snapshot (LBBackupData.unlock_mask at 0x800A4937, bit 6). It never modifies ROM bytes or stored single-player saves. All rules are changed through the original menus using native inputs. Native graphics stay active underneath the loading overlay, preventing the hidden canvas from losing its WebGL context during preparation.
 
 Roster revisions invalidate asynchronous snapshots and old inputs when people arrive or leave. Match generations cancel obsolete menu preparation. Every browser restores a host snapshot before resuming. A host can run alone; all connected members must acknowledge the snapshot when peers are present. A network loss reserves a port, whereas explicit departure during selection recalls its token using native input and parks its hand outside the portraits.
 

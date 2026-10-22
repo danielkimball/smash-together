@@ -58,7 +58,7 @@ if (command === "install") {
     );
   await writeFile(
     path.join(desktop, "READ ME.txt"),
-    `Smash Together\n\nDouble-click Play Smash.command to open your game.\nPair your Xbox or N64 controller, press a button, then choose Controller setup.\nPress Start to open the original Smash menu. Choose VS Mode / Multiplayer, then create a room.\nYour friends open the link in Chrome/Edge, load their own ROMs and join.\nChoose your fighter immediately, while your friends join. Invite friends copies your room link.\nEach friend joins the next controller port. When everyone has chosen, the host presses Start.\nUse Esc or L + R + Start for the overlay menu; Fullscreen hides browser chrome.\n\nKeep this laptop plugged in, its lid open, and both game tabs visible.\nThe service prevents idle sleep while running. Stop Sharing.command stops\nthe website, relay and sleep prevention. Start Sharing.command starts them.\nThe free sharing URL can change after a restart. Create/copy a fresh invite.\n\nFull instructions and Mac mini migration: ${path.join(root, "README.md")}\nSource code: ${root}\n`,
+    `Smash Together\n\nDouble-click Play Smash.command to open your game.\nPair your Xbox or N64 controller, press a button, then choose Controller setup.\nPress Start to open the original Smash menu. Choose VS Mode / Multiplayer, then create a room.\nYour friends open the link in Chrome/Edge, load their own ROMs and join.\nSet Time/Stock, lives or minutes, and VS Options / Item Switch first. Choose VS START.\nThen choose your fighter while friends join. Invite friends copies your stable room link.\nEach friend joins the next controller port. When everyone has chosen, the host presses Start.\nRename beside the room title changes its name for everyone.\nFriends bookmark https://danielkimball.github.io/smash-together/\nThe small diamond in the bottom-right corner opens password testing access.\nUse Esc or L + R + Start for the overlay menu; Fullscreen hides browser chrome.\n\nKeep this laptop plugged in, its lid open, and both game tabs visible.\nThe service prevents idle sleep while running. Stop Sharing.command stops\nthe website, relay and sleep prevention. Start Sharing.command starts them.\nThe free sharing URL can change after a restart. Create/copy a fresh invite.\n\nFull instructions and Mac mini migration: ${path.join(root, "README.md")}\nSource code: ${root}\n`,
   );
   console.log(
     "Installed. The game runs at login. Desktop shortcuts: " + desktop,
@@ -66,6 +66,11 @@ if (command === "install") {
 } else if (command === "start") {
   await start();
   console.log("Smash Together is running: http://localhost:8787");
+} else if (command === "restart") {
+  await run("/bin/launchctl", ["kill", "SIGUSR2", domain + "/" + label]);
+  console.log(
+    "Restarting the game server while retaining the sharing connection.",
+  );
 } else if (command === "stop") {
   await stop();
   console.log("Stopped Smash Together and internet sharing.");
@@ -80,4 +85,4 @@ if (command === "install") {
   } catch {
     console.log("Smash Together is stopped.");
   }
-} else throw Error("Use install, start, stop, status or uninstall.");
+} else throw Error("Use install, start, restart, stop, status or uninstall.");

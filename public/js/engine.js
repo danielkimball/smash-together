@@ -84,6 +84,12 @@ export class Engine {
     window.FS.writeFile("config.txt", config.join("\n") + "\n");
     window.FS.writeFile("cheat.txt", "");
     this.module.callMain(["custom.v64"]);
+    // Our Controls layer supplies every controller through frame(). The core's
+    // redundant DOM key handlers prevent normal typing and form submission
+    // even while its game is paused, so remove only those keyboard handlers.
+    for (const target of [window, document, this.canvas])
+      for (const type of ["keydown", "keyup", "keypress"])
+        window.JSEvents.removeAllHandlersOnTarget(target, type);
     this.module._netplay_set_enabled(1);
     this.module._toggleFPS(0);
     this.build = this.module.cwrap("netplay_get_build_id", "string", [])();
@@ -124,6 +130,15 @@ export class Engine {
       throw Error("Could not restore the game state.");
     this.flushAudio();
   }
+  enableRoomItems() {
+    // Enable only the native Item Switch menu for this room's session. This
+    // changes one backup-data flag in a browser-local snapshot, never the ROM
+    // or the player's stored single-player save. LBBackupData.unlock_mask:
+    // 12 * sizeof(LBBackupVSRecord=0x5c) + 7, ItemSwitch enum bit 6.
+    const state = this.snapshot();
+    state[448 + ((0xa44e0 + 0x457) ^ 3)] |= 1 << 6;
+    this.restore(state);
+  }
   inspect() {
     // Read-only introspection of the verified US cartridge. The pinned core's
     // official savestate stores word-swapped RDRAM at byte 448. No ROM patches
@@ -150,7 +165,36 @@ export class Engine {
             };
           })
         : [];
-    this.info = { scene, players, teams: scene === 16 && !!word(0x8013bda8) };
+    const rules = 0x800a4d08;
+    this.info = {
+      scene,
+      players,
+      teams: scene === 16 && !!word(0x8013bda8),
+      rules: {
+        mode: byte(rules + 3) & 2 ? "stock" : "time",
+        teams: !!byte(rules + 2),
+        time: byte(rules + 6),
+        lives: byte(rules + 7) + 1,
+        items: byte(rules + 28),
+        itemMask: word(rules + 12) >>> 0,
+        damage: byte(rules + 11),
+        teamAttack: !!byte(rules + 9),
+        stageSelect: !!byte(rules + 10),
+      },
+      menu:
+        scene === 9
+          ? {
+              row: word(0x80134948),
+              rule: word(0x8013494c),
+              time: word(0x80134950),
+              lives: word(0x80134954) + 1,
+            }
+          : scene === 10
+            ? { row: word(0x801348e0), hasItems: !!word(0x80134904) }
+            : scene === 11
+              ? { row: word(0x801333d8), items: word(0x80133420) }
+              : null,
+    };
     return this.info;
   }
   async audioStart() {

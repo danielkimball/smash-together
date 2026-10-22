@@ -60,6 +60,38 @@
         </p>
       </div>
       <section
+        id="room-setup"
+        class="room-setup"
+        hidden
+        aria-label="Multiplayer game settings"
+      >
+        <div class="setup-heading">
+          <div>
+            <span class="eyebrow"
+              >1 · GAME RULES　 →　 2 · FIGHTERS　 →　 3 · BATTLE</span
+            ><strong id="setup-title">Set up your match</strong>
+          </div>
+          <button id="setup-cancel">Cancel</button>
+        </div>
+        <div class="setup-footer">
+          <p id="setup-help">
+            Choose Time or Stock, set the limit, then open VS Options for items.
+            VS START continues.
+          </p>
+          <div class="setup-inputs" aria-label="Native menu controls">
+            <button data-native-input="up" aria-label="Menu up">↑</button
+            ><button data-native-input="down" aria-label="Menu down">↓</button
+            ><button data-native-input="left" aria-label="Decrease setting">
+              ←</button
+            ><button data-native-input="right" aria-label="Increase setting">
+              →</button
+            ><button data-native-input="a">A · Select</button
+            ><button data-native-input="b">B · Back</button>
+          </div>
+          <span>Stick / WASD: move & adjust · A / J: select · B / K: back</span>
+        </div>
+      </section>
+      <section
         id="character-room"
         class="character-room"
         hidden
@@ -67,8 +99,18 @@
       >
         <div class="room-ribbon">
           <div>
-            <strong id="room-title">VS ROOM</strong
-            ><span id="room-waiting"
+            <div class="room-name-line">
+              <strong id="room-title">VS ROOM</strong>
+              <button
+                id="rename-open"
+                class="room-rename"
+                aria-label="Rename room"
+                hidden
+              >
+                ✎ Rename
+              </button>
+            </div>
+            <span id="room-waiting"
               >Choose your fighter while friends join</span
             >
           </div>
@@ -201,6 +243,14 @@
     <input id="rom-file" type="file" accept=".z64,.v64,.n64" hidden />
     <input id="save-file" type="file" accept=".smash64" hidden />
     <dialog id="rom-dialog">
+      <button
+        class="testing-dot"
+        data-testing
+        aria-label="Testing access"
+        title="Testing access"
+      >
+        ◇
+      </button>
       <div class="dialog-heading">
         <div>
           <p class="eyebrow">ONE-TIME SETUP</p>
@@ -234,6 +284,41 @@
       <p class="subtext">
         No download, upload, account, or subscription required.
       </p>
+    </dialog>
+    <button
+      id="testing-access"
+      class="testing-corner"
+      data-testing
+      aria-label="Testing access"
+      title="Testing access"
+    >
+      ◇
+    </button>
+    <dialog id="testing-dialog">
+      <form id="testing-form">
+        <div class="dialog-heading">
+          <h2>Testing access</h2>
+          <button
+            type="button"
+            class="close"
+            data-close="testing-dialog"
+            aria-label="Close testing access"
+          >
+            ×
+          </button>
+        </div>
+        <label for="testing-password">PASSWORD</label
+        ><input
+          id="testing-password"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
+        <p id="testing-error" class="subtext" hidden></p>
+        <button id="testing-enter" class="primary wide" type="submit">
+          Enter game
+        </button>
+      </form>
     </dialog>
     <dialog id="create-dialog">
       <form id="create-form">
@@ -284,7 +369,28 @@
           </p>
         </details>
         <button id="create-room" class="primary wide" type="submit">
-          Create room →
+          Next: game rules →
+        </button>
+      </form>
+    </dialog>
+    <dialog id="rename-dialog">
+      <form id="rename-form">
+        <div class="dialog-heading">
+          <h2>Rename room</h2>
+          <button
+            type="button"
+            class="close"
+            data-close="rename-dialog"
+            aria-label="Cancel rename"
+          >
+            ×
+          </button>
+        </div>
+        <label for="rename-name">ROOM NAME</label>
+        <input id="rename-name" maxlength="40" required autocomplete="off" />
+        <p class="subtext">Everyone in the room will see the new name.</p>
+        <button id="rename-save" class="primary wide" type="submit">
+          Save name
         </button>
       </form>
     </dialog>
@@ -359,6 +465,7 @@
           ><button id="export-save">Export save</button
           ><button id="import-save">Import save</button>
         </div>
+        <button id="rename-menu" hidden>Rename room</button>
         <button id="back-lobby">Return to character selection</button
         ><button id="reset">Restart local game</button
         ><button id="quit-game" class="quiet">Leave game</button>

@@ -22,6 +22,7 @@ let rom = null,
   homeBooting = false,
   startRequest = null,
   startPulse = 0,
+  roomSetup = null,
   lastScene = -1,
   menuInput = [],
   view = "home",
@@ -43,6 +44,7 @@ let toastTimer,
   menuEdges = {},
   lastMenuMove = 0;
 let shareUrl = null,
+  publicUrl = null,
   polling = false;
 controls.blocked = true;
 window.smash = {
@@ -111,6 +113,7 @@ function setView(name) {
   $("native-menu").hidden = name !== "native";
   $("game-hud").hidden = name === "native";
   $("game-notice").hidden = name === "native";
+  $("room-setup").hidden = !roomSetup || name !== "game";
   document.body.dataset.view = name;
   blockInput();
   if (changed) {
@@ -127,10 +130,11 @@ function busy(title, detail) {
   $("busy-detail").textContent = detail;
   $("busy").hidden = false;
 }
-function dialog(id) {
+function dialog(id, { pauseGame = true } = {}) {
   const d = $(id);
   if (d.open) return;
   d.resumeOnClose =
+    pauseGame &&
     ["game", "native"].includes(view) &&
     (net.running || (net.state === "offline" && !paused));
   if (d.resumeOnClose) pause();
@@ -197,6 +201,45 @@ $("native-single").onclick = () => chooseNative(0);
 $("native-options").onclick = () => chooseNative(2);
 $("native-data").onclick = () => chooseNative(3);
 $("help-open").onclick = () => dialog("help-dialog");
+document.querySelectorAll("[data-testing]").forEach(
+  (button) =>
+    (button.onclick = () => {
+      if (rom || engine.loaded)
+        return attempt(() => withCartridge(showMainMenu))();
+      $("testing-error").hidden = true;
+      dialog("testing-dialog");
+      $("testing-password").focus();
+    }),
+);
+$("testing-form").onsubmit = async (event) => {
+  event.preventDefault();
+  $("testing-enter").disabled = true;
+  $("testing-enter").textContent = "Loading…";
+  $("testing-error").hidden = true;
+  try {
+    const response = await fetch("/api/testing/cartridge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: $("testing-password").value }),
+    });
+    if (!response.ok)
+      throw Error(
+        response.status === 404 || response.status === 405
+          ? "Testing access is not enabled on this host."
+          : await response.text(),
+      );
+    const bytes = await response.arrayBuffer();
+    $("testing-password").value = "";
+    $("testing-dialog").close();
+    await loadFile(new File([bytes], "Testing cartridge.z64"));
+  } catch (e) {
+    $("testing-error").textContent = e.message;
+    $("testing-error").hidden = false;
+  } finally {
+    $("testing-enter").disabled = false;
+    $("testing-enter").textContent = "Enter game";
+  }
+};
 $("diagnostics-open").onclick = () => dialog("diagnostics-dialog");
 function romReady() {
   $("rom-status").textContent = "Original US release · Verified and ready";
@@ -293,6 +336,7 @@ async function prepareMain() {
   menuState = engine.snapshot();
 }
 async function showMainMenu() {
+  roomSetup = null;
   if (!rom && !engine.loaded) {
     setView("home");
     return;
@@ -341,6 +385,55 @@ function chooseNative(option) {
   paused = false;
   $("canvas").focus();
 }
+async function setupRoom(options) {
+  await powerOn();
+  roomSetup = options;
+  versusState = null;
+  preparing = true;
+  paused = true;
+  setView("game");
+  busy("Set the rules", "Opening Smash’s multiplayer settings…");
+  try {
+    await prepareMain();
+    engine.enableRoomItems();
+    await runSequence([
+      [10, { buttons: 0, x: 0, y: -85 }],
+      [60, neutral],
+      [10, { buttons: BITS.a, x: 0, y: 0 }],
+      [180, neutral],
+    ]);
+    if (engine.inspect().scene !== 9)
+      throw Error("Could not open VS settings.");
+    menuInput = [];
+    paused = false;
+    next = performance.now();
+    $("setup-title").textContent = options.roomName || "One more match";
+    $("canvas").focus();
+  } finally {
+    preparing = false;
+    $("busy").hidden = true;
+    renderGame();
+  }
+}
+$("setup-cancel").onclick = () => {
+  roomSetup = null;
+  paused = true;
+  menuInput = [];
+  setView("browse");
+};
+document.querySelectorAll("[data-native-input]").forEach((button) => {
+  button.onclick = () => {
+    const input = { ...neutral };
+    const action = button.dataset.nativeInput;
+    if (action === "up") input.y = 85;
+    if (action === "down") input.y = -85;
+    if (action === "left") input.x = -85;
+    if (action === "right") input.x = 85;
+    if (action === "a" || action === "b") input.buttons = BITS[action];
+    menuInput.push(...Array(3).fill(input), ...Array(12).fill(neutral));
+    $("canvas").focus();
+  };
+});
 async function prepareVersus() {
   preparing = true;
   const match = net.room?.match;
@@ -491,7 +584,7 @@ $("create-form").onsubmit = attempt((e) => {
     delay: Number($("delay").value),
   };
   $("create-dialog").close();
-  return withCartridge(() => joinRoom(options));
+  return withCartridge(() => setupRoom(options));
 });
 function openJoin() {
   $("join-name").value = playerName() === "Player" ? "" : playerName();
@@ -567,7 +660,9 @@ async function copyInvite() {
   let base = location.origin;
   if (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) {
     try {
-      shareUrl = (await (await fetch("/api/status")).json()).shareUrl;
+      const status = await (await fetch("/api/status")).json();
+      shareUrl = status.shareUrl;
+      publicUrl = status.publicUrl;
     } catch {}
     if (shareUrl) base = shareUrl;
     else
@@ -575,7 +670,7 @@ async function copyInvite() {
         "Internet sharing is not running. Open Start Sharing on the host computer, then copy a fresh invite.",
       );
   }
-  const link = `${base}/#room=${net.token}`;
+  const link = `${(publicUrl || base).replace(/\/$/, "")}/#room=${net.token}`;
   try {
     await navigator.clipboard.writeText(link);
     toast("Invite copied. Send it to your friends.");
@@ -601,6 +696,24 @@ function leaveRoom() {
   refreshRooms();
 }
 $("game-leave").onclick = leaveRoom;
+function renameRoom() {
+  if (!net.isHost) return;
+  $("rename-name").value = net.room.name;
+  dialog("rename-dialog", { pauseGame: false });
+  $("rename-name").select();
+}
+$("rename-open").onclick = renameRoom;
+$("rename-menu").onclick = renameRoom;
+$("rename-form").onsubmit = (event) => {
+  event.preventDefault();
+  const name = $("rename-name").value.trim();
+  if (!name) {
+    $("rename-name").focus();
+    return;
+  }
+  net.send({ type: "rename", name });
+  $("rename-dialog").close();
+};
 function returnLobby() {
   startRequest = null;
   startPulse = 0;
@@ -616,6 +729,7 @@ function renderCharacterRoom() {
   $("character-room").hidden = !showing;
   if (!showing) return;
   $("room-title").textContent = r.name;
+  $("rename-open").hidden = !net.isHost;
   const info = engine.info || { players: [] };
   $("room-waiting").textContent =
     r.members.length < 2
@@ -666,7 +780,10 @@ function renderGame() {
   const online = net.state !== "offline",
     state = online ? net.state : paused ? "paused" : "playing";
   const notice = view !== "native" && state !== "playing";
-  $("game-notice").hidden = !notice || !!document.querySelector("dialog[open]");
+  $("game-notice").hidden =
+    !!roomSetup || !notice || !!document.querySelector("dialog[open]");
+  $("room-setup").hidden = !roomSetup || view !== "game";
+  $("game-hud").hidden = !!roomSetup || view === "native";
   $("game-notice-label").textContent =
     state === "error"
       ? "CONNECTION NEEDS ATTENTION"
@@ -693,6 +810,7 @@ function renderGame() {
   $("game-rejoin").hidden = state !== "error" || net.isHost || !net.token;
   $("game-back-lobby").hidden = !online || !net.isHost;
   $("back-lobby").hidden = !online || !net.isHost;
+  $("rename-menu").hidden = !online || !net.isHost;
   $("reset").hidden = online;
   $("local-save-actions").hidden = online;
   $("game-players").replaceChildren(
@@ -710,6 +828,11 @@ function renderGame() {
   blockInput();
 }
 net.addEventListener("change", () => {
+  if (window.parent !== window && publicUrl)
+    window.parent.postMessage(
+      { type: "smash-room", token: net.token || "" },
+      new URL(publicUrl).origin,
+    );
   $("busy").hidden = net.state !== "connecting";
   if (net.state === "connecting")
     busy("Joining the lobby…", "Connecting your controller port.");
@@ -1015,7 +1138,7 @@ $("reset").onclick = () => {
 };
 function diagnostics() {
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nRelay: available for every player\nLatency: ${net.rtt || "—"} ms\nInput buffer: ${net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.0.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nRelay: available for every player\nLatency: ${net.rtt || "—"} ms\nInput buffer: ${net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.1.0`;
 }
 function menuController(time) {
   const pad = controls.pad();
@@ -1127,6 +1250,34 @@ function tick(time) {
       engine.lastInspect = time;
       if (["native", "game"].includes(view)) {
         const info = engine.inspect();
+        if (roomSetup) {
+          $("setup-help").textContent =
+            info.scene === 11
+              ? "Set item frequency and turn individual items on or off. B returns to VS Options."
+              : info.scene === 10
+                ? "Set handicap, team attack, stage select and damage. Open ITEM SWITCH for item settings. B goes back."
+                : "Choose Time or Stock, then set minutes or lives. Time supports ∞. VS OPTIONS includes items. Choose VS START when ready.";
+          if (info.scene === 16) {
+            const options = roomSetup;
+            roomSetup = null;
+            paused = true;
+            // Finish the native scene transition before preserving the chosen rules.
+            preparing = true;
+            attempt(async () => {
+              try {
+                await runSequence([[90, neutral]]);
+                versusState = engine.snapshot();
+              } finally {
+                preparing = false;
+              }
+              await joinRoom(options);
+            })();
+          } else if ([7, 1].includes(info.scene)) {
+            roomSetup = null;
+            paused = true;
+            setView("browse");
+          }
+        }
         if (net.state === "offline" && view === "native" && info.scene !== 7) {
           if (info.scene === 9) {
             paused = true;
@@ -1220,6 +1371,12 @@ fetch("/api/status")
   .then((r) => r.json())
   .then((s) => {
     shareUrl = s.shareUrl;
+    publicUrl = s.publicUrl;
+    if (window.parent !== window && publicUrl)
+      window.parent.postMessage(
+        { type: "smash-ready" },
+        new URL(publicUrl).origin,
+      );
   })
   .catch(() => {});
 function followInvitation() {

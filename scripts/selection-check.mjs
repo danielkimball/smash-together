@@ -1,4 +1,4 @@
-// Focused live-room behavior: explicit departure, replacement and menu routing.
+// Focused live-room behavior: renaming, departure, replacement and menu routing.
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -54,8 +54,14 @@ try {
     const c = await browser.newContext({
       viewport: { width: 1440, height: 900 },
     });
-    await c.addInitScript(() =>
-      Object.defineProperty(document, "hidden", { get: () => false }),
+    await c.addInitScript(
+      () => (
+        Object.defineProperty(document, "hidden", { get: () => false }),
+        Object.defineProperty(navigator, "getGamepads", {
+          configurable: true,
+          value: () => [],
+        })
+      ),
     );
     const p = await c.newPage();
     p.on("pageerror", (e) => errors.push(e.message));
@@ -70,6 +76,15 @@ try {
   await a.locator("#create-open").click();
   await a.locator("#room-name").fill("Selection continuity");
   await a.locator("#create-room").click();
+  await a.waitForFunction(
+    () =>
+      !document.getElementById("room-setup").hidden &&
+      document.getElementById("busy").hidden &&
+      smash.engine.inspect().scene === 9,
+    null,
+    { timeout: 90000 },
+  );
+  await a.locator('[data-native-input="a"]').click();
   await play(a);
   await b.locator("#refresh-rooms").click();
   await b
@@ -92,6 +107,56 @@ try {
         .every((p) => p.selected),
     ),
   );
+  const beforeRename = await a.evaluate(() => ({
+    match: smash.net.room.match,
+    revision: smash.net.room.revision,
+    epoch: smash.net.epoch,
+    frame: smash.net.frame,
+  }));
+  assert.equal(await b.locator("#rename-open").isVisible(), false);
+  await a.locator("#rename-open").click();
+  assert.equal(
+    await a.locator("#rename-name").inputValue(),
+    "Selection continuity",
+  );
+  await a.locator("#rename-name").fill("Brothers Arena");
+  await a.locator("#rename-name").press("Enter");
+  for (const p of pages)
+    await p.waitForFunction(
+      () =>
+        document.getElementById("room-title").textContent === "Brothers Arena",
+    );
+  const afterRename = await a.evaluate(() => ({
+    match: smash.net.room.match,
+    revision: smash.net.room.revision,
+    epoch: smash.net.epoch,
+    frame: smash.net.frame,
+    selected: smash.engine
+      .inspect()
+      .players.slice(0, 2)
+      .every((p) => p.selected),
+    running: smash.net.running,
+  }));
+  assert.equal(afterRename.match, beforeRename.match);
+  assert.equal(afterRename.revision, beforeRename.revision);
+  assert.equal(afterRename.epoch, beforeRename.epoch);
+  assert.ok(afterRename.frame >= beforeRename.frame);
+  assert.equal(afterRename.selected, true);
+  assert.equal(afterRename.running, true);
+  assert.ok(
+    (await (await fetch(url + "/api/rooms")).json()).rooms.some(
+      (r) => r.name === "Brothers Arena",
+    ),
+  );
+  await mkdir("artifacts", { recursive: true });
+  await a.screenshot({ path: "artifacts/rename-room-desktop.png" });
+  await a.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await a.locator("#rename-open").isVisible(), true);
+  await a.screenshot({ path: "artifacts/rename-room-mobile.png" });
+  await a.setViewportSize({ width: 1440, height: 900 });
+  record(
+    "Host renames the room for everyone and the directory without resetting fighters or synchronization; guests have no rename button",
+  );
   await b.evaluate(() => document.getElementById("game-menu").click());
   await b.locator("#quit-game").click();
   await a.waitForFunction(
@@ -107,10 +172,7 @@ try {
     "Explicit leave recalls and parks only the departed token; host fighter stays selected",
   );
   await b.locator("#refresh-rooms").click();
-  await b
-    .locator(".room-row")
-    .filter({ hasText: "Selection continuity" })
-    .click();
+  await b.locator(".room-row").filter({ hasText: "Brothers Arena" }).click();
   await play(b);
   await play(a);
   assert.equal(await b.evaluate(() => smash.net.player), 1);
@@ -125,6 +187,12 @@ try {
     "A replacement receives the freed controller port and can choose a fighter",
   );
   await a.evaluate(() => document.getElementById("game-menu").click());
+  await a.locator("#rename-menu").click();
+  await a.locator("#rename-name").fill("One more match");
+  await a.locator("#rename-save").click();
+  await b.waitForFunction(() => smash.net.room.name === "One more match");
+  assert.equal(await a.locator("#menu-dialog").isVisible(), true);
+  record("Pause-menu Rename updates the room and returns to the existing menu");
   await a.locator("#quit-game").click();
   await a.locator("[data-home]").click();
   await a.waitForFunction(

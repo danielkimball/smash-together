@@ -4,7 +4,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 const url = process.env.SMASH_URL || "http://127.0.0.1:8787";
 const rom = process.env.SMASH_ROM;
 if (!rom) throw Error("Set SMASH_ROM to your own original US ROM.");
-const { shareUrl } = await (await fetch(url + "/api/status")).json();
+const { shareUrl, publicUrl } = await (await fetch(url + "/api/status")).json();
 if (!shareUrl)
   throw Error("Internet sharing is required for this invite-flow check.");
 const browser = await chromium.launch({
@@ -35,10 +35,17 @@ try {
     browser.newContext(),
   ]);
   for (const c of contexts)
-    await c.addInitScript(() =>
-      Object.defineProperty(document, "hidden", { get: () => false }),
+    await c.addInitScript(
+      () => (
+        Object.defineProperty(document, "hidden", { get: () => false }),
+        Object.defineProperty(navigator, "getGamepads", {
+          configurable: true,
+          value: () => [],
+        })
+      ),
     );
-  const [a, b] = await Promise.all(contexts.map((c) => c.newPage()));
+  const [a, bPage] = await Promise.all(contexts.map((c) => c.newPage()));
+  let b = bPage;
   for (const p of [a, b]) p.on("pageerror", (e) => errors.push(e.message));
   await a.goto(url);
   await a.locator("#multiplayer").click();
@@ -49,6 +56,15 @@ try {
   await a.locator("#room-name").fill("Invite flow check");
   await a.locator("#visibility").selectOption("private");
   await a.locator("#create-room").click();
+  await a.waitForFunction(
+    () =>
+      !document.getElementById("room-setup").hidden &&
+      document.getElementById("busy").hidden &&
+      smash.engine.inspect().scene === 9,
+    null,
+    { timeout: 90000 },
+  );
+  await a.locator('[data-native-input="a"]').click();
   await wait(a, "playing");
   const token = await a.evaluate(() => smash.net.token);
   assert.ok(
@@ -69,7 +85,10 @@ try {
   await a.locator("#copy-invite").click();
   await a.waitForFunction(() => window.qaInvite);
   const link = await a.evaluate(() => qaInvite);
-  assert.equal(link, `${shareUrl}/#room=${token}`);
+  assert.equal(
+    link,
+    `${(publicUrl || shareUrl).replace(/\/$/, "")}/#room=${token}`,
+  );
   record(
     "Multiplayer prompts for local ROM and copies the public invite from localhost",
   );
@@ -92,12 +111,19 @@ try {
   record(
     "Clipboard denial offers a selected read-only invite without leaving the room",
   );
-  await b.goto(link);
+  await bPage.goto(link);
+  if (new URL(link).origin !== new URL(shareUrl).origin) {
+    b = await (await bPage.waitForSelector("#game")).contentFrame();
+  }
   await b.locator("#join-dialog").waitFor({ state: "visible" });
   await b.locator("#join-name").fill("Brother");
   await b.locator("#join-room").click();
   await b.locator("#rom-dialog").waitFor({ state: "visible" });
-  await b.locator("#rom-file").setInputFiles(rom);
+  await b.locator("#rom-dialog [data-testing]").click();
+  await b
+    .locator("#testing-password")
+    .pressSequentially(process.env.SMASH_TEST_PASSWORD);
+  await b.locator("#testing-password").press("Enter");
   await wait(b, "playing");
   await a.waitForFunction(() => smash.net.room.members.length === 2);
   assert.equal(await b.evaluate(() => smash.net.token), token);
@@ -145,13 +171,19 @@ try {
   record("No uncaught browser errors");
 } catch (e) {
   process.exitCode = 1;
+  errors.push(e.message);
   console.error(e);
 } finally {
   await mkdir("artifacts", { recursive: true });
   await writeFile(
     "artifacts/invite-check.json",
     JSON.stringify(
-      { finished: new Date().toISOString(), checks, errors },
+      {
+        finished: new Date().toISOString(),
+        checks,
+        errors,
+        passed: !errors.length,
+      },
       null,
       2,
     ) + "\n",

@@ -2,7 +2,7 @@ import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { WebSocketServer } from "ws";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -24,8 +24,17 @@ const send = (s, m) => {
   if (s?.readyState === 1) s.send(JSON.stringify(m));
 };
 
-export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
+export function createApp({
+  host = "127.0.0.1",
+  port = 8787,
+  config = {},
+} = {}) {
   const rooms = new Map();
+  const frameOrigin = config.publicUrl
+    ? new URL(config.publicUrl).origin
+    : null;
+  const attempts = new Map();
+  let testingBytes;
   const server = http.createServer(async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
@@ -35,9 +44,66 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
     );
     res.setHeader(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      `default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors ${frameOrigin || "'none'"}`,
     );
     try {
+      if (
+        req.url === "/api/testing/cartridge" &&
+        req.method === "POST" &&
+        config.testing?.romPath &&
+        config.testing?.passwordHash
+      ) {
+        res.setHeader("Cache-Control", "no-store");
+        const ip = req.headers["cf-connecting-ip"] || req.socket.remoteAddress;
+        const now = Date.now();
+        for (const [key, value] of attempts)
+          if (now - value.at > 60000) attempts.delete(key);
+        const attempt = attempts.get(ip) || { at: now, count: 0 };
+        if (attempt.count >= 8) {
+          res.writeHead(429);
+          return res.end("Wait a minute before trying again.");
+        }
+        let body = "";
+        for await (const chunk of req) {
+          body += chunk;
+          if (body.length > 512) {
+            res.writeHead(413);
+            return res.end("Request too large.");
+          }
+        }
+        let password;
+        try {
+          password = JSON.parse(body).password;
+        } catch {}
+        const actual = createHash("sha256")
+          .update(typeof password === "string" ? password : "")
+          .digest();
+        const expected = Buffer.from(config.testing.passwordHash, "hex");
+        if (
+          expected.length !== actual.length ||
+          !timingSafeEqual(actual, expected)
+        ) {
+          attempt.count++;
+          attempts.set(ip, attempt);
+          res.writeHead(403);
+          return res.end("That testing password is not correct.");
+        }
+        if (!testingBytes) {
+          const bytes = await readFile(config.testing.romPath);
+          if (
+            createHash("sha1").update(bytes).digest("hex") !==
+            "e2929e10fccc0aa84e5776227e798abc07cedabf"
+          ) {
+            res.writeHead(503);
+            return res.end("The host’s testing cartridge is unavailable.");
+          }
+          testingBytes = bytes;
+        }
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.setHeader("Content-Length", testingBytes.length);
+        res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+        return res.end(testingBytes);
+      }
       if (!["GET", "HEAD"].includes(req.method)) {
         res.writeHead(405);
         return res.end();
@@ -53,7 +119,13 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
         res.setHeader("Cache-Control", "no-store");
         res.setHeader("Content-Type", "application/json");
         return res.end(
-          JSON.stringify({ ok: true, version: "3.0.0", shareUrl }),
+          JSON.stringify({
+            ok: true,
+            version: "3.1.0",
+            shareUrl,
+            publicUrl: config.publicUrl || shareUrl,
+            testingAvailable: !!config.testing?.romPath,
+          }),
         );
       }
       if (url.pathname === "/api/rooms") {
@@ -291,6 +363,14 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
         socket.close(1000);
         return;
       }
+      if (m.type === "rename") {
+        if (!isHost) return fail("Only the host can rename this room.");
+        if (typeof m.name !== "string" || !m.name.trim())
+          return fail("Enter a room name.");
+        room.name = clean(m.name, room.name);
+        update(room);
+        return;
+      }
       if (m.type === "profile") {
         const controller = clean(m.controller, "Keyboard", 80);
         member.controller = controller;
@@ -435,9 +515,16 @@ if (
   process.argv[1] &&
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
+  let config = {};
+  try {
+    config = JSON.parse(
+      await readFile(path.join(ROOT, ".local/config.json"), "utf8"),
+    );
+  } catch {}
   const app = createApp({
     host: process.env.HOST || "127.0.0.1",
     port: Number(process.env.PORT || 8787),
+    config,
   });
   app.ready
     .then((a) =>

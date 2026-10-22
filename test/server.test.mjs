@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { WebSocket } from "ws";
+import { createHash } from "node:crypto";
 import { createApp } from "../server.mjs";
 const rom = "e2929e10fccc0aa84e5776227e798abc07cedabf",
   build = "test-v1";
@@ -33,8 +34,8 @@ async function client(url) {
           }),
   };
 }
-async function setup(t) {
-  const app = createApp({ port: 0 });
+async function setup(t, config = {}) {
+  const app = createApp({ port: 0, config });
   const { port } = await app.ready;
   t.after(() => app.close());
   return {
@@ -276,4 +277,78 @@ test("outdated browser pages get an explicit reload instruction", async (t) => {
   c.send({ type: "create", rom, build });
   assert.match((await until(c, "error")).message, /Reload/);
   assert.equal(a.rooms.size, 0);
+});
+
+test("host can rename a live room without changing its roster or match", async (t) => {
+  const a = await setup(t),
+    { h, token } = await create(a),
+    g = await join(a, token);
+  await until(g, "joined");
+  const before = (await until(g, "room")).room;
+  g.send({ type: "rename", name: "Guest change" });
+  assert.match((await until(g, "error")).message, /Only the host/);
+  h.send({ type: "rename", name: "  Brothers Arena  " });
+  const after = (
+    await until(g, "room", (m) => m.room.name === "Brothers Arena")
+  ).room;
+  assert.equal(after.match, before.match);
+  assert.equal(after.revision, before.revision);
+  assert.deepEqual(after.members, before.members);
+  assert.equal(
+    (await (await fetch(a.http + "/api/rooms")).json()).rooms[0].name,
+    "Brothers Arena",
+  );
+  h.send({ type: "rename", name: "   " });
+  assert.match((await until(h, "error")).message, /Enter a room name/);
+});
+
+test("testing cartridge is opt-in, password-gated, rate-limited and absent from public configuration", async (t) => {
+  const disabled = await setup(t);
+  assert.equal(
+    (
+      await fetch(disabled.http + "/api/testing/cartridge", {
+        method: "POST",
+        body: "{}",
+      })
+    ).status,
+    405,
+  );
+  const enabled = await setup(t, {
+    publicUrl: "https://example.github.io/smash/",
+    testing: {
+      romPath: "/unserved/private/game.z64",
+      passwordHash: createHash("sha256").update("unit-test-only").digest("hex"),
+    },
+  });
+  const status = await fetch(enabled.http + "/api/status");
+  const config = await status.json();
+  assert.equal(config.publicUrl, "https://example.github.io/smash/");
+  assert.equal(config.testingAvailable, true);
+  assert.ok(!JSON.stringify(config).includes("private"));
+  assert.ok(!JSON.stringify(config).includes("password"));
+  assert.match(
+    (await fetch(enabled.http)).headers.get("content-security-policy"),
+    /frame-ancestors https:\/\/example.github.io/,
+  );
+  assert.equal(
+    (await fetch(enabled.http + "/api/testing/cartridge")).status,
+    404,
+  );
+  for (let i = 0; i < 8; i++) {
+    const response = await fetch(enabled.http + "/api/testing/cartridge", {
+      method: "POST",
+      body: JSON.stringify({ password: "wrong" }),
+    });
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  }
+  assert.equal(
+    (
+      await fetch(enabled.http + "/api/testing/cartridge", {
+        method: "POST",
+        body: "{}",
+      })
+    ).status,
+    429,
+  );
 });

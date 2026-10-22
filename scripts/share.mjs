@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { publishLink } from "./publish-link.mjs";
 export const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const run = promisify(execFile);
 const version = "2026.10.3";
@@ -76,7 +77,15 @@ export async function share(port = 8787) {
           pid: process.pid,
           started: new Date().toISOString(),
         }) + "\n",
-      ).then(() => console.log(`SHARE_URL=${match[0]}`));
+      ).then(() => {
+        console.log(`SHARE_URL=${match[0]}`);
+        const publish = () =>
+          publishLink(match[0]).catch((error) => {
+            console.error("Stable link update:", error.message);
+            if (child.exitCode === null) setTimeout(publish, 30000).unref();
+          });
+        publish();
+      });
     }
   }
   child.stdout.on("data", output);

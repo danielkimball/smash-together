@@ -122,8 +122,14 @@ try {
       viewport: { width: 1440, height: 900 },
     });
     contexts.push(context);
-    await context.addInitScript(() =>
-      Object.defineProperty(document, "hidden", { get: () => false }),
+    await context.addInitScript(
+      () => (
+        Object.defineProperty(document, "hidden", { get: () => false }),
+        Object.defineProperty(navigator, "getGamepads", {
+          configurable: true,
+          value: () => [],
+        })
+      ),
     );
     const p = await context.newPage();
     pages.push(p);
@@ -175,6 +181,15 @@ try {
   await a.locator("#create-open").click();
   await a.locator("#room-name").fill("Brothers Smash");
   await a.locator("#create-room").click();
+  await a.waitForFunction(
+    () =>
+      !document.getElementById("room-setup").hidden &&
+      document.getElementById("busy").hidden &&
+      smash.engine.inspect().scene === 9,
+    null,
+    { timeout: 90000 },
+  );
+  await a.locator('[data-native-input="a"]').click();
   await waitState(a, "playing");
   assert.equal((await gameState(a)).scene, 16);
   assert.equal(await a.evaluate(() => smash.net.room.members.length), 1);
