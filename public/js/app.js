@@ -257,6 +257,8 @@ $("testing-form").onsubmit = async (event) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: $("testing-password").value }),
+      // This optional download is 16 MB; allow slower host upload links.
+      signal: AbortSignal.timeout(180000),
     });
     if (!response.ok)
       throw Error(

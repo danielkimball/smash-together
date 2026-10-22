@@ -22,7 +22,7 @@ const errors = [],
   checks = [];
 async function wait(p, state) {
   await p.waitForFunction((s) => smash.net.state === s, state, {
-    timeout: 60000,
+    timeout: 180000,
   });
 }
 const record = (name) => {
