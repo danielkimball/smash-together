@@ -20,11 +20,14 @@ Evidence: `artifacts/e2e-native-local-four.json`, `artifacts/selection-check.jso
 - The core's redundant keyboard handlers are detached, restoring real text typing and Enter submission after loading a cartridge.
 - Creation walks through native VS rules/options/items before character selection. A joining player inherits all settings; rematches retain them. Focused checks cover Stock with four lives and no items, plus unlimited Time mode.
 - A password-gated testing endpoint loads the host cartridge in a fresh browser without file selection. Unit checks cover opt-in behavior, private config redaction, incorrect passwords, no-store responses and attempt limiting.
-- A stable GitHub Pages entry page loads the current host, and the host updates the public address record on tunnel rotation. Application restarts preserve the tunnel process.
+- The stable GitHub Pages entry was checked in Chrome: its iframe fills 1440 × 900, fullscreen and Gamepad API permissions are delegated, and an incorrect testing password is rejected. `artifacts/stable-check.json`. A real service restart changed the server process while preserving the tunnel PID and both addresses: `artifacts/restart-check.json`.
+- **Six invitation checks passed** through the permanent Pages address: stable invite copying, clipboard fallback, a fresh guest entering the testing password without a file picker, shared rematch, and controller-chord pause/resume. `artifacts/invite-check.json`.
+- **Seven settings checks passed**, including an actual two-human battle using four lives and no items, inherited guest rules, rematch persistence, unlimited Time mode, text typing and password access. `artifacts/settings-check.json`.
+- Browser tests isolate the physical controllers paired to the laptop; test Gamepad API devices are supplied explicitly.
 
 ## Public route result
 
-The same **17 four-browser checks passed through the public Cloudflare route** on 2026-10-21, with zero browser errors, actual four-human and two-human battles, and zero unexpected repairs. The two-player segment averaged **48 FPS** while multiple emulators ran on this laptop; its deliberate corruption was repaired once. Evidence: `artifacts/e2e-native-public-four.json`.
+The same **17 four-browser checks passed for v3.1.0 through the public Cloudflare route** on 2026-10-21, with zero browser errors, actual four-human and two-human battles, and zero unexpected repairs. The two-player segment averaged **59 FPS** while multiple emulators ran on this laptop; its deliberate corruption was repaired once. Evidence: `artifacts/e2e-native-public-four.json`.
 
 ## Covered behavior
 
@@ -49,5 +52,5 @@ Roster revisions invalidate asynchronous snapshots and old inputs when people ar
 - The pinned core exposes all four native controllers; unused hands can appear before anyone joins. Room indicators show actual connected players. New arrivals take the next free port automatically.
 - Chrome tested. Physical Xbox/N64 devices, other browsers and mobile gameplay are not certified. There are no touch game controls.
 - The legacy renderer emits nonfatal WebGL uniform warnings. Visual checks require a live WebGL context; blank rendering is not accepted as a passing screenshot.
-- Browser storage is per origin. Keep the host on localhost and export local saves before changing origins. New tunnel addresses require each guest to load their ROM again.
-- The laptop must stay awake. Free Cloudflare Quick Tunnel addresses change on restart. Moving hosting to an awake Mac mini allows the laptop to be off.
+- Browser storage is per game-frame origin. Keep the host on localhost and export local saves before changing origins. A full tunnel rotation can require loading a cartridge again; configured password access bypasses manual file selection. Routine application restarts retain the tunnel.
+- The laptop must stay awake. The GitHub Pages bookmark stays fixed while the underlying Quick Tunnel address can change after a full host restart. Moving hosting to an awake Mac mini allows the laptop to be off.
