@@ -145,12 +145,12 @@ export class Netplay extends EventTarget {
       this.send({
         ...options,
         type: options.token || options.roomId ? "join" : "create",
-        protocol: 4,
+        protocol: 5,
         ticket: options.token
           ? sessionStorage.getItem("smash.ticket." + options.token)
           : undefined,
         rom: this.engine.romHash,
-        build: this.engine.build + "-smash-native-v4",
+        build: this.engine.build + "-smash-native-v5",
       });
     ws.onmessage = (e) => {
       if (ws !== this.socket) return;
@@ -170,6 +170,9 @@ export class Netplay extends EventTarget {
         sessionStorage.setItem("smash.ticket." + m.token, m.ticket);
         this.lastOptions = { ...options, token: m.token };
       } else if (m.type === "room") this.updateRoom(m.room);
+      else if (m.type === "frame") this.receiveFrame(m);
+      else if (m.type === "pong" && typeof m.id === "number")
+        this.relayRTT = Math.round(performance.now() - m.id);
       else if (m.type === "launch") {
         this.running = false;
         this.status("preparing");
@@ -248,7 +251,10 @@ export class Netplay extends EventTarget {
       this.state = "syncing";
       this.epoch++;
     }
-    if (!this.allConnected) {
+    if (
+      !this.allConnected &&
+      !(room.timing === "deadline" && !room.selecting && this.running)
+    ) {
       this.running = false;
       this.syncing = false;
       clearTimeout(this.syncTimeout);
@@ -478,15 +484,52 @@ export class Netplay extends EventTarget {
     this.hashes.clear();
     this.remoteHashes.clear();
     this.sentInputs.clear();
+    this.serverFrame = -1;
+    this.lastSample = this.delay - 1;
+    this.lateInputs = 0;
+    this.lastLate = [];
+    this.jitterLead = this.delay;
+    this.onTimeFrames = 0;
     this.lastRepeat = 0;
-    for (let f = 0; f < this.delay; f++)
-      this.inputs.set(f, Array.from({ length: 4 }, neutral));
     this.running = true;
     this.next = performance.now() + 200;
     this.syncing = false;
     this.message = "";
     this.engine.flushAudio();
     this.status("playing");
+    // Measure after native preparation, which can block the browser and would
+    // otherwise be mistaken for network latency.
+    this.send({ type: "ping", id: performance.now() });
+  }
+  receiveFrame(m) {
+    if (
+      !this.running ||
+      m.epoch !== this.epoch ||
+      m.match !== this.room?.match ||
+      m.revision !== this.room?.revision ||
+      !Number.isSafeInteger(m.frame) ||
+      m.frame < this.frame ||
+      !Array.isArray(m.inputs) ||
+      m.inputs.length !== 4
+    )
+      return;
+    if (m.frame > this.frame + 600) {
+      this.error("Your connection fell too far behind. Reconnect to catch up.");
+      return;
+    }
+    this.inputs.set(m.frame, m.inputs);
+    this.serverFrame = Math.max(this.serverFrame, m.frame);
+    this.lastLate = m.late || [];
+    this.lateInputs += this.lastLate.length;
+    // Adapt only the affected controller to jitter (including slow local
+    // rendering). Healthy players keep their own smaller input buffer.
+    if (this.lastLate.includes(this.player)) {
+      this.jitterLead = Math.min(45, (this.jitterLead || this.delay) + 1);
+      this.onTimeFrames = 0;
+    } else if (++this.onTimeFrames >= 120) {
+      this.jitterLead = Math.max(this.delay, this.jitterLead - 1);
+      this.onTimeFrames = 0;
+    }
   }
   receive(from, m) {
     const member = this.room?.members.find((p) => p.id === from && p.connected);
@@ -521,7 +564,7 @@ export class Netplay extends EventTarget {
         this.start();
       }
     } else if (m.type === "start" && host && !this.isHost) this.start();
-    else if (m.type === "input") {
+    else if (m.type === "input" && this.room.timing !== "deadline") {
       if (
         !Number.isSafeInteger(m.frame) ||
         m.frame < this.frame ||
@@ -595,34 +638,29 @@ export class Netplay extends EventTarget {
     if (this.running && time - this.lastEcho > 2000) {
       this.lastEcho = time;
       this.sendGame({ type: "echo", sent: time });
+      this.send({ type: "ping", id: time });
     }
-    if (!this.running || time + 1 < this.next) return false;
-    // Repeating recent inputs covers transport switches and start packets crossing transports.
-    if (time - this.lastRepeat > 250) {
-      this.lastRepeat = time;
-      for (const [frame, input] of this.sentInputs)
-        this.sendGame({ type: "input", frame, input });
-    }
-    const target = this.frame + this.delay,
-      inputs = this.inputs.get(target) || this.emptyInputs();
-    if (!inputs[this.player]) {
-      inputs[this.player] = this.filterInput
+    if (!this.running) return false;
+    // Sample against the server's clock, independently of local rendering.
+    // A slowed browser can catch up without moving everyone else's deadline.
+    this.personalDelay = Math.max(
+      this.delay,
+      this.jitterLead || 0,
+      Math.min(45, Math.ceil((this.relayRTT || 0) / (1000 / 60)) + 2),
+    );
+    const target = Math.max(0, this.serverFrame + 1) + this.personalDelay;
+    if (target > this.lastSample) {
+      const input = this.filterInput
         ? this.filterInput(this.controls.sample())
         : this.controls.sample();
-      this.inputs.set(target, inputs);
-      this.sentInputs.set(target, inputs[this.player]);
-      this.sendGame({
-        type: "input",
-        frame: target,
-        input: inputs[this.player],
-      });
-      for (const f of this.sentInputs.keys())
-        if (f < target - 2 * this.delay - 5) this.sentInputs.delete(f);
+      for (let f = Math.max(this.lastSample + 1, target - 5); f <= target; f++)
+        this.sendGame({ type: "input", frame: f, input }, false);
+      this.lastSample = target;
     }
+    if (time + 1 < this.next && this.serverFrame - this.frame < 3) return false;
     const current = this.inputs.get(this.frame);
     if (!current?.every(Boolean)) {
       this.stalls++;
-      this.next = time;
       return false;
     }
     // Fixed simulation-frame cadence on every peer, never a wall-clock UI

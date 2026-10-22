@@ -1,3 +1,12 @@
+# Windows testing update - v3.5.0 - 2026-10-22
+
+- 33 Node tests pass: authoritative frame deadlines, host-authorized Start pulses, late-input isolation, immutable agreed frames, peer-packet isolation, continued battle after guest disconnect, testing auto-load opt-in, existing ownership, room, controller and origin checks.
+- Full four-browser regression passes (17 checks), including a real four-human battle, two-player rematch, reserved-port reconnect, state checks, deliberate corruption repair, pause/resume, host exit, local saves and controller/ROM persistence. The measured two-player rematch ran at 60 FPS with 137 matching checks and zero unexpected repairs. Report: `artifacts/windows-v35-four-player.json`.
+- Six real-emulator flow checks pass: fresh open-testing entry, N64 B and both the original native Back hit target and room Back, controller Start, phone USB detection/touch toggles/fullscreen, and separate B presses to recall a token then leave without closing the host room. A 2.2-second guest input/delivery stall left the other player at 60 FPS (132 frames); the guest caught up within three frames, with matching hashes and zero repairs. Report: `artifacts/windows-v35-flow.json`. The native Back and quick keyboard Back paths are included.
+- The input harness now times actions in server frames and waits for scheduled input delivery. Counting render callbacks over-held directions when several frames arrived together; this could put a test cursor between native fighter targets. Native Start is now scheduled by the server after authorized sealing. The UI reopens selection only after actually entering stage/battle/results and returning; selection controls are hidden during battles.
+- The supplied SVG is copied unchanged. Pinned emulator JS/WASM remain unchanged. Private testing config, ROMs and test artifacts are excluded from Git/Pages.
+- These automated controllers and phone viewports run in isolated Chrome contexts on Ryker's Windows PC. They do not establish physical phone/USB compatibility or measured two-house Wi-Fi performance. Server/room-host loss still ends a room. Reconnect and deliberate synchronization still briefly pause the group; rollback and automatic failover are not implemented.
+
 # Windows primary setup - v3.4.1 - 2026-10-22
 
 - 27 Node tests pass, including primary ownership, rejection of legacy routing, and an update drain that counts private rooms while preserving existing joins and expiring safely.

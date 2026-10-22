@@ -66,20 +66,27 @@ async function act(p, keys, count = 6, settle = 30) {
       new Promise((resolve, reject) => {
         const c = smash.controls,
           original = c.sample.bind(c);
-        let active = count,
-          quiet = settle;
+        let first = null,
+          localFrame = 0;
+        const duration =
+          count + Math.max(settle, (smash.net.personalDelay || 0) + 8);
         const timeout = setTimeout(() => {
           c.sample = original;
           reject(Error("Input timed out"));
         }, 90000);
         c.sample = () => {
-          if (active-- > 0) {
+          const target = smash.net.running
+            ? Math.max(0, smash.net.serverFrame + 1) + smash.net.personalDelay
+            : localFrame++;
+          first ??= target;
+          const elapsed = target - first;
+          if (elapsed < count) {
             c.keys = new Set(keys);
             const input = original();
             c.keys.clear();
             return input;
           }
-          if (quiet-- > 0) return { buttons: 0, x: 0, y: 0 };
+          if (elapsed < duration) return { buttons: 0, x: 0, y: 0 };
           c.sample = original;
           clearTimeout(timeout);
           resolve();
@@ -88,6 +95,13 @@ async function act(p, keys, count = 6, settle = 30) {
       }),
     { keys, count, settle },
   );
+  const scheduled = await p.evaluate(() =>
+    smash.net.running ? smash.net.lastSample : null,
+  );
+  if (scheduled !== null)
+    await p.waitForFunction((f) => smash.net.frame > f, scheduled, {
+      timeout: 30000,
+    });
 }
 // Read-only scene assertions for the verified US ROM and pinned Mupen state format.
 // RDRAM begins at byte 448 in savestates_save_m64p; words are little-endian.
@@ -302,7 +316,7 @@ try {
   for (const [i, p] of pages.entries())
     if (i) {
       await act(p, ["KeyW"], 28, 12);
-      if (i === 1) await act(p, ["KeyD"], 3, 12);
+      if (i === 1) await act(p, ["KeyA"], 8, 12);
       if (i === 3) await act(p, ["KeyA"], 8, 12);
       await act(p, ["KeyJ"], 6, 20);
     }
@@ -435,7 +449,9 @@ try {
   });
   await frames(a, 240);
   assert.equal(await a.evaluate(() => smash.net.repairs), 0);
-  record("Direct-to-relay fallback recovers a dropped input");
+  record(
+    "A dropped input and closed peer channels do not stall or desynchronize the match",
+  );
   const epoch = await a.evaluate(() => smash.net.epoch);
   await b.evaluate(() => smash.engine.module._netplay_corrupt_rdram());
   await a.waitForFunction(
@@ -459,7 +475,8 @@ try {
   await frames(a, 120);
   record("Controller overlay pauses everyone and resumes together");
   await b.evaluate(() => smash.net.socket.close());
-  await waitState(a, "waiting");
+  await frames(a, 60);
+  assert.equal(await a.evaluate(() => smash.net.running), true);
   await waitState(b, "error");
   await b.locator("#game-rejoin").click();
   await a.waitForFunction(
@@ -468,7 +485,9 @@ try {
     { timeout: 60000 },
   );
   assert.equal(await b.evaluate(() => smash.net.player), 1);
-  record("Disconnected guest rejoins the reserved controller port and match");
+  record(
+    "Guest disconnect leaves battle running; rejoin restores the reserved port",
+  );
   report.finalMultiplayer = await Promise.all(
     [a, b].map((p) => p.evaluate(() => smash.diagnostics())),
   );
@@ -535,7 +554,7 @@ try {
 } finally {
   report.finished = new Date().toISOString();
   await writeFile(
-    path.join(dir, "e2e-report.json"),
+    process.env.SMASH_REPORT || path.join(dir, "e2e-report.json"),
     JSON.stringify(report, null, 2) + "\n",
   );
   await Promise.race([browser.close(), sleep(3000)]);

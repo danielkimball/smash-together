@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { WebSocketServer } from "ws";
+import { FrameClock } from "./scripts/frame-clock.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, "public");
@@ -35,6 +36,10 @@ export function createApp({
   maintenancePath = null,
 } = {}) {
   const rooms = new Map();
+  const stopClock = (room) => {
+    clearInterval(room.clockTimer);
+    room.clock = null;
+  };
   const updating = () => {
     try {
       return (
@@ -91,7 +96,7 @@ export function createApp({
         req.url === "/api/testing/cartridge" &&
         req.method === "POST" &&
         config.testing?.romPath &&
-        config.testing?.passwordHash
+        (config.testing?.passwordHash || config.testing?.autoLoad === true)
       ) {
         res.setHeader("Cache-Control", "no-store");
         const ip = req.headers["cf-connecting-ip"] || req.socket.remoteAddress;
@@ -118,10 +123,11 @@ export function createApp({
         const actual = createHash("sha256")
           .update(typeof password === "string" ? password : "")
           .digest();
-        const expected = Buffer.from(config.testing.passwordHash, "hex");
+        const expected = Buffer.from(config.testing.passwordHash || "", "hex");
         if (
-          expected.length !== actual.length ||
-          !timingSafeEqual(actual, expected)
+          config.testing.autoLoad !== true &&
+          (expected.length !== actual.length ||
+            !timingSafeEqual(actual, expected))
         ) {
           attempt.count++;
           attempts.set(ip, attempt);
@@ -161,13 +167,15 @@ export function createApp({
         return res.end(
           JSON.stringify({
             ok: true,
-            version: "3.4.1",
+            version: "3.5.0",
             hostId: config.hostId || null,
             activeRooms: rooms.size,
             updating: !!updating(),
             shareUrl,
             publicUrl: frontend?.href || shareUrl,
             testingAvailable: !!config.testing?.romPath,
+            testingAutoLoad:
+              !!config.testing?.romPath && config.testing.autoLoad === true,
           }),
         );
       }
@@ -271,6 +279,7 @@ export function createApp({
     listed: r.listed,
     capacity: r.capacity,
     delay: r.delay,
+    timing: "deadline",
     phase: r.phase,
     match: r.match,
     revision: r.revision,
@@ -348,7 +357,7 @@ export function createApp({
       if (m.type === "ping") return send(socket, { type: "pong", id: m.id });
       if (m.type === "create" || m.type === "join") {
         if (meta) return fail("Already in a room");
-        if (m.protocol !== 4)
+        if (m.protocol !== 5)
           return fail(
             "This page has been updated. Reload to use the new Smash rooms.",
           );
@@ -421,6 +430,7 @@ export function createApp({
         }
         if (!r.hostId) r.hostId = p.id;
         p.socket = socket;
+        stopClock(r);
         r.revision++;
         socket.meta = { token: r.token, id: p.id };
         send(socket, {
@@ -465,6 +475,7 @@ export function createApp({
         )
           return fail("Wait for at least two connected players.");
         room.selecting = m.type === "open";
+        if (m.type === "seal") room.clock?.pulse(member.slot, 16);
         room.phase = room.selecting ? "selecting" : "playing";
         update(room);
         return;
@@ -474,6 +485,7 @@ export function createApp({
           return fail(
             "Only the host can return everyone to character selection.",
           );
+        stopClock(room);
         room.phase = "starting";
         room.selecting = true;
         room.match++;
@@ -514,8 +526,37 @@ export function createApp({
         if (["start", "sync"].includes(g.type) && !isHost)
           return fail("Only the host can start or synchronize.");
         if (g.match !== room.match || g.revision !== room.revision) return;
+        if (g.type === "input") {
+          if (g.epoch === room.clockEpoch)
+            room.clock?.input(member.slot, g.frame, g.input);
+          return;
+        }
+        if (["sync", "pause"].includes(g.type)) stopClock(room);
         if (g.type === "start") {
           if (![...room.members.values()].every((p) => p.socket)) return;
+          if (!Number.isSafeInteger(g.epoch)) return;
+          stopClock(room);
+          room.clockEpoch = g.epoch;
+          room.clock = new FrameClock({
+            slots: [...room.members.values()].map((p) => p.slot),
+            delay: room.delay,
+            emit: (frame) => {
+              for (const p of room.members.values()) {
+                if (p.socket?.bufferedAmount > 1024 * 1024) {
+                  p.socket.close(1008, "Connection too slow");
+                } else
+                  send(p.socket, {
+                    type: "frame",
+                    ...frame,
+                    epoch: g.epoch,
+                    match: room.match,
+                    revision: room.revision,
+                  });
+              }
+            },
+          });
+          room.clockTimer = setInterval(() => room.clock?.tick(), 4);
+          room.clockTimer.unref();
           room.phase = room.selecting ? "selecting" : "playing";
           update(room);
         }
@@ -534,6 +575,7 @@ export function createApp({
         member = room?.members.get(meta.id);
       if (!room || !member || member.socket !== socket) return;
       if (meta.id === room.hostId) {
+        stopClock(room);
         rooms.delete(meta.token);
         broadcast(
           room,
@@ -552,6 +594,14 @@ export function createApp({
       } else {
         // Reserve the port on network loss. An explicit leave in character
         // selection frees it; the host clears its token using native input.
+        if (!room.selecting && room.clock) {
+          // Reserve their fighter, but keep the agreed timeline moving.
+          // Rejoining later takes a fresh synchronized snapshot.
+          member.socket = null;
+          update(room);
+          return;
+        }
+        stopClock(room);
         if (socket.voluntary && room.selecting) room.members.delete(meta.id);
         else {
           member.socket = null;
@@ -583,6 +633,7 @@ export function createApp({
     ready,
     close: async () => {
       clearInterval(heartbeat);
+      for (const r of rooms.values()) stopClock(r);
       for (const s of wss.clients) s.terminate();
       await new Promise((r) => server.close(r));
       wss.close();

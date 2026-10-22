@@ -17,6 +17,20 @@
     <script type="module" src="./js/app.js"></script>
   </head>
   <body>
+    <nav id="phone-tools" aria-label="Phone display controls">
+      <button data-touch-toggle aria-pressed="false">Touch controls</button>
+      <button data-fullscreen>⛶ Fullscreen</button>
+    </nav>
+    <dialog id="fullscreen-help">
+      <h2>Play fullscreen</h2>
+      <p>
+        If this browser cannot go fullscreen, add Smash Portal to your home
+        screen and open it there.
+      </p>
+      <p>iPhone / iPad: Share → Add to Home Screen → Open as Web App.</p>
+      <p>Android: browser menu → Add to Home screen or Install app.</p>
+      <button data-close="fullscreen-help">Got it</button>
+    </dialog>
     <section id="game-view" hidden aria-label="Game">
       <canvas
         id="canvas"
@@ -120,14 +134,19 @@
               >Choose your fighter while friends join</span
             >
           </div>
-          <button id="copy-invite" data-invite>Invite friends</button>
+          <div class="room-top-actions">
+            <button id="copy-invite" data-invite>Invite friends</button>
+            <button id="selection-back" aria-label="Back to multiplayer menu">
+              B · Back
+            </button>
+          </div>
         </div>
         <div class="room-bottom">
           <div id="player-slots" class="native-ports" aria-live="polite"></div>
           <div class="room-commands">
             <span
               >Move your colored hand · <b>A / J</b> Choose ·
-              <b>B / K</b> Change</span
+              <b>B / K</b> Change / Back</span
             ><button id="start-game" disabled>
               START MATCH <kbd>Start / Enter</kbd>
             </button>
@@ -265,7 +284,7 @@
               aria-label="Original Super Smash Bros. title screen"
             ></video>
             <div id="attract-fallback" hidden>
-              <img src="./brand/smash-portal.jpeg" alt="Smash Portal" />
+              <img src="./brand/smash-portal-animated.svg" alt="Smash Portal" />
               <p>PRESS START</p>
             </div>
             <button
@@ -286,10 +305,10 @@
           <h1 class="sr-only">Smash Portal multiplayer lobby</h1>
           <div class="lobby-logo">
             <img
-              src="./brand/smash-portal.jpeg"
+              src="./brand/smash-portal-animated.svg"
               alt="Smash Portal"
-              width="656"
-              height="655"
+              width="681"
+              height="639"
             />
           </div>
           <div class="lobby-side">
@@ -633,7 +652,9 @@
       </p>
       <label for="touch-mode">PHONE TOUCH CONTROLS</label>
       <select id="touch-mode">
-        <option value="auto">Automatic on touch screens</option>
+        <option value="auto">
+          Automatic · hide when a controller is connected
+        </option>
         <option value="on">Show touch controls</option>
         <option value="off">Hide · use a paired controller</option>
       </select>
@@ -734,8 +755,8 @@
       </div>
       <pre id="diagnostics"></pre>
       <p class="subtext">
-        Direct connections when available, with a free server relay as fallback.
-        Synchronized inputs with a configurable delay; this is not rollback.
+        Late inputs affect that player's controls while the match keeps moving.
+        Reconnecting or resuming may briefly synchronize the group.
       </p>
     </dialog>
     <div id="busy" class="busy" hidden role="status">

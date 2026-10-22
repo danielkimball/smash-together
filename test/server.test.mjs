@@ -120,7 +120,7 @@ async function until(c, type, predicate = () => true) {
 }
 async function create(a, options = {}) {
   const h = await client(a.ws);
-  h.send({ type: "create", protocol: 4, rom, build, name: "Dan", ...options });
+  h.send({ type: "create", protocol: 5, rom, build, name: "Dan", ...options });
   const joined = await until(h, "joined");
   const { room } = await until(h, "room");
   return { h, token: joined.token, id: joined.id, room };
@@ -129,7 +129,7 @@ async function join(a, token, options = {}) {
   const g = await client(a.ws);
   g.send({
     type: "join",
-    protocol: 4,
+    protocol: 5,
     rom,
     build,
     token,
@@ -184,7 +184,7 @@ test("update drain counts private rooms, blocks new rooms, permits joins and exp
     0,
   );
   const blocked = await client(a.ws);
-  blocked.send({ type: "create", protocol: 4, rom, build });
+  blocked.send({ type: "create", protocol: 5, rom, build });
   assert.match((await until(blocked, "error")).message, /installing an update/);
   const guest = await join(a, hidden.token);
   await until(guest, "joined");
@@ -227,6 +227,10 @@ test("solo room opens immediately; joining changes roster revision, not the matc
   assert.match((await until(g, "error")).message, /Only the host/);
   h.send({
     type: "game",
+    payload: { type: "start", match: 1, revision: 2, epoch: 2 },
+  });
+  h.send({
+    type: "game",
     from: "spoof",
     payload: {
       type: "input",
@@ -237,7 +241,13 @@ test("solo room opens immediately; joining changes roster revision, not the matc
       input: { buttons: 128, x: 85, y: 0 },
     },
   });
-  assert.equal((await until(g, "game")).from, id);
+  const agreed = await until(g, "frame", (m) => m.frame === 6);
+  assert.deepEqual(agreed.inputs[0], { buttons: 128, x: 85, y: 0 });
+  assert.deepEqual(agreed.late, [1]);
+  assert.deepEqual(
+    (await until(h, "frame", (m) => m.frame === 6)).inputs,
+    agreed.inputs,
+  );
   h.send({ type: "seal", match: 1, revision: 2 });
   await until(h, "room", (m) => !m.room.selecting);
   const stranger = await join(a, token);
@@ -422,6 +432,45 @@ test("testing cartridge is opt-in, password-gated, rate-limited and absent from 
     ).status,
     429,
   );
+});
+
+test("open testing is an explicit host choice and does not publish its private file path", async (t) => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "smash-testing-"));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const file = path.join(temp, "invalid.z64");
+  await writeFile(file, "not a game");
+  const a = await setup(t, { testing: { romPath: file, autoLoad: true } });
+  const status = await (await fetch(a.http + "/api/status")).json();
+  assert.equal(status.testingAutoLoad, true);
+  assert.ok(!JSON.stringify(status).includes(temp));
+  // No password is requested, but invalid cartridge bytes never reach a player.
+  const response = await fetch(a.http + "/api/testing/cartridge", {
+    method: "POST",
+    body: "{}",
+  });
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal((await fetch(a.http + "/api/testing/cartridge")).status, 404);
+});
+
+test("a disconnected guest does not stop a running battle's clock", async (t) => {
+  const a = await setup(t),
+    { h, token } = await create(a),
+    g = await join(a, token);
+  await until(g, "joined");
+  await until(g, "room");
+  h.send({ type: "seal", match: 1, revision: 2 });
+  h.send({
+    type: "game",
+    payload: { type: "start", match: 1, revision: 2, epoch: 1 },
+  });
+  await until(h, "frame");
+  g.s.terminate();
+  const state = (await until(h, "room", (m) => !m.room.members[1].connected))
+    .room;
+  assert.equal(state.phase, "playing");
+  assert.equal(state.revision, 2);
+  assert.ok((await until(h, "frame", (m) => m.frame > 6)).late.includes(1));
 });
 
 test("stable frontend alone can read APIs, preflight testing access and open the room socket", async (t) => {
