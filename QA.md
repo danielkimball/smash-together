@@ -12,6 +12,8 @@ The checks use Dan’s locally supplied original US ROM. No ROM, save, screensho
 
 Four local browser contexts passed 18 checks. The deployed app then passed **19 browser checks** with the host on localhost and three guests on the public HTTPS tunnel (2026-10-22 01:03–01:05 UTC). The measured two-player fight averaged **59 FPS**, with zero unexpected repairs; the intentional memory corruption triggered one successful repair. No uncaught browser errors occurred. The public run also verified a guest reconnect during initial game preparation.
 
+A further **six focused invitation checks** passed against the deployed site: first-time ROM setup, public invitation copying from localhost, manual-copy fallback when clipboard access is denied, a fresh guest entering their name and joining, cancelling/restarting preparation, and opening the shared pause menu with a mapped controller chord. No uncaught browser errors occurred. Evidence: `artifacts/invite-check.json`.
+
 ## Checks
 
 - Ten Node tests pass: ROM byte order, Xbox preset, custom N64 buttons/axes, calibration, static-file confinement, no upload routes, same-origin upgrades, public/private listing, capacity, matching ROM/build, port conflicts, host-only lifecycle, readiness, relay isolation and reconnect tickets.

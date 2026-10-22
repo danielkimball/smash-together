@@ -80,6 +80,7 @@ Rooms have unguessable invitation tokens, two to four seats, build/ROM checks, m
 npm test                       # controls, byte order, server/room isolation
 npm run check                  # syntax, runtime provenance, served-file audit
 SMASH_ROM='/absolute/path/your.z64' npm run test:e2e
+SMASH_ROM='/absolute/path/your.z64' node scripts/invite-check.mjs # requires live sharing
 ```
 
 The end-to-end test needs a locally supplied ROM and Chrome. It never places that ROM in the project or server. It exercises four isolated browsers (set `SMASH_PLAYERS=2` for a two-browser check), room browsing, readiness, player ports, return to lobby, actual game frames, state checks, transport fallback, pause/resume, deliberate desync repair, guest rejoin, controller mapping, and save persistence. Screenshots and results go to the ignored `artifacts/` folder. See `QA.md` for the completed checks and practical limits.
