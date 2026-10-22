@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import os from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import { root, writeFriendsShortcut } from "./share.mjs";
 const run = promisify(execFile),
   label = "io.labetesoftware.smash64",
@@ -14,6 +15,17 @@ async function stop() {
   try {
     await run("/bin/launchctl", ["bootout", domain + "/" + label]);
   } catch {}
+  // bootout can return while the old job is still being removed. Do not let
+  // install/start mistake that retiring job for the newly installed service.
+  for (let i = 0; i < 100; i++) {
+    try {
+      await run("/bin/launchctl", ["print", domain + "/" + label]);
+    } catch {
+      return;
+    }
+    await delay(100);
+  }
+  throw Error("The sharing service is still stopping. Retry in a moment.");
 }
 async function start() {
   try {
