@@ -5,6 +5,35 @@ import { fileURLToPath } from "node:url";
 import { assertPublisher } from "./host-ownership.mjs";
 import { parseHostRecord } from "../public/js/host-record.js";
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+export async function ensurePagesBuild(config) {
+  const gh = config.ghPath || "gh";
+  const base = `repos/${config.pagesRepo}`;
+  const latest = await ghJSON(gh, ["api", base + "/pages/builds/latest"]);
+  if (["queued", "building"].includes(latest.status)) return;
+  const head = await ghJSON(gh, ["api", base + "/git/ref/heads/gh-pages"]);
+  if (latest.status === "built" && latest.commit === head.object.sha) return;
+  await ghJSON(gh, ["api", "--method", "POST", base + "/pages/builds"]);
+}
+async function verifyPublishedHost(record, config) {
+  await ensurePagesBuild(config);
+  const endpoint = new URL(
+    `active-host.json?t=${Date.now()}`,
+    config.frontendUrl,
+  );
+  const response = await fetch(endpoint, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+  const live = response.ok && (await response.json());
+  if (
+    live.hostId !== record.hostId ||
+    live.publisher !== record.publisher ||
+    live.url !== record.url
+  )
+    throw Error(
+      "Host address saved; waiting for GitHub Pages to publish it. Retrying shortly.",
+    );
+}
 export function ghJSON(gh, args, body) {
   return new Promise((resolve, reject) => {
     const child = spawn(gh, args, {
@@ -72,8 +101,10 @@ export async function publishLink(
       current?.url === url &&
       current.hostId === config.hostId &&
       current.publisher === login
-    )
+    ) {
+      await verifyPublishedHost(current, config);
       return;
+    }
     let backup = current?.backup;
     if (promote && current && current.hostId !== config.hostId)
       backup = {
@@ -119,6 +150,7 @@ export async function publishLink(
           "base64",
         ),
       });
+      await verifyPublishedHost(record, config);
       console.log(`Primary host address verified and published: ${url}`);
       return;
     } catch (error) {

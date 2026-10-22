@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ghJSON } from "./publish-link.mjs";
+import { ghJSON, ensurePagesBuild } from "./publish-link.mjs";
 import { assertPublisher } from "./host-ownership.mjs";
 const run = promisify(execFile);
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -137,7 +137,12 @@ export async function publishPages({
     // On a concurrent tunnel update, rebuild on its latest commit, preserving it.
   }
   const deadline = Date.now() + 600000;
+  let lastBuildCheck = 0;
   while (Date.now() < deadline) {
+    if (Date.now() - lastBuildCheck > 60000) {
+      await ensurePagesBuild(config);
+      lastBuildCheck = Date.now();
+    }
     try {
       const response = await fetch(
         new URL(`deployment.json?t=${Date.now()}`, config.frontendUrl),
