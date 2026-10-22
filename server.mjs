@@ -6,6 +6,14 @@ import { fileURLToPath } from "node:url";
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { FrameClock } from "./scripts/frame-clock.mjs";
+import {
+  active,
+  waiting,
+  nextHost,
+  enqueue,
+  lineup,
+  applyLineup,
+} from "./scripts/room-roster.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, "public");
@@ -69,7 +77,7 @@ export function createApp({
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader(
       "Permissions-Policy",
-      "gamepad=(self), microphone=(), camera=()",
+      "gamepad=(self), microphone=(self), camera=()",
     );
     res.setHeader(
       "Content-Security-Policy",
@@ -285,12 +293,26 @@ export function createApp({
     revision: r.revision,
     selecting: r.selecting,
     hostId: r.hostId,
+    epoch: r.clockEpoch || 0,
+    frame: r.clock?.frame || 0,
+    rotation: r.rotation,
+    nextLineup: lineup(r).map((p) => p.id),
+    results: r.results,
+    round: r.round,
+    teams: !!r.teams,
+    teamsConfigured: !!r.teamsConfigured,
+    muteSpectators: !!r.muteSpectators,
     members: [...r.members.values()].map((p) => ({
       id: p.id,
       slot: p.slot,
       name: p.name,
       connected: !!p.socket,
       controller: p.controller,
+      ready: p.ready,
+      queue: p.queue,
+      team: p.team,
+      voice: !!p.voice,
+      muted: !!p.muted,
     })),
   });
   const broadcast = (r, message, except) => {
@@ -329,13 +351,32 @@ export function createApp({
         if (data.length < 8) return;
         // A roster can change while a snapshot is compressing. Never forward
         // an old snapshot to a newly connected controller.
+        let header;
         try {
           const length = data.readUInt32BE(0);
           if (length > 2048 || data.length < 4 + length) return;
-          const header = JSON.parse(data.subarray(4, 4 + length).toString());
+          header = JSON.parse(data.subarray(4, 4 + length).toString());
           if (header.match !== room.match || header.revision !== room.revision)
             return;
         } catch {
+          return;
+        }
+        if (header.to) {
+          const target = room.members.get(header.to);
+          if (
+            !target?.socket ||
+            header.epoch !== room.clockEpoch ||
+            !Number.isSafeInteger(header.frame)
+          )
+            return;
+          const history = room.history || [];
+          if (header.frame < (history[0]?.frame ?? 0)) {
+            send(socket, { type: "snapshot-request", to: header.to });
+            return;
+          }
+          target.socket.send(data, { binary: true });
+          for (const frame of history)
+            if (frame.frame >= header.frame) send(target.socket, frame);
           return;
         }
         for (const p of room.members.values()) {
@@ -357,7 +398,7 @@ export function createApp({
       if (m.type === "ping") return send(socket, { type: "pong", id: m.id });
       if (m.type === "create" || m.type === "join") {
         if (meta) return fail("Already in a room");
-        if (m.protocol !== 5)
+        if (m.protocol !== 6)
           return fail(
             "This page has been updated. Reload to use the new Smash rooms.",
           );
@@ -383,7 +424,11 @@ export function createApp({
             id: randomBytes(5).toString("hex"),
             name: clean(m.roomName, `${name}’s room`),
             listed: m.listed !== false,
-            capacity: [2, 3, 4].includes(m.capacity) ? m.capacity : 4,
+            capacity: 8,
+            rotation: "automatic",
+            queueCounter: 0,
+            round: 0,
+            history: [],
             delay: Math.max(
               2,
               Math.min(15, Number.isInteger(m.delay) ? m.delay : 6),
@@ -410,10 +455,6 @@ export function createApp({
           p = [...r.members.values()].find(
             (p) => m.ticket && p.ticket === m.ticket && !p.socket,
           );
-          if (!r.selecting && !p)
-            return fail(
-              "This game has started. Join when the host returns to the lobby.",
-            );
           if (!p && r.members.size >= r.capacity)
             return fail("This room is full. Choose another room.");
         }
@@ -422,16 +463,37 @@ export function createApp({
           p = {
             id: randomBytes(8).toString("hex"),
             ticket: randomBytes(18).toString("hex"),
-            slot: [0, 1, 2, 3].find((i) => !used.has(i)),
+            slot: r.selecting
+              ? ([0, 1, 2, 3].find((i) => !used.has(i)) ?? -1)
+              : -1,
+            ready: true,
+            joined: ++r.queueCounter,
+            queue: r.queueCounter,
+            team: 0,
             name,
             controller: clean(m.controller, "Keyboard", 80),
           };
           r.members.set(p.id, p);
         }
         if (!r.hostId) r.hostId = p.id;
+        if (r.selecting && p.slot < 0 && p.ready) {
+          const occupied = new Set(active(r).map((member) => member.slot));
+          p.slot = [0, 1, 2, 3].find((slot) => !occupied.has(slot)) ?? -1;
+        }
+        const liveJoin = !!r.clock && (!r.selecting || p.slot < 0);
         p.socket = socket;
-        stopClock(r);
-        r.revision++;
+        p.voice = false;
+        if (
+          liveJoin &&
+          p.slot >= 0 &&
+          (p.ready || !r.selecting) &&
+          !r.clock.slots.includes(p.slot)
+        )
+          r.clock.slots.push(p.slot);
+        if (!liveJoin) {
+          stopClock(r);
+          r.revision++;
+        }
         socket.meta = { token: r.token, id: p.id };
         send(socket, {
           type: "joined",
@@ -443,12 +505,195 @@ export function createApp({
         update(r);
         if (m.type === "create")
           broadcast(r, { type: "launch", match: r.match });
+        else if (liveJoin)
+          send(r.members.get(r.hostId)?.socket, {
+            type: "snapshot-request",
+            to: p.id,
+          });
         return;
       }
       if (!room || !member) return fail("Join a room first.");
+      if (m.type === "pointer") {
+        const slot =
+          member.slot < 0 && isHost && m.scene === 24
+            ? (active(room).find((p) => p.socket)?.slot ?? 0)
+            : member.slot;
+        if (
+          !room.clock ||
+          slot < 0 ||
+          ![16, 21, 24].includes(m.scene) ||
+          !Number.isFinite(m.x) ||
+          !Number.isFinite(m.y) ||
+          m.x < 0 ||
+          m.x > 320 ||
+          m.y < 0 ||
+          m.y > 240
+        )
+          return;
+        if (m.scene === 16 && !room.selecting) return;
+        if (Date.now() - (member.lastPointer || 0) < 250) return;
+        member.lastPointer = Date.now();
+        const offset =
+          m.scene === 16 && m.recall
+            ? 45
+            : m.scene === 21
+              ? 12
+              : m.scene === 24 && Number.isInteger(m.wait)
+                ? Math.max(2, Math.min(450, m.wait))
+                : 2;
+        const buttons = (button, delay) => {
+          for (let f = 0; f < 3; f++)
+            room.clock.commands.push({
+              at: room.clock.frame + delay + f,
+              command: { id: member.id, slot, scene: m.scene, button },
+            });
+        };
+        if (m.scene === 16 && m.recall) buttons(64, 2);
+        room.clock.commands.push({
+          at: room.clock.frame + offset,
+          command: {
+            id: member.id,
+            slot,
+            scene: m.scene,
+            x: m.x,
+            y: m.y,
+          },
+        });
+        buttons(m.scene === 24 ? 16 : 128, offset + 2);
+        return;
+      }
       if (m.type === "leave") {
         socket.voluntary = true;
         socket.close(1000);
+        return;
+      }
+      if (m.type === "observe") {
+        if (room.clock && Date.now() - (member.lastObserve || 0) > 1500) {
+          member.lastObserve = Date.now();
+          send(room.members.get(room.hostId)?.socket, {
+            type: "snapshot-request",
+            to: member.id,
+          });
+        }
+        return;
+      }
+      if (m.type === "availability") {
+        member.ready = m.ready === true;
+        if (member.ready && member.slot < 0) member.queue = ++room.queueCounter;
+        if (room.selecting) {
+          stopClock(room);
+          applyLineup(room);
+          room.revision++;
+        }
+        update(room);
+        return;
+      }
+      if (m.type === "manage") {
+        if (!isHost) return fail("Only the host can manage the lineup.");
+        if (m.rotation === "automatic" || m.rotation === "manual")
+          room.rotation = m.rotation;
+        if (Array.isArray(m.lineup)) {
+          const ids = [...new Set(m.lineup)];
+          if (
+            ids.length > 4 ||
+            ids.some(
+              (id) =>
+                !room.members.get(id)?.socket || !room.members.get(id)?.ready,
+            )
+          )
+            return fail("Choose up to four ready players.");
+          room.override = ids;
+          if (room.selecting) {
+            stopClock(room);
+            applyLineup(room);
+            room.revision++;
+          }
+        }
+        if (Array.isArray(m.queue)) {
+          const queue = waiting(room);
+          if (
+            m.queue.length !== queue.length ||
+            new Set(m.queue).size !== queue.length ||
+            m.queue.some((id) => !queue.some((p) => p.id === id))
+          )
+            return fail("Queue changed; try again.");
+          for (const id of m.queue)
+            room.members.get(id).queue = ++room.queueCounter;
+        }
+        if (m.teams && typeof m.teams === "object" && room.selecting) {
+          for (const p of active(room))
+            if ([0, 1, 2].includes(m.teams[p.id])) p.team = m.teams[p.id];
+          room.teams = m.teamsEnabled !== false;
+          room.teamsConfigured = true;
+          stopClock(room);
+          room.revision++;
+        }
+        update(room);
+        return;
+      }
+      if (m.type === "results") {
+        if (!isHost || room.selecting || m.round !== room.round || room.results)
+          return;
+        if (
+          !Array.isArray(m.players) ||
+          m.players.length > 4 ||
+          m.players.some(
+            (p) =>
+              !Number.isInteger(p.slot) ||
+              p.slot < 0 ||
+              p.slot > 3 ||
+              !Number.isInteger(p.place) ||
+              p.place < 0 ||
+              p.place > 3 ||
+              !Number.isInteger(p.kos) ||
+              !Number.isInteger(p.points),
+          )
+        )
+          return;
+        room.results = {
+          teams: !!m.teams,
+          players: m.players.map((score) => ({
+            ...score,
+            id: room.roundPlayers?.find((p) => p.slot === score.slot)?.id,
+            team:
+              room.roundPlayers?.find((p) => p.slot === score.slot)?.team ?? 0,
+          })),
+        };
+        update(room);
+        return;
+      }
+      if (m.type === "voice-state") {
+        member.voice = m.enabled === true;
+        update(room);
+        return;
+      }
+      if (m.type === "voice-moderate") {
+        if (!isHost) return fail("Only the host can mute the room.");
+        if (typeof m.spectators === "boolean")
+          room.muteSpectators = m.spectators;
+        if (typeof m.muted === "boolean" && room.members.has(m.id))
+          room.members.get(m.id).muted = m.muted;
+        update(room);
+        return;
+      }
+      if (m.type === "voice") {
+        if (
+          !member.voice ||
+          member.muted ||
+          (room.muteSpectators && member.slot < 0) ||
+          typeof m.audio !== "string" ||
+          !/^[A-Za-z0-9+/]{854}==$/.test(m.audio)
+        )
+          return;
+        const time = Date.now();
+        if (time - (member.voiceWindow || 0) >= 1000) {
+          member.voiceWindow = time;
+          member.voicePackets = 0;
+        }
+        if (++member.voicePackets > 35) return;
+        for (const p of room.members.values())
+          if (p.id !== member.id && p.voice && p.socket?.bufferedAmount < 65536)
+            send(p.socket, { type: "voice", from: member.id, audio: m.audio });
         return;
       }
       if (m.type === "rename") {
@@ -470,12 +715,35 @@ export function createApp({
         if (m.match !== room.match || m.revision !== room.revision) return;
         if (
           m.type === "seal" &&
-          (room.members.size < 2 ||
-            ![...room.members.values()].every((p) => p.socket))
+          active(room).filter((p) => p.socket && p.ready).length < 2
         )
           return fail("Wait for at least two connected players.");
         room.selecting = m.type === "open";
-        if (m.type === "seal") room.clock?.pulse(member.slot, 16);
+        if (m.type === "seal") {
+          room.teams = m.teams === true;
+          room.teamsConfigured = true;
+          for (const p of active(room))
+            if ([0, 1, 2].includes(m.playerTeams?.[p.slot]))
+              p.team = m.playerTeams[p.slot];
+          room.round++;
+          room.results = null;
+          room.roundPlayers = active(room).map((p) => ({
+            id: p.id,
+            slot: p.slot,
+            team: p.team,
+          }));
+          room.clock?.pulse(active(room).find((p) => p.socket)?.slot, 16);
+        } else if (
+          room.results ||
+          room.override ||
+          active(room).some((p) => !p.ready || !p.socket)
+        ) {
+          stopClock(room);
+          applyLineup(room);
+          room.revision++;
+          for (const p of room.members.values())
+            if (!p.socket) room.members.delete(p.id);
+        }
         room.phase = room.selecting ? "selecting" : "playing";
         update(room);
         return;
@@ -488,6 +756,7 @@ export function createApp({
         stopClock(room);
         room.phase = "starting";
         room.selecting = true;
+        applyLineup(room);
         room.match++;
         room.revision++;
         for (const p of room.members.values())
@@ -527,20 +796,35 @@ export function createApp({
           return fail("Only the host can start or synchronize.");
         if (g.match !== room.match || g.revision !== room.revision) return;
         if (g.type === "input") {
+          if (member.slot < 0 || (room.selecting && !member.ready)) return;
           if (g.epoch === room.clockEpoch)
             room.clock?.input(member.slot, g.frame, g.input);
           return;
         }
+        if (["pause", "resync"].includes(g.type) && member.slot < 0 && !isHost)
+          return;
         if (["sync", "pause"].includes(g.type)) stopClock(room);
         if (g.type === "start") {
-          if (![...room.members.values()].every((p) => p.socket)) return;
+          if (room.selecting && !active(room).every((p) => p.socket)) return;
           if (!Number.isSafeInteger(g.epoch)) return;
           stopClock(room);
           room.clockEpoch = g.epoch;
+          room.history = [];
           room.clock = new FrameClock({
-            slots: [...room.members.values()].map((p) => p.slot),
+            slots: active(room)
+              .filter((p) => p.socket && (p.ready || !room.selecting))
+              .map((p) => p.slot),
             delay: room.delay,
             emit: (frame) => {
+              const packet = {
+                type: "frame",
+                ...frame,
+                epoch: g.epoch,
+                match: room.match,
+                revision: room.revision,
+              };
+              room.history.push(packet);
+              if (room.history.length > 900) room.history.shift();
               for (const p of room.members.values()) {
                 if (p.socket?.bufferedAmount > 1024 * 1024) {
                   p.socket.close(1008, "Connection too slow");
@@ -574,42 +858,33 @@ export function createApp({
       const room = rooms.get(meta.token),
         member = room?.members.get(meta.id);
       if (!room || !member || member.socket !== socket) return;
-      if (meta.id === room.hostId) {
-        stopClock(room);
-        rooms.delete(meta.token);
-        broadcast(
-          room,
-          {
-            type: "closed",
-            message:
-              "The host closed this room. Join another room or create your own.",
-          },
-          meta.id,
-        );
-        for (const p of room.members.values())
-          if (p.id !== meta.id && p.socket) {
-            p.socket.meta = null;
-            p.socket.close(1000);
-          }
-      } else {
-        // Reserve the port on network loss. An explicit leave in character
-        // selection frees it; the host clears its token using native input.
-        if (!room.selecting && room.clock) {
-          // Reserve their fighter, but keep the agreed timeline moving.
-          // Rejoining later takes a fresh synchronized snapshot.
-          member.socket = null;
-          update(room);
-          return;
-        }
-        stopClock(room);
-        if (socket.voluntary && room.selecting) room.members.delete(meta.id);
-        else {
-          member.socket = null;
-          room.phase = "paused";
-        }
-        room.revision++;
-        update(room);
+      member.socket = null;
+      member.voice = false;
+      if (socket.voluntary) {
+        room.members.delete(meta.id);
+        room.override = room.override?.filter((id) => id !== meta.id);
       }
+      const successor = nextHost(room);
+      if (!successor) {
+        stopClock(room);
+        rooms.delete(room.token);
+        return;
+      }
+      if (room.hostId === meta.id) room.hostId = successor.id;
+      if (room.clock) {
+        room.clock.slots = active(room)
+          .filter((p) => p.socket && (p.ready || !room.selecting))
+          .map((p) => p.slot);
+        for (const row of room.clock.pending.values())
+          if (member.slot >= 0) delete row[member.slot];
+      }
+      if (room.selecting && member.slot >= 0) {
+        // A shared snapshot clears only the departed token; keep other choices.
+        if (!socket.voluntary) enqueue(room, member);
+        stopClock(room);
+        room.revision++;
+      }
+      update(room);
     });
   });
   const heartbeat = setInterval(() => {

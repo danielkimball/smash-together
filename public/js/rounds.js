@@ -32,8 +32,13 @@ export class Rounds {
   }
   chooser(room) {
     return (
-      room?.members.find((p) => p.id === this.winnerId) ||
-      room?.members.find((p) => p.id === room.hostId)
+      room?.members.find(
+        (p) => p.id === this.winnerId && p.slot >= 0 && p.connected,
+      ) ||
+      room?.members.find(
+        (p) => p.id === room.hostId && p.slot >= 0 && p.connected,
+      ) ||
+      room?.members.find((p) => p.slot >= 0 && p.connected)
     );
   }
   filter(inputs, room) {

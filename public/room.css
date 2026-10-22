@@ -1,0 +1,523 @@
+html,
+body {
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+button,
+a,
+select {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+input,
+select,
+textarea {
+  font-size: max(16px, 1em);
+}
+#canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  touch-action: none;
+}
+body[data-battle="true"] #canvas {
+  pointer-events: none;
+  cursor: none;
+}
+.member-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid #8282aa66;
+}
+.member-row > div:first-child {
+  flex: 1;
+  min-width: 130px;
+}
+.member-row strong,
+.member-row small {
+  display: block;
+}
+.member-row label {
+  margin: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.member-row input[type="range"] {
+  width: 110px;
+}
+.member-row select {
+  width: auto;
+}
+.member-row.speaking {
+  border-left: 4px solid #22b573;
+  padding-left: 8px;
+}
+.queue-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+#players-dialog,
+#voice-dialog {
+  width: min(640px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+#players-dialog h3 {
+  margin-top: 24px;
+}
+#voice-host-options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#next-round-banner {
+  position: absolute;
+  z-index: 4;
+  bottom: 60px;
+  left: 10%;
+  right: 10%;
+  background: #000d;
+  padding: 10px;
+  text-align: center;
+  pointer-events: none;
+}
+#pointer-menu {
+  position: absolute;
+  z-index: 4;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  max-width: 98%;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+#pointer-menu button {
+  padding: 8px 12px;
+  min-height: 36px;
+  font-size: 12px;
+}
+#game-hud {
+  z-index: 5;
+}
+#game-view.idle #game-hud {
+  opacity: 1;
+}
+body:has(#character-room:not([hidden])) #game-hud {
+  top: 0;
+  bottom: auto;
+  height: 44px;
+  padding: 4px 12px;
+}
+.room-ribbon {
+  top: 44px;
+  padding: 8px 24px;
+}
+.room-ribbon > .room-top-actions {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+.room-ribbon [data-room-panel],
+.room-ribbon [data-voice] {
+  display: none;
+}
+body:has(#character-room:not([hidden])) #canvas {
+  top: 108px !important;
+  height: calc(100% - 228px) !important;
+}
+.game-players {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+@media (any-pointer: coarse) {
+  body[data-view="game"],
+  body[data-view="native"] {
+    overflow: hidden;
+    touch-action: none;
+  }
+  dialog,
+  .shell {
+    touch-action: pan-y;
+  }
+  #game-view {
+    --toolbar: calc(42px + env(safe-area-inset-top, 0px));
+  }
+  #game-hud,
+  body[data-touch="on"] #game-hud,
+  body:has(#character-room:not([hidden])) #game-hud {
+    display: flex;
+    inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) auto
+      env(safe-area-inset-left, 0px);
+    height: 40px;
+    padding: 2px 6px;
+    gap: 5px;
+    background: #000e;
+    justify-content: flex-start;
+    opacity: 1;
+  }
+  #game-hud button,
+  body:has(#character-room:not([hidden])) #game-hud button {
+    padding: 6px 8px;
+    font-size: 11px;
+    min-height: 34px;
+    white-space: nowrap;
+  }
+  #game-hud kbd,
+  #game-players,
+  #game-hud [data-fullscreen] {
+    display: none;
+  }
+  #game-hud .controller-status {
+    margin-left: auto;
+    max-width: 115px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #phone-tools {
+    inset: auto env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+      env(safe-area-inset-left, 0px);
+    height: 38px;
+    justify-content: center;
+    background: #000;
+  }
+  #phone-tools button {
+    min-height: 32px;
+    padding: 4px 12px;
+  }
+  #touch-controls,
+  body[data-touch="on"] #touch-controls {
+    margin: 0;
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+  }
+  #touch-controls button,
+  #touch-controls .touch-stick {
+    pointer-events: auto;
+  }
+  #touch-controls * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: none;
+  }
+  .touch-brand,
+  #touch-controls .touch-menu {
+    display: none;
+  }
+  #touch-controls button {
+    min-height: 0;
+    min-width: 0;
+  }
+  #touch-controls .touch-face {
+    display: grid;
+    grid-template: repeat(2, minmax(0, 1fr)) / repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    aspect-ratio: 1;
+  }
+  #touch-controls .touch-face button {
+    position: static;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    font-size: 25px;
+  }
+  #touch-controls .touch-b {
+    grid-area: 1 / 1;
+  }
+  #touch-controls .touch-z {
+    grid-area: 1 / 2;
+  }
+  #touch-controls .touch-a {
+    grid-area: 2 / 2;
+  }
+  #touch-controls .touch-dpad button,
+  #touch-controls .touch-c button {
+    width: 31%;
+    height: 31%;
+    font-size: 24px;
+    aspect-ratio: auto;
+  }
+  #touch-controls .touch-start {
+    background: #ff0028;
+    border: 2px solid #fafafa;
+    border-radius: 22px;
+    box-shadow: none;
+    aspect-ratio: auto;
+  }
+  #touch-controls .touch-start i {
+    display: none;
+  }
+  #touch-controls .touch-start span {
+    position: static;
+    font-size: 11px;
+    color: #fff;
+  }
+  body[data-touch="on"] .room-ribbon,
+  .room-ribbon {
+    height: 50px;
+    top: var(--toolbar);
+    padding: 3px 8px;
+    gap: 4px;
+  }
+  .room-ribbon .room-top-actions button {
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+  .room-ribbon [data-room-panel],
+  .room-ribbon [data-voice] {
+    display: none;
+  }
+  .room-ribbon .room-name-line {
+    gap: 4px;
+  }
+  .room-ribbon strong {
+    font-size: 12px;
+  }
+  .room-ribbon span,
+  .room-ribbon .room-rename {
+    display: none;
+  }
+  .room-commands > span {
+    display: none;
+  }
+  .room-commands {
+    padding: 3px 0;
+    justify-content: center;
+  }
+  .room-commands button {
+    min-height: 28px;
+    padding: 4px 12px;
+    font-size: 11px;
+  }
+  .native-port {
+    padding: 3px;
+    min-height: 32px;
+  }
+  .native-port strong,
+  .native-port span {
+    font-size: 9px;
+  }
+  #pointer-menu {
+    bottom: 42px;
+  }
+  .stage-choice {
+    top: var(--toolbar);
+    font-size: 10px;
+    padding: 4px;
+  }
+  .native-tools {
+    top: env(safe-area-inset-top, 0px);
+    bottom: auto;
+  }
+  body[data-touch="on"] .setup-heading {
+    top: var(--toolbar);
+  }
+}
+@media (any-pointer: coarse) and (orientation: portrait) {
+  body[data-touch="on"] #game-view {
+    --pad-height: clamp(285px, 47dvh, 410px);
+    --pad-top: calc(
+      100dvh - var(--pad-height) - 38px - env(safe-area-inset-bottom, 0px)
+    );
+    --screen-top: var(--toolbar);
+    --screen-height: min(75vw, calc(var(--pad-top) - var(--toolbar) - 8px));
+    --screen-width: min(100vw, calc(var(--screen-height) * 1.333333));
+  }
+  body[data-touch="on"] #touch-controls {
+    top: var(--pad-top);
+    bottom: calc(38px + env(safe-area-inset-bottom, 0px));
+    left: 0;
+    right: 0;
+    padding: 8px;
+    display: grid;
+    grid-template: 36px repeat(6, minmax(0, 1fr)) / repeat(8, minmax(0, 1fr));
+    gap: 8px;
+    background: linear-gradient(135deg, #33006a, #6524a3);
+  }
+  #touch-controls .touch-stick,
+  #touch-controls .touch-dpad,
+  #touch-controls .touch-face,
+  #touch-controls .touch-c {
+    position: relative;
+    inset: auto;
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 1;
+    justify-self: center;
+  }
+  #touch-controls .touch-stick {
+    grid-area: 2 / 1 / 5 / 4;
+  }
+  #touch-controls .touch-dpad {
+    grid-area: 5 / 1 / 8 / 4;
+  }
+  #touch-controls .touch-face {
+    grid-area: 2 / 6 / 5 / 9;
+  }
+  #touch-controls .touch-c {
+    grid-area: 5 / 6 / 8 / 9;
+  }
+  #touch-controls .touch-shoulder {
+    position: static;
+    width: 100%;
+    height: 100%;
+    border-radius: 14px;
+    font-size: 22px;
+  }
+  #touch-controls .touch-l {
+    grid-area: 1 / 1 / 2 / 4;
+  }
+  #touch-controls .touch-r {
+    grid-area: 1 / 6 / 2 / 9;
+  }
+  #touch-controls .touch-start {
+    position: static;
+    grid-area: 1 / 4 / 2 / 6;
+    width: 100%;
+    height: 100%;
+  }
+  body[data-touch="on"]:has(#character-room:not([hidden])) #game-view {
+    --screen-top: calc(var(--toolbar) + 50px);
+    --screen-height: min(75vw, calc(var(--pad-top) - var(--screen-top) - 72px));
+  }
+  body[data-touch="on"] .room-bottom {
+    bottom: calc(var(--pad-height) + 38px + env(safe-area-inset-bottom, 0px));
+    height: 70px;
+  }
+  body[data-touch="on"]:has(#room-setup:not([hidden])) #game-view {
+    --screen-top: calc(var(--toolbar) + 44px);
+    --screen-height: min(75vw, calc(var(--pad-top) - var(--screen-top) - 30px));
+  }
+  body[data-touch="on"] .setup-footer {
+    bottom: calc(var(--pad-height) + 38px + env(safe-area-inset-bottom, 0px));
+  }
+  body[data-touch="on"] #pointer-menu {
+    bottom: calc(var(--pad-height) + 40px + env(safe-area-inset-bottom, 0px));
+  }
+  body[data-touch="on"] .stage-choice {
+    bottom: auto;
+    top: var(--toolbar);
+  }
+  body[data-touch="on"] #next-round-banner {
+    bottom: calc(var(--pad-height) + 40px + env(safe-area-inset-bottom, 0px));
+    font-size: 10px;
+  }
+}
+@media (any-pointer: coarse) and (orientation: landscape) {
+  body[data-touch="on"] #game-view {
+    --wing: 23vw;
+    --screen-top: var(--toolbar);
+    --screen-width: min(54vw, calc(var(--screen-height) * 1.333333));
+    --screen-height: calc(
+      100dvh - var(--toolbar) - 44px - env(safe-area-inset-bottom, 0px)
+    );
+  }
+  body[data-touch="on"] #touch-controls {
+    inset: var(--toolbar) env(safe-area-inset-right, 0px)
+      calc(40px + env(safe-area-inset-bottom, 0px))
+      env(safe-area-inset-left, 0px);
+  }
+  #touch-controls .touch-shoulder {
+    top: 0;
+    height: 30px;
+    width: 18%;
+    border-radius: 12px;
+    font-size: 20px;
+  }
+  #touch-controls .touch-l {
+    left: 2%;
+  }
+  #touch-controls .touch-r {
+    right: 2%;
+  }
+  #touch-controls .touch-stick {
+    top: 38px;
+    left: 3%;
+    width: min(17vw, calc((100dvh - 126px) / 2));
+    max-width: none;
+  }
+  #touch-controls .touch-dpad {
+    bottom: 0;
+    left: 3%;
+    width: min(17vw, calc((100dvh - 140px) / 2));
+    max-width: none;
+  }
+  #touch-controls .touch-face {
+    top: 38px;
+    right: 3%;
+    width: min(17vw, calc((100dvh - 126px) / 2));
+    height: auto;
+  }
+  #touch-controls .touch-c {
+    bottom: 0;
+    right: 3%;
+    width: min(17vw, calc((100dvh - 140px) / 2));
+    max-width: none;
+  }
+  #touch-controls .touch-start,
+  body[data-touch="on"]:has(#character-room:not([hidden])) .touch-start {
+    left: 45%;
+    width: 10%;
+    height: 28px;
+    bottom: 0 !important;
+    top: auto;
+  }
+  body[data-touch="on"] .character-room,
+  body[data-touch="on"] .room-setup {
+    left: 23%;
+    right: 23%;
+  }
+  body[data-touch="on"] .room-ribbon {
+    top: var(--toolbar);
+    height: 36px;
+  }
+  body[data-touch="on"] .room-bottom {
+    bottom: 44px;
+    height: 62px;
+  }
+  body[data-touch="on"] .room-commands {
+    justify-content: flex-end;
+  }
+  body[data-touch="on"]:has(#character-room:not([hidden])) #game-view {
+    --screen-top: calc(var(--toolbar) + 36px);
+    --screen-height: calc(100dvh - var(--screen-top) - 108px);
+  }
+  body[data-touch="on"]:has(#room-setup:not([hidden])) #game-view {
+    --screen-top: calc(var(--toolbar) + 34px);
+    --screen-height: calc(100dvh - var(--screen-top) - 72px);
+  }
+  body[data-touch="on"] .setup-footer {
+    bottom: 42px;
+  }
+  #pointer-menu {
+    max-width: 54%;
+  }
+  body[data-touch="on"] .stage-choice {
+    top: var(--toolbar);
+  }
+}

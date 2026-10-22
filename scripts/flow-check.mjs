@@ -170,10 +170,15 @@ try {
   await a.locator("#selection-back").click();
   await a.waitForFunction(() => smash.view === "browse" && !smash.net.room);
   await create(a);
+  await a.locator("#character-room").waitFor({ state: "visible" });
+  await wait(250);
   const canvas = await a.locator("#canvas").boundingBox();
+  const ratio = await a.locator("#canvas").evaluate((c) => c.width / c.height);
+  const visibleWidth = Math.min(canvas.width, canvas.height * ratio),
+    visibleHeight = visibleWidth / ratio;
   await a.mouse.click(
-    canvas.x + canvas.width * 0.87,
-    canvas.y + canvas.height * 0.04,
+    canvas.x + (canvas.width - visibleWidth) / 2 + visibleWidth * 0.87,
+    canvas.y + (canvas.height - visibleHeight) / 2 + visibleHeight * 0.04,
   );
   await a.waitForFunction(() => smash.view === "browse" && !smash.net.room);
   record(

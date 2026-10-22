@@ -327,9 +327,21 @@ try {
         .every((p) => p.selected),
     );
   await b.evaluate(() => smash.net.socket.close());
-  await waitState(a, "waiting");
+  await a.waitForFunction(
+    (n) => smash.net.running && smash.net.connected.length === n,
+    count - 1,
+    { timeout: 90000 },
+  );
   await waitState(b, "error");
   await b.locator("#game-rejoin").click();
+  await b.waitForFunction(
+    () => smash.net.running && smash.net.player === 1,
+    null,
+    { timeout: 90000 },
+  );
+  await b.evaluate(() =>
+    smash.net.send({ type: "pointer", scene: 16, x: 128, y: 64 }),
+  );
   await frames(a, 120);
   assert.ok(
     (await b.evaluate(() => smash.engine.inspect().players))
@@ -337,7 +349,7 @@ try {
       .every((p) => p.selected),
   );
   record(
-    "Disconnect and reserved-port reconnect preserve every chosen fighter",
+    "Selection continues after a guest disconnect; reconnect reclaims the open port and can select again",
   );
   await shot(a, "native-fighters-selected");
   await a.setViewportSize({ width: 390, height: 844 });
@@ -493,9 +505,13 @@ try {
   );
   await menu(a);
   await a.locator("#quit-game").click();
-  await waitState(b, "error");
-  await b.locator("#game-leave").click();
-  record("Host exit closes the room and returns guests to room browsing");
+  await b.waitForFunction(() => smash.net.isHost && smash.net.running, null, {
+    timeout: 60000,
+  });
+  await frames(b, 60);
+  await menu(b);
+  await b.locator("#quit-game").click();
+  record("Host exit transfers authority and keeps the match running");
   await a.locator("[data-home]").click();
   await a.waitForFunction(() => smash.view === "native");
   await a.locator("#native-single").click();

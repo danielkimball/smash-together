@@ -12,14 +12,15 @@ export class FrameClock {
     });
     this.next = now() + 200;
     this.pulses = [];
+    this.commands = [];
   }
-  pulse(slot, buttons, count = 6) {
+  pulse(slot, buttons, count = 6, offset = 2) {
     if (this.slots.includes(slot))
       this.pulses.push({
         slot,
         buttons,
-        from: this.frame + 2,
-        until: this.frame + 2 + count,
+        from: this.frame + offset,
+        until: this.frame + offset + count,
       });
   }
   input(slot, frame, input) {
@@ -65,7 +66,11 @@ export class FrameClock {
           };
       this.pulses = this.pulses.filter((pulse) => this.frame + 1 < pulse.until);
       this.pending.delete(this.frame);
-      this.emit({ frame: this.frame++, inputs, late });
+      const commands = this.commands
+        .filter((c) => c.at === this.frame)
+        .map((c) => c.command);
+      this.commands = this.commands.filter((c) => c.at > this.frame);
+      this.emit({ frame: this.frame++, inputs, late, commands });
       this.next += 1000 / 60;
     }
   }

@@ -61,6 +61,7 @@ export class Netplay extends EventTarget {
     });
     this.peers = new Map();
     this.inputs = new Map();
+    this.frameCommands = new Map();
     this.hashes = new Map();
     this.remoteHashes = new Map();
     this.sentInputs = new Map();
@@ -75,10 +76,18 @@ export class Netplay extends EventTarget {
   get connected() {
     return this.room?.members.filter((p) => p.connected) || [];
   }
+  get players() {
+    return this.room?.members.filter((p) => p.slot >= 0) || [];
+  }
+  get participants() {
+    return this.connected.filter(
+      (p) => p.slot >= 0 || p.id === this.room.hostId,
+    );
+  }
   get allConnected() {
     return (
-      this.room?.members.length >= 1 &&
-      this.room.members.every((p) => p.connected)
+      this.room &&
+      (!this.room.selecting || this.players.every((p) => p.connected))
     );
   }
   get directCount() {
@@ -125,7 +134,7 @@ export class Netplay extends EventTarget {
     } else this.send({ type: "game", to, payload: data });
   }
   async connect(options = {}) {
-    this.leave();
+    this.leave(!(options.token === this.token && this.state === "error"));
     const connection = this.connectionGeneration;
     this.message = "";
     this.lastOptions = options;
@@ -145,12 +154,12 @@ export class Netplay extends EventTarget {
       this.send({
         ...options,
         type: options.token || options.roomId ? "join" : "create",
-        protocol: 5,
+        protocol: 6,
         ticket: options.token
           ? sessionStorage.getItem("smash.ticket." + options.token)
           : undefined,
         rom: this.engine.romHash,
-        build: this.engine.build + "-smash-native-v5",
+        build: this.engine.build + "-smash-native-v6",
       });
     ws.onmessage = (e) => {
       if (ws !== this.socket) return;
@@ -170,6 +179,12 @@ export class Netplay extends EventTarget {
         sessionStorage.setItem("smash.ticket." + m.token, m.ticket);
         this.lastOptions = { ...options, token: m.token };
       } else if (m.type === "room") this.updateRoom(m.room);
+      else if (m.type === "snapshot-request")
+        this.sendObservation(m.to).catch((e) =>
+          this.dispatchEvent(new CustomEvent("notice", { detail: e.message })),
+        );
+      else if (m.type === "voice")
+        this.dispatchEvent(new CustomEvent("voice", { detail: m }));
       else if (m.type === "frame") this.receiveFrame(m);
       else if (m.type === "pong" && typeof m.id === "number")
         this.relayRTT = Math.round(performance.now() - m.id);
@@ -230,7 +245,7 @@ export class Netplay extends EventTarget {
     const old = this.room,
       oldMatch = old?.match;
     this.room = room;
-    this.player = this.me?.slot ?? 0;
+    this.player = this.me?.slot ?? -1;
     this.delay = room.delay;
     for (const [id, p] of this.peers) {
       if (!room.members.some((m) => m.id === id && m.connected)) {
@@ -265,22 +280,66 @@ export class Netplay extends EventTarget {
       this.state = "preparing";
     } else if (changed && this.isHost && !this.preparing) {
       const removed = old.members
-        .filter((p) => !room.members.some((m) => m.slot === p.slot))
+        .filter(
+          (p) =>
+            p.slot >= 0 &&
+            !room.members.some((m) => m.id === p.id && m.slot === p.slot),
+        )
         .map((p) => p.slot);
       // Preserve every other fighter. A departed player's B tap returns only
       // their token to its hand before the new roster receives this state.
       if (removed.length) this.removePlayers?.(removed);
+      this.applyTeams?.(room);
       this.synchronize().catch((e) => this.error(e.message));
     } else if (this.state === "connecting") this.state = "syncing";
+    if (!old && room.phase !== "starting") {
+      this.epoch = room.epoch;
+      this.pendingFrames = new Map();
+      this.state = "syncing";
+    }
+    if (old && old.hostId !== room.hostId) {
+      this.dispatchEvent(
+        new CustomEvent("notice", {
+          detail: `${room.members.find((p) => p.id === room.hostId)?.name || "Next player"} is now hosting.`,
+        }),
+      );
+      if (
+        this.isHost &&
+        !this.running &&
+        !this.syncing &&
+        !this.preparing &&
+        !this.restoring &&
+        this.allConnected
+      ) {
+        if (room.phase === "starting") {
+          this.preparing = true;
+          const generation = this.connectionGeneration;
+          Promise.resolve(this.prepare?.())
+            .then(() => {
+              if (generation !== this.connectionGeneration) return;
+              this.preparing = false;
+              return this.synchronize();
+            })
+            .catch((e) => this.error(e.message));
+        } else this.synchronize().catch((e) => this.error(e.message));
+      }
+    }
     this.emit();
   }
-  leave() {
+  leave(voluntary = true) {
     this.connectionGeneration = (this.connectionGeneration || 0) + 1;
     this.rounds.restore();
+    this.pendingFrames = new Map();
+    this.restoring = false;
+    this.pendingStart = false;
+    this.lastEcho = 0;
+    this.serverFrame = -1;
+    this.dispatchEvent(new Event("leave"));
     clearTimeout(this.syncTimeout);
     const s = this.socket;
     this.socket = null;
-    if (s?.readyState === 1) s.send(JSON.stringify({ type: "leave" }));
+    if (voluntary && s?.readyState === 1)
+      s.send(JSON.stringify({ type: "leave" }));
     s?.close();
     this.closeRTC();
     Object.assign(this, {
@@ -292,12 +351,14 @@ export class Netplay extends EventTarget {
       room: null,
       epoch: 0,
       frame: 0,
+      reportedRound: -1,
       matches: 0,
       repairs: 0,
       rtt: 0,
       message: "",
     });
     this.inputs.clear();
+    this.frameCommands.clear();
     this.hashes.clear();
     this.remoteHashes.clear();
     this.sentInputs.clear();
@@ -425,7 +486,7 @@ export class Netplay extends EventTarget {
     if (socket.readyState !== 1)
       throw Error("The connection closed during synchronization.");
     socket.send(packet);
-    if (this.connected.length === 1) {
+    if (this.participants.length === 1) {
       this.sendGame({ type: "start" }, false);
       this.start();
       return;
@@ -436,8 +497,44 @@ export class Netplay extends EventTarget {
         this.error("Synchronization timed out. Return to the lobby or rejoin.");
     }, 45000);
   }
+  async sendObservation(to) {
+    if (
+      !this.isHost ||
+      !this.running ||
+      !this.connected.some((p) => p.id === to)
+    )
+      return;
+    const generation = this.connectionGeneration,
+      socket = this.socket;
+    const raw = this.engine.snapshot();
+    const header = {
+      to,
+      frame: this.frame,
+      epoch: this.epoch,
+      match: this.room.match,
+      revision: this.room.revision,
+      hash: this.engine.hash(),
+      delay: this.delay,
+      rawSize: raw.length,
+      rounds: this.rounds.snapshot(),
+    };
+    const packed = await compress(raw);
+    if (
+      generation !== this.connectionGeneration ||
+      this.epoch !== header.epoch ||
+      this.room?.revision !== header.revision ||
+      socket.readyState !== 1
+    )
+      return;
+    const meta = new TextEncoder().encode(JSON.stringify(header));
+    const packet = new Uint8Array(4 + meta.length + packed.length);
+    new DataView(packet.buffer).setUint32(0, meta.length);
+    packet.set(meta, 4);
+    packet.set(packed, 4 + meta.length);
+    socket.send(packet);
+  }
   async receiveState(buffer) {
-    if (this.isHost || !this.room) return;
+    if (!this.room) return;
     const socket = this.socket;
     if (buffer.byteLength < 4) throw Error("Invalid sync packet.");
     const size = new DataView(buffer).getUint32(0);
@@ -458,6 +555,8 @@ export class Netplay extends EventTarget {
     )
       throw Error("Incompatible sync state.");
     this.running = false;
+    this.restoring = true;
+    this.pendingFrames = this.pendingFrames || new Map();
     this.status("syncing");
     this.epoch = meta.epoch;
     this.delay = meta.delay;
@@ -476,16 +575,29 @@ export class Netplay extends EventTarget {
     this.rounds.restore(meta.rounds);
     if (this.engine.hash() !== meta.hash)
       throw Error("Game state did not restore correctly. Reload and rejoin.");
-    this.sendGame({ type: "ready", hash: meta.hash }, false, this.room.hostId);
+    this.restoring = false;
+    if (meta.to) this.start(meta.frame, this.pendingFrames);
+    else {
+      this.sendGame(
+        { type: "ready", hash: meta.hash },
+        false,
+        this.room.hostId,
+      );
+      if (this.pendingStart) {
+        this.pendingStart = false;
+        this.start(0, this.pendingFrames);
+      }
+    }
   }
-  start() {
-    this.frame = 0;
+  start(frame = 0, buffered = new Map()) {
+    this.frame = frame;
     this.inputs.clear();
+    this.frameCommands.clear();
     this.hashes.clear();
     this.remoteHashes.clear();
     this.sentInputs.clear();
-    this.serverFrame = -1;
-    this.lastSample = this.delay - 1;
+    this.serverFrame = frame - 1;
+    this.lastSample = frame + this.delay - 1;
     this.lateInputs = 0;
     this.lastLate = [];
     this.jitterLead = this.delay;
@@ -500,8 +612,23 @@ export class Netplay extends EventTarget {
     // Measure after native preparation, which can block the browser and would
     // otherwise be mistaken for network latency.
     this.send({ type: "ping", id: performance.now() });
+    this.pendingFrames = new Map();
+    for (const m of buffered.values()) this.receiveFrame(m);
   }
   receiveFrame(m) {
+    if (
+      !this.running &&
+      this.room &&
+      m.epoch >= this.epoch &&
+      m.match === this.room.match &&
+      m.revision === this.room.revision
+    ) {
+      this.pendingFrames ||= new Map();
+      this.pendingFrames.set(m.frame, m);
+      if (this.pendingFrames.size > 900)
+        this.pendingFrames.delete(this.pendingFrames.keys().next().value);
+      return;
+    }
     if (
       !this.running ||
       m.epoch !== this.epoch ||
@@ -518,6 +645,7 @@ export class Netplay extends EventTarget {
       return;
     }
     this.inputs.set(m.frame, m.inputs);
+    if (m.commands?.length) this.frameCommands.set(m.frame, m.commands);
     this.serverFrame = Math.max(this.serverFrame, m.frame);
     this.lastLate = m.late || [];
     this.lateInputs += this.lastLate.length;
@@ -555,7 +683,7 @@ export class Netplay extends EventTarget {
       this.readyPeers.add(from);
       if (
         this.allConnected &&
-        this.connected.every(
+        this.participants.every(
           (p) => p.id === this.id || this.readyPeers.has(p.id),
         )
       ) {
@@ -563,8 +691,10 @@ export class Netplay extends EventTarget {
         this.sendGame({ type: "start" }, false);
         this.start();
       }
-    } else if (m.type === "start" && host && !this.isHost) this.start();
-    else if (m.type === "input" && this.room.timing !== "deadline") {
+    } else if (m.type === "start" && host && !this.isHost) {
+      if (this.restoring) this.pendingStart = true;
+      else this.start(0, this.pendingFrames);
+    } else if (m.type === "input" && this.room.timing !== "deadline") {
       if (
         !Number.isSafeInteger(m.frame) ||
         m.frame < this.frame ||
@@ -625,6 +755,15 @@ export class Netplay extends EventTarget {
     if (!own || !remote) return;
     for (const [id, hash] of remote) {
       if (hash === null) continue;
+      if (
+        own !== hash &&
+        this.isHost &&
+        this.room.members.find((p) => p.id === id)?.slot < 0
+      ) {
+        this.sendObservation(id).catch(() => {});
+        remote.set(id, null);
+        continue;
+      }
       if (own !== hash && this.isHost) {
         this.repairs++;
         this.synchronize().catch((e) => this.error(e.message));
@@ -649,7 +788,11 @@ export class Netplay extends EventTarget {
       Math.min(45, Math.ceil((this.relayRTT || 0) / (1000 / 60)) + 2),
     );
     const target = Math.max(0, this.serverFrame + 1) + this.personalDelay;
-    if (target > this.lastSample) {
+    if (
+      this.player >= 0 &&
+      (this.me?.ready || !this.room.selecting) &&
+      target > this.lastSample
+    ) {
       const input = this.filterInput
         ? this.filterInput(this.controls.sample())
         : this.controls.sample();
@@ -669,9 +812,39 @@ export class Netplay extends EventTarget {
     // Battles/results need only two polls per second; this keeps snapshot
     // copying off most gameplay frames on phones. Reuse inspection for UI.
     const inspectEvery = [22, 24].includes(this.rounds.scene) ? 30 : 6;
-    if (this.frame % inspectEvery === 0)
-      this.rounds.observe(this.engine.inspect(), this.room);
-    this.engine.frame(this.rounds.filter(current, this.room));
+    if (this.frame % inspectEvery === 0) {
+      const info = this.engine.inspect();
+      this.rounds.observe(info, this.room);
+      if (
+        this.isHost &&
+        info.scene === 24 &&
+        info.results?.ticks >= 2 &&
+        info.results.kind !== 4 &&
+        this.reportedRound !== this.room.round
+      ) {
+        this.reportedRound = this.room.round;
+        this.send({
+          type: "results",
+          round: this.room.round,
+          teams: info.results.teams,
+          players: info.results.players.filter((p) => p.present),
+        });
+      }
+    }
+    const inputs = current.map((input) => ({ ...input }));
+    for (const command of this.frameCommands.get(this.frame) || []) {
+      if (
+        command.scene === 21 &&
+        command.id !== this.rounds.chooser(this.room)?.id
+      )
+        continue;
+      if (command.button) {
+        if (this.engine.inspect().scene === command.scene)
+          inputs[command.slot].buttons |= command.button;
+      } else this.engine.menuPointer(command);
+    }
+    this.frameCommands.delete(this.frame);
+    this.engine.frame(this.rounds.filter(inputs, this.room));
     this.inputs.delete(this.frame);
     this.frame++;
     this.next = Math.max(
@@ -693,7 +866,7 @@ export class Netplay extends EventTarget {
     return true;
   }
   pause() {
-    if (!this.running) return;
+    if (!this.running || (this.player < 0 && !this.isHost)) return;
     this.running = false;
     this.sendGame({ type: "pause" }, false);
     this.status("paused");

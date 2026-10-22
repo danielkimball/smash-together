@@ -5,6 +5,7 @@ export class TouchControls {
     this.root = root;
     this.controls = controls;
     this.pointers = new Map();
+    this.taps = new Map();
     this.stick = root.querySelector(".touch-stick");
     this.thumb = root.querySelector(".stick-thumb");
     this.axis = { x: 0, y: 0 };
@@ -15,6 +16,26 @@ export class TouchControls {
     } catch {}
     this.media.addEventListener("change", () => this.refresh());
     root.addEventListener("contextmenu", (event) => event.preventDefault());
+    for (const type of [
+      "touchstart",
+      "touchmove",
+      "gesturestart",
+      "gesturechange",
+      "selectstart",
+      "dragstart",
+    ])
+      root.addEventListener(type, (event) => event.preventDefault(), {
+        passive: false,
+      });
+    for (const type of ["gesturestart", "gesturechange", "gestureend"])
+      document.addEventListener(
+        type,
+        (event) => {
+          if (["game", "native"].includes(document.body.dataset.view))
+            event.preventDefault();
+        },
+        { passive: false },
+      );
     root.addEventListener("pointerdown", (event) => {
       const target = event.target.closest("button[data-touch], .touch-stick");
       if (!target || controls.blocked || !this.enabled) return;
@@ -26,6 +47,8 @@ export class TouchControls {
         target,
         action: target.dataset.touch,
       });
+      if (target.dataset.touch)
+        this.taps.set(target.dataset.touch, performance.now() + 70);
       if (target === this.stick) this.stickPointer = event.pointerId;
       this.move(event);
     });
@@ -99,6 +122,7 @@ export class TouchControls {
   }
   reset() {
     this.pointers.clear();
+    this.taps.clear();
     this.stickPointer = undefined;
     this.axis = { x: 0, y: 0 };
     this.thumb.style.transform = "";
@@ -115,6 +139,10 @@ export class TouchControls {
   }
   sample() {
     let buttons = 0;
+    for (const [action, until] of this.taps) {
+      if (performance.now() < until) buttons |= BITS[action] || 0;
+      else this.taps.delete(action);
+    }
     for (const pointer of this.pointers.values())
       buttons |= BITS[pointer.action] || 0;
     return { buttons, ...this.axis, analog: this.stickPointer !== undefined };

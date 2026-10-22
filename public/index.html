@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="./style.css" />
     <link rel="stylesheet" href="./touch.css" />
     <link rel="stylesheet" href="./portal.css" />
+    <link rel="stylesheet" href="./room.css" />
     <script type="module" src="./js/app.js"></script>
   </head>
   <body>
@@ -135,7 +136,9 @@
             >
           </div>
           <div class="room-top-actions">
-            <button id="copy-invite" data-invite>Invite friends</button>
+            <button id="copy-invite" data-invite>Invite friends</button
+            ><button data-room-panel>Players</button
+            ><button data-voice>Voice</button>
             <button id="selection-back" aria-label="Back to multiplayer menu">
               B · Back
             </button>
@@ -158,6 +161,11 @@
           ☰ <span>Menu</span> <kbd>Esc</kbd>
         </button>
         <div id="game-players" class="game-players"></div>
+        <button class="glass" data-room-panel hidden>Players</button
+        ><button class="glass" data-voice hidden>Voice</button
+        ><button class="glass controller-status" data-controls>
+          Controller
+        </button>
         <button class="glass" data-fullscreen>⛶ <span>Fullscreen</span></button>
       </div>
       <div id="game-notice" class="game-notice" hidden>
@@ -182,6 +190,8 @@
         has chosen
       </p>
       <p id="stage-choice" class="stage-choice" aria-live="polite" hidden></p>
+      <p id="next-round-banner" hidden></p>
+      <nav id="pointer-menu" aria-label="Menu pointer controls" hidden></nav>
       <section id="touch-controls" aria-label="Touch N64 controller" hidden>
         <span class="touch-brand" aria-hidden="true">SMASH <b>PORTAL</b></span>
         <button
@@ -371,6 +381,63 @@
         </div>
       </footer>
     </div>
+
+    <dialog id="players-dialog">
+      <div class="dialog-heading">
+        <h2>Players &amp; Queue</h2>
+        <button data-close="players-dialog" aria-label="Close players">
+          &times;
+        </button>
+      </div>
+      <p id="queue-status"></p>
+      <button id="sit-out">Sit out until I'm ready</button>
+      <label for="rotation-mode">Rotation</label
+      ><select id="rotation-mode">
+        <option value="automatic">Automatic · Winner stays</option>
+        <option value="manual">Host chooses the lineup</option>
+      </select>
+      <div id="room-members"></div>
+      <p id="lineup-help"></p>
+      <label id="battle-mode-label"
+        >Battle mode
+        <select id="battle-mode">
+          <option value="ffa">Free for all</option>
+          <option value="teams">Teams</option>
+        </select></label
+      >
+      <div class="actions">
+        <button id="lineup-apply">Apply lineup</button
+        ><button id="teams-apply">Apply teams / mode</button>
+      </div>
+      <h3>Waiting to play</h3>
+      <div id="waiting-queue"></div>
+      <p id="next-round"></p>
+    </dialog>
+    <dialog id="voice-dialog">
+      <div class="dialog-heading">
+        <h2>Room Voice</h2>
+        <button data-close="voice-dialog" aria-label="Close voice">
+          &times;
+        </button>
+      </div>
+      <p id="voice-status" role="status"></p>
+      <div class="actions">
+        <button id="voice-join">Join Voice</button
+        ><button id="voice-mute" hidden>Mute microphone</button
+        ><button id="voice-leave" hidden>Leave Voice</button>
+      </div>
+      <label for="voice-volume">Speaker volume</label
+      ><input id="voice-volume" type="range" min="0" max="100" value="100" />
+      <label id="voice-host-options" hidden
+        ><input id="mute-spectators" type="checkbox" /> Mute spectators for
+        everyone</label
+      >
+      <div id="voice-members"></div>
+      <p class="subtext">
+        Voice is shared only within this room. Nothing is recorded. Headphones
+        help prevent echoes.
+      </p>
+    </dialog>
     <input id="rom-file" type="file" accept=".z64,.v64,.n64" hidden />
     <input id="save-file" type="file" accept=".smash64" hidden />
     <dialog id="rom-dialog">
@@ -473,9 +540,7 @@
           <div>
             <label for="capacity">PLAYERS</label
             ><select id="capacity">
-              <option value="4">Up to 4 players</option>
-              <option value="3">Up to 3 players</option>
-              <option value="2">Just us two</option>
+              <option value="8">8 people / 4 playing</option>
             </select>
           </div>
           <div>

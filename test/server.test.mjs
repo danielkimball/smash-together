@@ -1,4 +1,4 @@
-import test from "node:test";
+﻿import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { WebSocket } from "ws";
@@ -120,7 +120,7 @@ async function until(c, type, predicate = () => true) {
 }
 async function create(a, options = {}) {
   const h = await client(a.ws);
-  h.send({ type: "create", protocol: 5, rom, build, name: "Dan", ...options });
+  h.send({ type: "create", protocol: 6, rom, build, name: "Dan", ...options });
   const joined = await until(h, "joined");
   const { room } = await until(h, "room");
   return { h, token: joined.token, id: joined.id, room };
@@ -129,7 +129,7 @@ async function join(a, token, options = {}) {
   const g = await client(a.ws);
   g.send({
     type: "join",
-    protocol: 5,
+    protocol: 6,
     rom,
     build,
     token,
@@ -145,17 +145,17 @@ test("public room directory hides private invitations and tracks four seats", as
   const list = (await (await fetch(a.http + "/api/rooms")).json()).rooms;
   assert.equal(list.length, 1);
   assert.equal(list[0].id, first.room.id);
-  assert.equal(list[0].capacity, 4);
+  assert.equal(list[0].capacity, 8);
   assert.ok(!JSON.stringify(list).includes(first.token));
   assert.ok(!JSON.stringify(list).includes(privateRoom.token));
   const clients = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 7; i++) {
     const c = await join(a, undefined, { roomId: first.room.id });
     clients.push(c);
     await until(c, "joined");
     const { room } = await until(c, "room");
     assert.equal(room.members.length, i + 2);
-    assert.equal(room.members.at(-1).slot, i + 1);
+    assert.equal(room.members.at(-1).slot, i < 3 ? i + 1 : -1);
   }
   const full = await join(a, first.token);
   assert.match((await until(full, "error")).message, /full/);
@@ -184,7 +184,7 @@ test("update drain counts private rooms, blocks new rooms, permits joins and exp
     0,
   );
   const blocked = await client(a.ws);
-  blocked.send({ type: "create", protocol: 5, rom, build });
+  blocked.send({ type: "create", protocol: 6, rom, build });
   assert.match((await until(blocked, "error")).message, /installing an update/);
   const guest = await join(a, hidden.token);
   await until(guest, "joined");
@@ -251,7 +251,8 @@ test("solo room opens immediately; joining changes roster revision, not the matc
   h.send({ type: "seal", match: 1, revision: 2 });
   await until(h, "room", (m) => !m.room.selecting);
   const stranger = await join(a, token);
-  assert.match((await until(stranger, "error")).message, /started/);
+  await until(stranger, "joined");
+  assert.equal((await until(stranger, "room")).room.members.at(-1).slot, -1);
 });
 test("old roster input and snapshots cannot reach a newly joined controller", async (t) => {
   const a = await setup(t),
@@ -314,42 +315,97 @@ test("explicit leave frees a selection port; signal relay stays within its room"
   await until(replacement, "joined");
   assert.equal((await until(replacement, "room")).room.members[1].slot, 1);
 });
-test("network loss reserves the fighter and port; only its ticket can reconnect in battle", async (t) => {
+test("live reconnect and host handoff preserve the running timeline", async (t) => {
   const a = await setup(t),
-    { h, token } = await create(a),
+    { h, token, id } = await create(a),
     g = await join(a, token);
   const joined = await until(g, "joined");
   await until(g, "room");
+  h.send({
+    type: "game",
+    payload: { type: "start", match: 1, revision: 2, epoch: 2 },
+  });
   h.send({ type: "seal", match: 1, revision: 2 });
-  await until(h, "room", (m) => !m.room.selecting);
+  await until(h, "frame", (m) => m.frame > 5);
   g.s.close();
-  await until(h, "room", (m) => m.room.phase === "paused");
-  const stranger = await join(a, token);
-  assert.match((await until(stranger, "error")).message, /started/);
+  const dropped = (
+    await until(h, "room", (m) => m.room.members.some((p) => !p.connected))
+  ).room;
+  assert.equal(dropped.revision, 2);
   const back = await join(a, token, { ticket: joined.ticket });
   assert.equal((await until(back, "joined")).id, joined.id);
-  const r = (await until(back, "room")).room;
-  assert.equal(r.revision, 4);
-  assert.ok(r.members.every((p) => p.connected));
-  back.s.close();
-  await until(h, "room", (m) => m.room.revision === 5);
-  h.send({ type: "lobby" });
-  const lobby = (await until(h, "room", (m) => m.room.match === 2)).room;
-  assert.equal(lobby.members.length, 1);
-  assert.equal(lobby.selecting, true);
-  await until(h, "launch");
-  const fresh = await join(a, token);
-  await until(fresh, "joined");
-  await until(fresh, "room");
+  assert.equal((await until(back, "room")).room.revision, 2);
+  await until(h, "snapshot-request", (m) => m.to === joined.id);
   h.s.close();
-  await until(fresh, "closed");
-  assert.equal(a.rooms.size, 0);
+  const transferred = (
+    await until(back, "room", (m) => m.room.hostId === joined.id)
+  ).room;
+  assert.equal(transferred.match, 1);
+  assert.equal(transferred.revision, 2);
+  assert.ok(
+    (await until(back, "frame", (m) => m.frame > 7)).inputs[0].buttons === 0,
+  );
+  assert.equal(a.rooms.size, 1);
 });
 test("cross-origin browser WebSocket upgrades are rejected", async (t) => {
   const a = await setup(t),
     s = new WebSocket(a.ws, { origin: "https://unrelated.example" });
   const [error] = await once(s, "error");
   assert.match(error.message, /socket hang up|closed/i);
+});
+
+test("voice requires opt-in, stays inside the room, and enforces host mutes", async (t) => {
+  const a = await setup(t),
+    { h, token, id } = await create(a);
+  const g = await join(a, token),
+    joined = await until(g, "joined");
+  await until(g, "room");
+  const other = await create(a),
+    received = [],
+    outside = [];
+  g.s.on("message", (data, binary) => {
+    if (!binary) received.push(JSON.parse(data));
+  });
+  other.h.s.on("message", (data, binary) => {
+    if (!binary) outside.push(JSON.parse(data));
+  });
+  const audio = Buffer.alloc(640, 127).toString("base64");
+  const flush = async () => {
+    h.send({ type: "ping", id: 123 });
+    await until(h, "pong");
+    await new Promise((r) => setTimeout(r, 20));
+  };
+  h.send({ type: "voice", audio });
+  await flush();
+  assert.equal(received.filter((m) => m.type === "voice").length, 0);
+  h.send({ type: "voice-state", enabled: true });
+  g.send({ type: "voice-state", enabled: true });
+  await until(h, "room", (m) => m.room.members.every((p) => p.voice));
+  h.send({ type: "voice", audio });
+  await flush();
+  assert.equal(received.filter((m) => m.type === "voice").length, 1);
+  assert.equal(received.find((m) => m.type === "voice").from, id);
+  assert.equal(outside.filter((m) => m.type === "voice").length, 0);
+  g.send({ type: "voice-moderate", id, muted: true });
+  assert.match((await until(g, "error")).message, /Only the host/);
+  h.send({ type: "voice-moderate", id, muted: true });
+  h.send({ type: "voice", audio });
+  await flush();
+  assert.equal(received.filter((m) => m.type === "voice").length, 1);
+  h.send({ type: "voice-moderate", id, muted: false });
+  h.send({ type: "availability", ready: false });
+  h.send({ type: "voice-moderate", spectators: true });
+  h.send({ type: "voice", audio });
+  await flush();
+  assert.equal(received.filter((m) => m.type === "voice").length, 1);
+  const room = a.rooms.get(token);
+  assert.equal(room.hostId, id);
+  assert.equal(room.members.get(id).slot, -1);
+  h.send({ type: "voice-moderate", spectators: false });
+  h.send({ type: "voice", audio });
+  await flush();
+  assert.equal(received.filter((m) => m.type === "voice").length, 2);
+  assert.equal(room.members.get(joined.id).muted, undefined);
 });
 
 test("outdated browser pages get an explicit reload instruction", async (t) => {
@@ -470,7 +526,11 @@ test("a disconnected guest does not stop a running battle's clock", async (t) =>
     .room;
   assert.equal(state.phase, "playing");
   assert.equal(state.revision, 2);
-  assert.ok((await until(h, "frame", (m) => m.frame > 6)).late.includes(1));
+  assert.deepEqual((await until(h, "frame", (m) => m.frame > 6)).inputs[1], {
+    buttons: 0,
+    x: 0,
+    y: 0,
+  });
 });
 
 test("stable frontend alone can read APIs, preflight testing access and open the room socket", async (t) => {

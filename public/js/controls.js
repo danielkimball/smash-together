@@ -195,7 +195,13 @@ export class Controls extends EventTarget {
     );
   }
   devices() {
-    return [...(navigator.getGamepads?.() || [])].filter(Boolean);
+    try {
+      return [...(navigator.getGamepads?.() || [])].filter(
+        (p) => p && p.connected !== false && p.buttons?.length,
+      );
+    } catch {
+      return [];
+    }
   }
   pad() {
     return this.selected === "keyboard"

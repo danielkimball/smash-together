@@ -4,9 +4,9 @@ import { Rounds } from "../public/js/rounds.js";
 const room = {
   hostId: "dan",
   members: [
-    { id: "dan", slot: 0 },
-    { id: "bro", slot: 1 },
-    { id: "third", slot: 2 },
+    { id: "dan", slot: 0, connected: true },
+    { id: "bro", slot: 1, connected: true },
+    { id: "third", slot: 2, connected: true },
   ],
 };
 const result = (players, teams = false, kind = 1) => ({
@@ -72,7 +72,7 @@ test("winner survives synchronization; a replacement in the same port cannot inh
   assert.equal(guest.chooser(room).id, "bro");
   const changed = {
     ...room,
-    members: [room.members[0], { id: "replacement", slot: 1 }],
+    members: [room.members[0], { id: "replacement", slot: 1, connected: true }],
   };
   assert.equal(guest.chooser(changed).id, "dan");
 });
