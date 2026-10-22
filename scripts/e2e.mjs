@@ -138,6 +138,12 @@ try {
     await p.waitForFunction(() => window.smash);
   }
   const [a, b] = pages;
+  report.backend = await a.evaluate(async () => {
+    const { serviceFetch } = await import(
+      new URL("js/service.js", document.baseURI)
+    );
+    return (await serviceFetch("/api/status")).json();
+  });
   await a.locator(".header-actions [data-fullscreen]").click();
   await a.waitForFunction(
     () => document.fullscreenElement === document.documentElement,
@@ -332,7 +338,13 @@ try {
   await a.waitForFunction(() => !smash.net.room.selecting);
   await frames(a, 110);
   assert.equal(
-    (await (await fetch(local + "/api/rooms")).json()).rooms[0].selecting,
+    await a.evaluate(async () => {
+      const { serviceFetch } = await import(
+        new URL("js/service.js", document.baseURI)
+      );
+      return (await (await serviceFetch("/api/rooms")).json()).rooms[0]
+        .selecting;
+    }),
     false,
   );
   await act(a, ["KeyJ"], 6, 240);
