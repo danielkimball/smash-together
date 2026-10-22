@@ -8,6 +8,10 @@ The checks use Dan’s locally supplied original US ROM. No ROM, save, screensho
 - Four isolated browser contexts represent four computers. All emulators execute on this laptop; this does not reproduce geographically separated networks.
 - Desktop 1440 × 900 and phone 390 × 844 layouts checked. Fullscreen API toggle and a viewport-sized game canvas verified. The game preserves its 4:3 ratio.
 
+## Release result
+
+Four local browser contexts passed 18 checks. The deployed app then passed **19 browser checks** with the host on localhost and three guests on the public HTTPS tunnel (2026-10-22 01:03–01:05 UTC). The measured two-player fight averaged **59 FPS**, with zero unexpected repairs; the intentional memory corruption triggered one successful repair. No uncaught browser errors occurred. The public run also verified a guest reconnect during initial game preparation.
+
 ## Checks
 
 - Ten Node tests pass: ROM byte order, Xbox preset, custom N64 buttons/axes, calibration, static-file confinement, no upload routes, same-origin upgrades, public/private listing, capacity, matching ROM/build, port conflicts, host-only lifecycle, readiness, relay isolation and reconnect tickets.

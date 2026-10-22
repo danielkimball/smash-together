@@ -162,6 +162,7 @@ export class Netplay extends EventTarget {
           this.preparing = true;
           Promise.resolve(this.prepare?.())
             .then(() => {
+              if (this.socket !== ws || this.room?.match !== match) return;
               this.preparing = false;
               if (
                 this.socket === ws &&
@@ -223,6 +224,7 @@ export class Netplay extends EventTarget {
     if (room.phase === "lobby") {
       this.running = false;
       this.syncing = false;
+      this.preparing = false;
       clearTimeout(this.syncTimeout);
       this.message = "";
       this.state = "lobby";

@@ -289,7 +289,17 @@ async function prepareVersus() {
     preparing = false;
   }
 }
-net.prepare = prepareVersus;
+let preparation = Promise.resolve();
+net.prepare = () => {
+  const match = net.room?.match;
+  preparation = preparation
+    .catch(() => {})
+    .then(() => {
+      if (net.room?.match === match && net.room.phase !== "lobby")
+        return prepareVersus();
+    });
+  return preparation;
+};
 $("rom-file").onchange = attempt((e) => loadFile(e.target.files[0]));
 $("choose-rom").onclick = () => $("rom-file").click();
 $("cartridge-open").onclick = () => dialog("rom-dialog");
@@ -429,16 +439,19 @@ async function copyInvite() {
       shareUrl = (await (await fetch("/api/status")).json()).shareUrl;
     } catch {}
     if (shareUrl) base = shareUrl;
+    else
+      throw Error(
+        "Internet sharing is not running. Open Start Sharing on the host computer, then copy a fresh invite.",
+      );
   }
   const link = `${base}/#room=${net.token}`;
   try {
     await navigator.clipboard.writeText(link);
     toast("Invite copied. Send it to your friends.");
   } catch {
-    $("invite-input").value = link;
-    dialog("join-dialog");
-    $("invite-input").select();
-    toast("Copy the selected invitation link.");
+    $("invite-link").value = link;
+    dialog("invite-dialog");
+    $("invite-link").select();
   }
 }
 $("copy-invite").onclick = attempt(copyInvite);

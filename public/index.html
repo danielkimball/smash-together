@@ -305,6 +305,28 @@
         </button>
       </form>
     </dialog>
+    <dialog id="invite-dialog">
+      <div class="dialog-heading">
+        <h2>Invite your friends.</h2>
+        <button
+          class="close"
+          data-close="invite-dialog"
+          aria-label="Close invitation"
+        >
+          ×
+        </button>
+      </div>
+      <p>
+        Copy this link and send it to your friends. They’ll join your waiting
+        lobby.
+      </p>
+      <label for="invite-link">YOUR ROOM INVITATION</label
+      ><input id="invite-link" readonly />
+      <p class="subtext">
+        Press ⌘C on Mac or Ctrl+C on Windows to copy the selected link.
+      </p>
+      <button class="primary wide" data-close="invite-dialog">Done</button>
+    </dialog>
     <dialog id="menu-dialog">
       <div class="dialog-heading">
         <h2>Take a breather.</h2>
