@@ -16,6 +16,9 @@ import {
 } from "./scripts/room-roster.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
+const VERSION = JSON.parse(
+  readFileSync(path.join(ROOT, "package.json"), "utf8"),
+).version;
 const PUBLIC = path.join(ROOT, "public");
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -175,7 +178,7 @@ export function createApp({
         return res.end(
           JSON.stringify({
             ok: true,
-            version: "3.5.0",
+            version: VERSION,
             hostId: config.hostId || null,
             activeRooms: rooms.size,
             updating: !!updating(),
