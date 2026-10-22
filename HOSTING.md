@@ -2,11 +2,11 @@
 
 ## Current truth
 
-The permanent game is **https://danielkimball.github.io/smash-together/**. Source is `danielkimball/smash-together`, branch `main`; static deployment is `gh-pages`. The live backend currently runs on **Dan's Mac laptop** through a free Cloudflare Quick Tunnel. **Ryker (`widdlewyter`) uses Windows** and is intended to become the primary host. Dan's laptop, later his Mac mini, is intended to be backup.
+The permanent game is **https://danielkimball.github.io/smash-together/**. Source is `danielkimball/smash-together`, branch `main`; static deployment is `gh-pages`. The primary backend is **Ryker's Windows PC**, host ID `ryker-windows`, published with his own GitHub account `widdlewyter`. Dan's existing Mac laptop is the manual backup; his eventual Mac mini still needs its own setup. Both use free Cloudflare Quick Tunnels.
 
-The game frontend stays on GitHub Pages. `public/js/service.js` reads `server.json` to find the active Cloudflare backend. Browser-local ROM, name and controller storage therefore stays at one origin. This is a direct frontend, with no iframe and no full-page redirect to changing tunnel URLs. Clients emulate locally, use direct WebRTC inputs when possible, and fall back to the active host's WebSocket relay.
+The game frontend stays on GitHub Pages. `public/js/service.js` reads `active-host.json` to find the active Cloudflare backend. Browser-local ROM, name and controller storage therefore stays at one origin. This is a direct frontend, with no iframe and no full-page redirect to changing tunnel URLs. Clients emulate locally, use direct WebRTC inputs when possible, and fall back to the active host's WebSocket relay.
 
-**Implemented today:** one active backend, public health checks, automatic recovery of that host's expired tunnel, Windows x64 tunnel download, Windows startup script, and a stable player URL. **Not implemented yet:** automatic switching between Ryker's and Dan's computers, shared room state, or preserving an active match across loss of the backend. The design below is the next milestone; do not confuse single-host tunnel recovery with multi-machine failover.
+**Implemented today:** one active backend, public health checks, automatic recovery of that host's expired tunnel, Windows x64 tunnel download, verified Windows login startup, guarded primary ownership, tested idle-only main updates, and a stable player URL. **Not implemented yet:** automatic switching between Ryker's and Dan's computers, shared room state, or preserving an active match across loss of the backend. The design below is the next milestone; do not confuse single-host tunnel recovery with multi-machine failover.
 
 ## What Ryker can tell Codex
 
@@ -53,7 +53,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-service.ps1 
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-service.ps1 status
 ```
 
-The script registers a task for the current user's login and keeps logs in `.local/host.log`. It runs with that user's permissions, so their GitHub credentials remain available. `-ExecutionPolicy Bypass` applies only to that PowerShell process, not the machine's global policy. If Task Scheduler registration is restricted, `start` can run the host in the background for the current session; report that login startup was not installed. Keep the computer awake and signed in. This implementation has been prepared from macOS; its first Windows execution, Task Scheduler behavior and power behavior require verification on Ryker's actual machine.
+The script registers a task for the current user's login and keeps logs in `.local/host.log`. It runs with that user's permissions, so their GitHub credentials remain available. `-ExecutionPolicy Bypass` applies only to that PowerShell process, not the machine's global policy. If Task Scheduler registration is restricted, `start` can run the host in the background for the current session; report that login startup was not installed. Keep the computer awake and signed in. The login task and background hosting were installed and exercised on Ryker's Windows PC. Locking does not sign the user out. The runner requests that Windows stay awake while allowing the screen to turn off; this cannot override manual Sleep, Hibernate, shutdown or loss of power.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-service.ps1 start
@@ -64,25 +64,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-service.ps1 
 
 A full Windows host restart closes rooms and may rotate the tunnel. `uninstall` removes the login task but keeps source and private data. Do not run the foreground host and the scheduled task simultaneously.
 
-## Promote Ryker without two competing publishers
+## Primary ownership and manual backup
 
-1. Verify Ryker's local and public endpoints, game version, browser CORS access and a real test room before replacing the public address. Check the current public `/api/rooms`; schedule any cutover around active players.
-2. **On Dan's host**, remove `pagesRepo` from private `.local/config.json` and set `publishLink: false`. Removing `pagesRepo` also disarms older already-running publisher code. Keep `frontendUrl` and any private testing config. Dan can keep his backend running, but it must not overwrite the single active `server.json` record.
-3. **On Ryker's host**, set `publishLink: true`, keep `pagesRepo: "danielkimball/smash-together"`, and `frontendUrl: "https://danielkimball.github.io/smash-together/"`. Set `ghPath` only if `gh` is not on PATH; use the locally detected executable path.
-4. With his verified tunnel running, publish its address:
+The permanent frontend uses only `active-host.json`, never legacy `server.json`. This protects it from Dan's older automatic publisher without requiring access to his computer. Current publishers must match both the registered `hostId` and GitHub account. A collaborator can deliberately promote a different host; ordinary startup and auto updates cannot do so. This is an operational guard, not an access-control boundary against repository owners.
 
-   ```powershell
-   $Share = Get-Content .local/share.json -Raw | ConvertFrom-Json
-   node scripts/publish-link.mjs $Share.url
-   ```
+For an initial promotion or an explicitly requested backup handoff:
 
-5. Verify the **deployed** `https://danielkimball.github.io/smash-together/server.json` points to Ryker, not merely that the GitHub commit exists. Pages publication can be queued; the old host must remain available during that interval. If necessary, request the configured Pages build through `gh api --method POST repos/danielkimball/smash-together/pages/builds` and observe its result.
-6. Open the permanent game in two isolated browsers and verify ROM loading, create/join, actual gameplay, an invitation and reconnect. Existing rooms on Dan's backend do not migrate; finish them or create fresh rooms on Ryker's backend. Do not clear browser storage during the move.
-7. Update `AGENTS.md` and this file with the verified active host, operating system and test results. Never commit `.local` or credentials.
+1. Install current main on the destination and assign a unique private `hostId` (Ryker: `ryker-windows`; Dan: `dan-mac`). Start with `publishLink: false`. Use that person's own GitHub login.
+2. Verify the destination public `/api/status`, matching host ID, CORS and a game. Check the current host's `activeRooms`, including private rooms, before cutting over. Existing matches cannot migrate.
+3. Enable `publishLink` on the destination, with `pagesRepo` and `frontendUrl` set to this repository and permanent address. Explicitly run `node scripts/publish-link.mjs <verified-tunnel-url> --promote`.
+4. Wait for the **deployed** `active-host.json` to match the destination. Publish current static assets with `node scripts/publish-pages.mjs` if necessary, then test the permanent site in two browsers.
+5. The previous record is retained as backup information. A Quick Tunnel can expire; always verify the backup anew before promoting it. Ordinary publication by the old primary is now rejected. Older code can only modify ignored legacy `server.json`. Disable publication on the old machine when access is available, but changing its private configuration is no longer required for the guard to work.
 
-### Manual recovery until automatic failover exists
+If Ryker goes offline, Dan's machine does **not** take over automatically. Someone must start and verify that machine and explicitly promote it using these steps. Return to Ryker using another explicit promotion. Players create fresh rooms after backend loss. Do not clear browser storage or change the player address. Already-open old frontend tabs should reload once after this upgrade.
 
-If Ryker's backend is unavailable, start/verify Dan's host publicly, ensure Ryker's publisher is disabled, restore Dan's `pagesRepo`, enable his `publishLink`, and run `node scripts/publish-link.mjs <verified-Dan-tunnel>`. Wait for deployed `server.json` and verify the permanent site. Players recreate rooms; a lost match does not silently continue on another server.
+## Windows automatic updates and everyday controls
+
+Ryker's checkout is `C:\Users\ryker\Documents\SmashPortalHost\app`. Private tool paths, host ID and publication settings live in `.local/config.json`. GitHub authentication stays in Windows Credential Manager; the ROM remains outside the checkout. The testing-cartridge endpoint is disabled.
+
+Set private `autoUpdate: true` and `pythonPath`, along with `nodePath`, `gitPath` and `ghPath` where required. Install the updater using:
+
+`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-updater.ps1 install`
+
+The current user's login task checks `origin/main` every minute. It prepares a separate candidate, installs locked dependencies, runs tests/checks, and rebuilds corresponding source with the pinned submodule. A temporary drain prevents new rooms during the final idle check; both public and private rooms count. It waits for all rooms to close, switches to the tested commit, restarts and verifies the public connection, and publishes safe static files while preserving host records. Server startup failure restores the prior commit. A delayed Pages build is retried on the next check. Source edits stop deployment instead of being overwritten. Failed validation leaves the running version in place. A deliberately stopped host stays stopped.
+
+Use **Desktop > Smash Portal > Start Hosting / Stop Hosting / Restart Hosting / Play Smash**. Full restart closes rooms and may take a few minutes to restore the free public connection. Logs: `.local/host.log` and `.local/updates.log`. Remove the updater with `scripts/windows-updater.ps1 uninstall`; host `uninstall` is separate.
+
+Keep this PC plugged in, connected to the internet and signed in. **Windows+L** is safe. In **Settings > System > Power & battery (or Power) > Screen, sleep & hibernate timeouts**, set plugged-in sleep to **Never**. The screen may turn off. Ryker's plugged-in sleep and hibernate timeouts were already Never. Do not choose Sleep/Hibernate or shut down; after reboot, sign in once to start these tasks. Running before login would require a separately configured service and is not claimed here.
 
 ## Automatic failover design and implementation order
 

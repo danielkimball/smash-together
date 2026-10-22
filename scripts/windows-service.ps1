@@ -7,9 +7,14 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $LocalDir = Join-Path $ProjectRoot '.local'
 $TaskName = "SmashPortalHost-$env:USERNAME"
 $Runner = Join-Path $PSScriptRoot 'windows-service.ps1'
-$NodePath = (Get-Command node -ErrorAction Stop).Source
 New-Item -ItemType Directory -Path $LocalDir -Force | Out-Null
 Set-Location $ProjectRoot
+$Config = Get-Content -LiteralPath (Join-Path $LocalDir 'config.json') -Raw | ConvertFrom-Json
+$NodePath = $Config.nodePath
+if (!$NodePath) { $NodePath = (Get-Command node -ErrorAction Stop).Source }
+$ToolDirs = @((Split-Path $NodePath))
+foreach ($Tool in @($Config.gitPath, $Config.ghPath)) { if ($Tool) { $ToolDirs += Split-Path $Tool } }
+$env:Path = ($ToolDirs -join ';') + ';' + $env:Path
 
 function Get-HostProcess {
   $PidFile = Join-Path $LocalDir 'host.pid'
@@ -47,15 +52,28 @@ switch ($Command) {
   'run' {
     if (Get-HostProcess) { exit 0 }
     # The task is tied to the signed-in user, so gh uses that user's own login.
-    & $NodePath (Join-Path $PSScriptRoot 'host.mjs') *>> (Join-Path $LocalDir 'host.log')
-    exit $LASTEXITCODE
+    Add-Type -TypeDefinition @"
+using System.Runtime.InteropServices;
+public static class SmashPortalPower {
+  [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);
+}
+"@
+    try {
+      # Keep the system awake, while allowing the screen to switch off.
+      [void][SmashPortalPower]::SetThreadExecutionState([uint32]2147483649)
+      $ErrorActionPreference = 'Continue'
+      & $NodePath (Join-Path $PSScriptRoot 'host.mjs') *>> (Join-Path $LocalDir 'host.log')
+      exit $LASTEXITCODE
+    } finally {
+      [void][SmashPortalPower]::SetThreadExecutionState([uint32]2147483648)
+    }
   }
   'install' {
     $TaskUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $Action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Runner`" run" -WorkingDirectory $ProjectRoot
+    $Action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Runner`" run" -WorkingDirectory $ProjectRoot
     $Trigger = New-ScheduledTaskTrigger -AtLogOn -User $TaskUser
     $Principal = New-ScheduledTaskPrincipal -UserId $TaskUser -LogonType Interactive -RunLevel Limited
-    $Settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -StartWhenAvailable
+    $Settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Description 'Smash Portal room host and free Cloudflare connection' -Force | Out-Null
     Start-Host
   }

@@ -1,6 +1,6 @@
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
@@ -32,8 +32,19 @@ export function createApp({
   host = "127.0.0.1",
   port = 8787,
   config = {},
+  maintenancePath = null,
 } = {}) {
   const rooms = new Map();
+  const updating = () => {
+    try {
+      return (
+        maintenancePath &&
+        JSON.parse(readFileSync(maintenancePath, "utf8")).expires > Date.now()
+      );
+    } catch {
+      return false;
+    }
+  };
   const attempts = new Map();
   let testingBytes;
   const frontend = config.frontendUrl ? new URL(config.frontendUrl) : null;
@@ -150,7 +161,10 @@ export function createApp({
         return res.end(
           JSON.stringify({
             ok: true,
-            version: "3.4.0",
+            version: "3.4.1",
+            hostId: config.hostId || null,
+            activeRooms: rooms.size,
+            updating: !!updating(),
             shareUrl,
             publicUrl: frontend?.href || shareUrl,
             testingAvailable: !!config.testing?.romPath,
@@ -349,6 +363,10 @@ export function createApp({
         const name = clean(m.name, "Player", 30);
         let r, p;
         if (m.type === "create") {
+          if (updating())
+            return fail(
+              "The host is installing an update. Please try again shortly.",
+            );
           if (rooms.size >= 32) return fail("Server is full. Try again later.");
           const token = randomBytes(18).toString("hex");
           r = {
@@ -585,6 +603,7 @@ if (
     host: process.env.HOST || "127.0.0.1",
     port: Number(process.env.PORT || 8787),
     config,
+    maintenancePath: path.join(ROOT, ".local/deploy-drain.json"),
   });
   app.ready
     .then((a) =>

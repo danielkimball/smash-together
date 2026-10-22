@@ -17,7 +17,7 @@ for name in ['n64wasm.js','n64wasm.wasm','assets.zip']:
 for directory in ['brand','fonts','media']:
  for file in sorted((root/'public'/directory).glob('*')):
   if file.is_file():
-   data=file.read_bytes();manifest['files'][str(file.relative_to(root/'public'))]={'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)}
+   data=file.read_bytes();manifest['files'][file.relative_to(root/'public').as_posix()]={'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)}
 source=root/'public/source';source.mkdir(exist_ok=True)
 (source/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 archive=source/'smash-together-source.tar.gz'
@@ -34,8 +34,8 @@ with tarfile.open(archive,'w:gz') as out:
   for file in sorted(path.rglob('*')) if path.is_dir() else [path]:
    if not file.is_file() or file.is_symlink():continue
    rel=file.relative_to(root)
-   if 'public/source' in str(rel) and file.suffix=='.gz':continue
-   addfile(out,file,'smash-together/'+str(rel))
+   if rel.as_posix().startswith('public/source/') and file.suffix=='.gz':continue
+   addfile(out,file,'smash-together/'+rel.as_posix())
  tracked=subprocess.check_output(['git','ls-files','-z','code','LICENSE','README.md','NETPLAY.md'],cwd=upstream).decode().split('\0')
  for item in sorted(filter(None,tracked)):
   file=upstream/item

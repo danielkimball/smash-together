@@ -1,3 +1,11 @@
+# Windows primary setup - v3.4.1 - 2026-10-22
+
+- 27 Node tests pass, including primary ownership, rejection of legacy routing, and an update drain that counts private rooms while preserving existing joins and expiring safely.
+- Syntax, linked assets, pinned engine checksums and ROM-exclusion checks pass. The corresponding source archive is rebuilt on Windows with portable POSIX paths and no self-inclusion. Pinned emulator JS/WASM bytes are unchanged.
+- 15 two-player local checks and 15 local-to-public Cloudflare checks pass on Ryker's Windows PC using his own local ROM and isolated Chrome contexts. Both measured battles ran at 60 FPS, 24 matching state checks and zero unexpected repairs; deliberate desync, relay fallback, reconnect, shared pause, saves and profile persistence passed with no uncaught browser errors. Reports: artifacts/windows-local-baseline.json and artifacts/windows-tunnel-baseline.json.
+- The scheduled host runs as Ryker, with his GitHub account widdlewyter. Public status identifies ryker-windows; testing-cartridge downloads are disabled. Cloudflare HTTP/2 connectivity and the permanent frontend CORS origin are verified. Dan's public directory was empty before cutover.
+- The login task was registered and started successfully. Desktop controls were created. AC sleep and hibernate timeouts were already zero (Never). The runner requests system-awake/display-sleep-allowed behavior. A physical reboot/lock test has not been performed; Windows' detailed power-request query requires administrator elevation unavailable to this process.
+- Full deployed-site and automatic-update results will be recorded after the public cutover test. These browser tests run on one Windows PC, not two geographically separated networks or physical gamepads. Automatic cross-machine failover and live-match recovery remain unimplemented.
 # Release verification · Smash Portal v3.4.0 · 2026-10-22
 
 - **23 Node tests pass**, including the exact DragonRise 0079:0006 preset, normalized controller identifiers, the trusted permanent frontend's API/preflight/WebSocket access, foreign-origin rejection and the existing rooms, winner, media and tunnel-recovery checks.

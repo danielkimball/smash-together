@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { WebSocket } from "ws";
 import { createHash } from "node:crypto";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { createApp } from "../server.mjs";
 const rom = "e2929e10fccc0aa84e5776227e798abc07cedabf",
   build = "test-v1";
@@ -34,8 +37,8 @@ async function client(url) {
           }),
   };
 }
-async function setup(t, config = {}) {
-  const app = createApp({ port: 0, config });
+async function setup(t, config = {}, options = {}) {
+  const app = createApp({ port: 0, config, ...options });
   const { port } = await app.ready;
   t.after(() => app.close());
   return {
@@ -160,6 +163,38 @@ test("public room directory hides private invitations and tracks four seats", as
   assert.match((await until(hidden, "error")).message, /closed|invalid/);
   const invited = await join(a, privateRoom.token);
   assert.equal((await until(invited, "joined")).type, "joined");
+});
+
+test("update drain counts private rooms, blocks new rooms, permits joins and expires", async (t) => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "smash-drain-"));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const maintenancePath = path.join(temp, "drain.json");
+  const a = await setup(t, { hostId: "ryker-windows" }, { maintenancePath });
+  const hidden = await create(a, { listed: false });
+  await writeFile(
+    maintenancePath,
+    JSON.stringify({ expires: Date.now() + 60000 }),
+  );
+  const state = await (await fetch(a.http + "/api/status")).json();
+  assert.equal(state.hostId, "ryker-windows");
+  assert.equal(state.activeRooms, 1);
+  assert.equal(state.updating, true);
+  assert.equal(
+    (await (await fetch(a.http + "/api/rooms")).json()).rooms.length,
+    0,
+  );
+  const blocked = await client(a.ws);
+  blocked.send({ type: "create", protocol: 4, rom, build });
+  assert.match((await until(blocked, "error")).message, /installing an update/);
+  const guest = await join(a, hidden.token);
+  await until(guest, "joined");
+  await writeFile(maintenancePath, JSON.stringify({ expires: Date.now() - 1 }));
+  assert.equal(
+    (await (await fetch(a.http + "/api/status")).json()).updating,
+    false,
+  );
+  await create(a);
+  assert.equal(a.rooms.size, 2);
 });
 test("solo room opens immediately; joining changes roster revision, not the match", async (t) => {
   const a = await setup(t),

@@ -1,6 +1,6 @@
 {
   "application": "Smash Portal",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "engine_source": "https://github.com/waveplate/M64Wasm",
   "engine_commit": "f6b5d6cc31821ec501a94aa761eae022d08f5a9d",
   "emscripten": "2.0.7",
@@ -23,8 +23,8 @@
       "modified": false
     },
     "engine/assets.zip": {
-      "sha256": "c99e553befe6c2e97c92e9fe3222036f3bb2919bb04a3a2dc9d5c9b2ecb00144",
-      "bytes": 33302,
+      "sha256": "0a6f5a9d111e51ec557aa8f9b407ddefa4f64cf0d610fed8b28a53f80dbfac30",
+      "bytes": 33843,
       "modified": true
     },
     "brand/smash-portal.jpeg": {

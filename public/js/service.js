@@ -1,5 +1,6 @@
 // The public UI keeps one origin for browser-local ROMs/profiles. Only the
 // signaling/relay address changes when the free Cloudflare tunnel rotates.
+import { discoverHost } from "./host-record.js";
 export const appBase = new URL("../", import.meta.url);
 const hosted = appBase.hostname.endsWith(".github.io");
 let server = hosted ? null : appBase.origin;
@@ -13,20 +14,7 @@ export async function serverOrigin(force = false) {
   if (!force && server && Date.now() - checked < 15000) return server;
   if (!pending)
     pending = (async () => {
-      const response = await fetch(
-        assetURL("server.json") + "?t=" + Date.now(),
-        { cache: "no-store", signal: AbortSignal.timeout(15000) },
-      );
-      if (!response.ok)
-        throw Error("The live host address is unavailable. Try again shortly.");
-      const { url } = await response.json();
-      const origin = new URL(url);
-      if (
-        origin.protocol !== "https:" ||
-        !/^[a-z0-9-]+\.trycloudflare\.com$/.test(origin.hostname)
-      )
-        throw Error("Invalid live host address.");
-      server = origin.origin;
+      server = await discoverHost(appBase);
       checked = Date.now();
       return server;
     })().finally(() => {

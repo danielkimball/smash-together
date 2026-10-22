@@ -1,10 +1,10 @@
 # Smash Portal · 64
 
-A free, self-hosted, full-window browser app for two to four friends to play the original US Super Smash Bros. N64 game online. Each player supplies their own ROM. Includes the original game menus, a room browser, live character-selection rooms, private invitations, Xbox and remappable N64 controllers, portrait/landscape phone touch controls, keyboard controls, all 12 fighters and all 9 VS stages unlocked, winner-controlled stage selection, direct WebRTC connections, a WebSocket fallback, synchronized save states, local progress saves, and free HTTPS sharing from a Mac.
+A free, self-hosted, full-window browser app for two to four friends to play the original US Super Smash Bros. N64 game online. Each player supplies their own ROM. Includes the original game menus, a room browser, live character-selection rooms, private invitations, Xbox and remappable N64 controllers, portrait/landscape phone touch controls, keyboard controls, all 12 fighters and all 9 VS stages unlocked, winner-controlled stage selection, direct WebRTC connections, a WebSocket fallback, synchronized save states, local progress saves, and free HTTPS sharing from Windows or a Mac.
 
 For Ryker's Windows hosting handoff and the Dan/Mac mini backup design, start with [AGENTS.md](AGENTS.md) and [HOSTING.md](HOSTING.md).
 
-## Play on this laptop
+## Play
 
 Use **https://danielkimball.github.io/smash-together/** or **Desktop → Smash Together → Friends Link.webloc**. **Play Smash.command** also opens this permanent site. It hosts the game directly and remembers your ROM, controller settings and name even when the Cloudflare connection changes. There is no iframe. The host can still use **http://localhost:8787** for local development; localhost has its own separate saved data. Use Google Chrome or Microsoft Edge on both computers.
 
@@ -53,13 +53,15 @@ The local game’s overlay menu offers **Save progress / Load progress** to keep
 
 ## Hosting, cost and stopping
 
+Ryker's Windows PC is primary. Use **Desktop > Smash Portal** for Play, Start Hosting, Stop Hosting and Restart Hosting. Hosting starts when Ryker signs in; lock with Windows+L and keep the PC awake. Tested updates from main deploy automatically when all rooms are empty. Dan's Mac is the manual backup; failover and match migration are not automatic. Full operating instructions are in [HOSTING.md](HOSTING.md). The Mac-specific commands below apply only to Mac hosts.
+
 The app, runtime, relay and sharing software cost $0. Players need no account. GitHub Pages serves the permanent game frontend; your laptop supplies the live room service and fallback relay through Cloudflare.
 
 **Desktop → Smash Together → Start Sharing.command** starts the login service. **Stop Sharing.command** stops the website, relay, tunnel and idle-sleep prevention. **Play Smash.command** starts the service if needed and opens Chrome. The service is installed for the current macOS user and starts at login.
 
 Keep the laptop plugged in with its lid open while hosting. `caffeinate -i` prevents idle system sleep, but does not override closing the lid or manually sleeping the Mac. Display sleep is allowed. A server restart closes rooms; create a fresh invitation afterward. Use `node scripts/service.mjs restart` for application updates: it keeps the existing tunnel connection and hostname alive.
 
-A [Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) gives the laptop a free temporary HTTPS address without opening router ports. It has no uptime guarantee and its hostname changes when restarted. The host verifies public health before advertising a URL; it recreates revoked tunnels and connections that fail three consecutive 20-second health probes. The permanent frontend discovers that relay through `server.json`; invitations and **Friends Link.webloc** use the permanent site. Tunnel rotation no longer changes the browser's storage origin. Static game assets load from GitHub Pages, and direct WebRTC still carries game inputs when available. Logs and the current relay URL remain in unpublished `.local/`. No domain purchase is required.
+A [Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) gives the laptop a free temporary HTTPS address without opening router ports. It has no uptime guarantee and its hostname changes when restarted. The host verifies public health before advertising a URL; it recreates revoked tunnels and connections that fail three consecutive 20-second health probes. The permanent frontend discovers that relay through `active-host.json`; invitations and **Friends Link.webloc** use the permanent site. Tunnel rotation no longer changes the browser's storage origin. Static game assets load from GitHub Pages, and direct WebRTC still carries game inputs when available. Logs and the current relay URL remain in unpublished `.local/`. No domain purchase is required.
 
 Service commands:
 
