@@ -12,6 +12,8 @@ import {
 import { Netplay, compress, decompress } from "./netplay.js";
 import { TouchControls } from "./touch.js";
 import { Attract } from "./attract.js";
+import { RoomUI } from "./room-ui.js";
+import { menuRows, isGameplay, characterScenes } from "./native-menus.js";
 import * as storage from "./storage.js";
 import { serviceFetch, appBase } from "./service.js";
 
@@ -30,6 +32,7 @@ let rom = null,
   enteredStage = false,
   roomSetup = null,
   menuInput = [],
+  pointerQueue = [],
   waitForMenuRelease = false,
   view = "home",
   paused = true,
@@ -127,12 +130,15 @@ const attempt =
       console.error(e);
     }
   };
+const roomUI = new RoomUI(net, (id) => dialog(id, { pauseGame: false }), toast);
+window.smash.voice = roomUI.voice;
 function blockInput() {
   controls.blocked =
     !["game", "native"].includes(view) ||
     !!document.querySelector("dialog[open]") ||
     (paused && net.state === "offline") ||
-    !["offline", "playing"].includes(net.state);
+    !["offline", "playing"].includes(net.state) ||
+    (net.room && net.player < 0);
   if (controls.blocked) {
     controls.keys.clear();
     controls.touch.reset();
@@ -453,10 +459,23 @@ function highlightNative(option) {
   if (!menuState || preparing || view !== "native") return;
   const info = engine.inspect();
   if (info.scene !== 7) return;
-  const current = info.menu.row;
-  menuInput = Array(3).fill(neutral);
+  pointerQueue = [];
+  // Read the selected row after the native scene has finished initializing.
+  menuInput = [...Array(18).fill(neutral), { nativeOption: option }];
+}
+function nextMenuInput() {
+  const input = menuInput.shift();
+  if (input.nativeOption === undefined) return input;
+  const info = engine.inspect();
+  if (info.scene !== 7) {
+    menuInput = [];
+    return neutral;
+  }
+  const current = info.menu.row,
+    option = input.nativeOption,
+    moves = [];
   for (let i = 0; i < Math.abs(option - current); i++) {
-    menuInput.push(
+    moves.push(
       ...Array.from({ length: 3 }, () => ({
         buttons: 0,
         x: 0,
@@ -465,6 +484,8 @@ function highlightNative(option) {
       ...Array(18).fill(neutral),
     );
   }
+  menuInput.unshift(...moves);
+  return neutral;
 }
 function chooseNative(option) {
   if (!menuState || preparing) return;
@@ -477,7 +498,14 @@ function chooseNative(option) {
   $("canvas").focus();
 }
 async function setupRoom(options) {
+  // Finish cancelled native preparation before starting a new room.
+  await preparation.catch(() => {});
   await powerOn();
+  net.leave();
+  menuInput = [];
+  selectionButtons = 0;
+  startRequest = null;
+  enteredStage = false;
   roomSetup = options;
   versusState = null;
   preparing = true;
@@ -527,7 +555,8 @@ document.querySelectorAll("[data-native-input]").forEach((button) => {
 });
 async function prepareVersus() {
   preparing = true;
-  const match = net.room?.match;
+  const match = net.room?.match,
+    generation = net.connectionGeneration;
   const volume = engine.volume;
   engine.setVolume(0);
   try {
@@ -546,7 +575,8 @@ async function prepareVersus() {
         [10, { buttons: BITS.a, x: 0, y: 0 }],
         [180, neutral],
       ],
-      () => net.room?.match === match,
+      () =>
+        net.connectionGeneration === generation && net.room?.match === match,
     );
     if (engine.inspect().scene !== 16)
       throw Error(
@@ -561,11 +591,13 @@ async function prepareVersus() {
 }
 let preparation = Promise.resolve();
 net.prepare = () => {
-  const match = net.room?.match;
+  const match = net.room?.match,
+    generation = net.connectionGeneration;
   preparation = preparation
     .catch(() => {})
     .then(() => {
-      if (net.room?.match === match) return prepareVersus();
+      if (net.connectionGeneration === generation && net.room?.match === match)
+        return prepareVersus();
     });
   return preparation;
 };
@@ -604,6 +636,7 @@ net.removePlayers = (slots) => {
     );
   engine.flushAudio();
 };
+net.applyTeams = (room) => engine.setTeams(room);
 function requestMatch() {
   const r = net.room;
   if (!r || !net.isHost || !r.selecting || !net.running || startRequest) return;
@@ -611,14 +644,14 @@ function requestMatch() {
   // Native character selection ignores Start for its first second. In
   // rematches tokens are already selected, so wait for that transition too.
   if (info.scene === 16 && info.selectionTicks <= 60) return;
-  if (r.members.length < 2)
+  if (net.players.length < 2)
     return toast(
       "Invite a friend. You can choose your fighter while you wait.",
     );
   if (
     !net.allConnected ||
     info.scene !== 16 ||
-    !r.members.every(
+    !net.players.every(
       (p) => info.players[p.slot]?.selected && !info.players[p.slot]?.holding,
     )
   )
@@ -634,10 +667,19 @@ function requestMatch() {
     time: performance.now(),
   };
   enteredStage = false;
-  net.send({ type: "seal", revision: r.revision, match: r.match });
+  net.send({
+    type: "seal",
+    revision: r.revision,
+    match: r.match,
+    teams: !!info.teams,
+    playerTeams: info.players.map((p) => p.team),
+  });
 }
 net.filterInput = (input) => {
   const r = net.room;
+  if (net.player < 0) return neutral;
+  if (pointerQueue.length && engine.info?.scene !== 22)
+    input = nextPointerInput();
   if (r?.selecting) {
     const bPressed = input.buttons & BITS.b && !(selectionButtons & BITS.b);
     selectionButtons = input.buttons;
@@ -799,9 +841,9 @@ async function refreshRooms() {
           count.textContent = `${r.count} / ${r.capacity}`;
           const state = document.createElement("span");
           state.className = "room-state";
-          row.disabled = !r.selecting || r.count >= r.capacity;
+          row.disabled = r.count >= r.capacity;
           state.textContent = !r.selecting
-            ? "Match in progress"
+            ? "Join & spectate"
             : r.count >= r.capacity
               ? "Full"
               : "Choose a fighter  →";
@@ -863,8 +905,13 @@ function leaveRoom() {
   enteredStage = false;
   menuInput = [];
   roomSetup = null;
+  controls.keys.clear();
+  controls.touch.reset();
+  pointerQueue = [];
   closeDialogs();
   net.leave();
+  engine.info = null;
+  if (menuState && !preparing) engine.restore(menuState);
   paused = true;
   history.replaceState(null, "", location.pathname);
   setView("browse");
@@ -929,9 +976,11 @@ function renderCharacterRoom() {
   $("rename-open").hidden = !net.isHost;
   const info = engine.info || { players: [] };
   $("room-waiting").textContent =
-    r.members.length < 2
-      ? "Choose your fighter while you wait for friends"
-      : `${r.members.length} / ${r.capacity} players · ${net.isHost ? "Start when everyone has chosen" : "The host starts the match"}`;
+    net.player < 0
+      ? "Spectating · Open Players to see the queue"
+      : net.players.length < 2
+        ? "Choose your fighter while you wait for friends"
+        : `${r.members.length} / ${r.capacity} players · ${net.isHost ? "Start when everyone has chosen" : "The host starts the match"}`;
   const signature = JSON.stringify([
     r,
     info.players.map((p) => [p.selected, p.fighter]),
@@ -970,9 +1019,9 @@ function renderCharacterRoom() {
     !net.running ||
     info.scene !== 16 ||
     info.selectionTicks <= 60 ||
-    r.members.length < 2 ||
+    net.players.length < 2 ||
     !net.allConnected ||
-    !r.members.every((p) => info.players[p.slot]?.selected) ||
+    !net.players.every((p) => info.players[p.slot]?.selected) ||
     info.players.some((p) => p.holding);
 }
 function renderGame() {
@@ -1006,7 +1055,7 @@ function renderGame() {
           ? "Open the menu for controls, or resume when everyone is ready."
           : net.message || "Keep this tab visible while you play.";
   $("game-resume").hidden = state !== "paused";
-  $("game-rejoin").hidden = state !== "error" || net.isHost || !net.token;
+  $("game-rejoin").hidden = state !== "error" || !net.token;
   $("game-back-lobby").hidden = !online || !net.isHost;
   $("back-lobby").hidden = !online || !net.isHost;
   $("rename-menu").hidden = !online || !net.isHost;
@@ -1019,7 +1068,7 @@ function renderGame() {
     ).map((p) => {
       const badge = document.createElement("span");
       badge.className = `hud-player p${p.slot + 1}${!p.connected ? " offline" : ""}`;
-      badge.textContent = `P${p.slot + 1} · ${p.name}${p.id === net.id ? " (you)" : ""}`;
+      badge.textContent = `${p.slot < 0 ? "Watching" : "P" + (p.slot + 1)} · ${p.name}${p.id === net.id ? " (you)" : ""}`;
       return badge;
     }),
   );
@@ -1094,16 +1143,150 @@ $("quit-game").onclick = () => {
   if (online) leaveRoom();
   else attempt(showMainMenu)();
 };
-$("canvas").onclick = attempt((event) => {
-  // Make the original game's top-right BACK label work with mouse/touch too.
-  if (net.room?.selecting && engine.inspect().scene === 16) {
-    const box = $("canvas").getBoundingClientRect();
-    const x = (event.clientX - box.left) / box.width;
-    const y = (event.clientY - box.top) / box.height;
-    if (x >= 0.78 && x <= 0.96 && y >= 0 && y <= 0.08) {
-      leaveRoom();
+function nextPointerInput() {
+  const input = pointerQueue.shift();
+  if (input?.pointer) {
+    engine.menuPointer(input.pointer);
+    return neutral;
+  }
+  return input || neutral;
+}
+function pointerPress(action) {
+  if (isGameplay(engine.info?.scene)) return;
+  const info = engine.inspect();
+  if (info.scene === 24 && action === "start") {
+    const wait = Math.max(0, info.results.exitTicks - info.results.ticks + 4);
+    if (net.room) {
+      net.send({ type: "pointer", scene: 24, x: 160, y: 215, wait });
       return;
     }
+    pointerQueue.push(...Array(Math.min(wait, 450)).fill(neutral));
+  }
+  if (!pointerQueue.length) pointerQueue.push(...Array(12).fill(neutral));
+  const input = { ...neutral };
+  if (action === "up") input.y = 85;
+  if (action === "down") input.y = -85;
+  if (action === "left") input.x = -85;
+  if (action === "right") input.x = 85;
+  if (BITS[action]) input.buttons = BITS[action];
+  pointerQueue.push(...Array(3).fill(input), ...Array(18).fill(neutral));
+}
+let pointerMenuKey = "";
+function renderPointerMenu(info) {
+  const panel = $("pointer-menu");
+  panel.hidden =
+    isGameplay(info.scene) ||
+    view === "home" ||
+    view === "browse" ||
+    info.scene === 7 ||
+    !!roomSetup ||
+    !!net.room?.selecting;
+  if (panel.hidden) return;
+  const key = String(info.scene);
+  if (key === pointerMenuKey) return;
+  pointerMenuKey = key;
+  panel.replaceChildren(
+    ...[
+      ["up", "↑"],
+      ["down", "↓"],
+      ["left", "←"],
+      ["right", "→"],
+      ["a", "A · Select"],
+      ["b", "B · Back"],
+      ["start", "Start"],
+    ].map(([action, label]) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.onclick = () => pointerPress(action);
+      return b;
+    }),
+  );
+  if ([8, 57, 58].includes(info.scene))
+    for (const [row, label] of menuRows[info.scene].labels.entries()) {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.onclick = () => chooseMenuRow(engine.inspect(), row);
+      panel.prepend(b);
+    }
+}
+function chooseMenuRow(info, row, action) {
+  if (!info.menu || pointerQueue.length) return;
+  for (let i = 0; i < Math.abs(row - info.menu.row); i++)
+    pointerPress(row > info.menu.row ? "down" : "up");
+  const definition = menuRows[info.scene];
+  pointerPress(
+    action ||
+      (definition?.adjust === "all" || definition?.adjust?.includes(row)
+        ? "right"
+        : "a"),
+  );
+}
+$("canvas").onclick = attempt((event) => {
+  const info = engine.inspect();
+  if (isGameplay(info.scene) || controls.blocked) return;
+  const canvas = $("canvas"),
+    rect = canvas.getBoundingClientRect(),
+    ratio = canvas.width / canvas.height,
+    width = Math.min(rect.width, rect.height * ratio),
+    height = width / ratio;
+  const x =
+    ((event.clientX - rect.left - (rect.width - width) / 2) * 320) / width;
+  const y =
+    ((event.clientY - rect.top - (rect.height - height) / 2) * 240) / height;
+  if (x < 0 || x > 320 || y < 0 || y > 240) return;
+  if ([...characterScenes, 21, 24].includes(info.scene)) {
+    if (characterScenes.includes(info.scene) && x >= 244 && y <= 35) {
+      if (net.room) leaveRoom();
+      else pointerPress("b");
+      return;
+    }
+    if (net.room && net.player < 0 && !(net.isHost && info.scene === 24))
+      return;
+    if (info.scene === 21 && (x < 30 || x > 280 || y < 30 || y > 106)) return;
+    const command = {
+      scene: info.scene,
+      slot: net.room ? net.player : 0,
+      x,
+      y,
+    };
+    if (net.room)
+      net.send({
+        type: "pointer",
+        ...command,
+        wait:
+          info.scene === 24
+            ? Math.max(0, info.results.exitTicks - info.results.ticks + 4)
+            : 0,
+        recall:
+          info.scene === 16 && y < 124 && info.players[net.player]?.selected,
+      });
+    else {
+      if (info.scene === 16 && y < 124 && info.players[0]?.selected) {
+        pointerPress("b");
+        pointerQueue.push(...Array(30).fill(neutral));
+      }
+      pointerQueue.push({ pointer: command });
+      pointerPress(info.scene === 24 ? "start" : "a");
+    }
+    return engine.audioStart();
+  }
+  if (menuRows[info.scene] && info.menu) {
+    if (info.scene === 47 && info.menu.confirmation) {
+      pointerPress(x < 160 ? "left" : "right");
+      pointerPress("a");
+      return;
+    }
+    const rows = menuRows[info.scene].y;
+    const row = rows.reduce(
+      (best, value, i) =>
+        Math.abs(value - y) < Math.abs(rows[best] - y) ? i : best,
+      0,
+    );
+    const adjusts =
+      menuRows[info.scene].adjust === "all" ||
+      menuRows[info.scene].adjust?.includes(row);
+    chooseMenuRow(info, row, adjusts ? (x < 205 ? "left" : "right") : "a");
+    return;
   }
   return engine.audioStart();
 });
@@ -1117,6 +1300,12 @@ function refreshDevices() {
     $("device").options.length === devices.length + 1
   )
     return;
+  document.querySelectorAll(".controller-status").forEach((b) => {
+    b.textContent = devices.length ? "Controller ✓" : "Connect pad";
+    b.title = devices.length
+      ? "Open controller settings"
+      : "Pair a controller in iPhone Settings, then press a button";
+  });
   const changed = key !== lastDeviceList;
   lastDeviceList = key;
   const preferred = localStorage.getItem("smash.inputChoice");
@@ -1125,16 +1314,20 @@ function refreshDevices() {
     !devices.some((p) => String(p.index) === controls.selected)
   ) {
     controls.select("keyboard");
-    if (view === "game") pause();
-    toast("Controller disconnected. Keyboard is available.");
+    toast(
+      controls.touch.media.matches
+        ? "Controller disconnected. Touch controls are available."
+        : "Controller disconnected. Keyboard is available.",
+    );
   } else if (
     changed &&
     controls.selected === "keyboard" &&
-    preferred !== "keyboard"
+    (preferred !== "keyboard" || controls.touch.media.matches) &&
+    !controls.manualKeyboard
   ) {
     const pad =
       devices.find((p) => controllerKey(p.id) === controllerKey(preferred)) ||
-      (!preferred ? devices[0] : null);
+      devices[0];
     if (pad) {
       controls.select(String(pad.index));
       toast("Controller connected. Open Controller setup to test it.");
@@ -1211,6 +1404,7 @@ controls.addEventListener("mapped", () => {
 });
 controls.addEventListener("devices", refreshDevices);
 $("device").onchange = () => {
+  controls.manualKeyboard = $("device").value === "keyboard";
   controls.select($("device").value);
   localStorage.setItem("smash.inputChoice", controllerKey(controls.id()));
   $("footer-input").textContent = controllerName();
@@ -1361,7 +1555,7 @@ $("reset").onclick = () => {
 };
 function diagnostics() {
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nGame inputs: server-agreed frames\nServer latency: ${net.relayRTT || "—"} ms\nYour input buffer: ${net.personalDelay || net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.5.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nGame inputs: server-agreed frames\nServer latency: ${net.relayRTT || "—"} ms\nYour input buffer: ${net.personalDelay || net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.6.0`;
 }
 function menuController(time) {
   const pad = controls.pad();
@@ -1591,7 +1785,11 @@ function tick(time) {
         }
       } else if (!paused && time + 1 >= next) {
         const inputs = [
-          menuInput.length ? menuInput.shift() : controls.sample(),
+          menuInput.length
+            ? nextMenuInput()
+            : pointerQueue.length
+              ? nextPointerInput()
+              : controls.sample(),
         ];
         if (waitForMenuRelease) {
           waitForMenuRelease = !!controls
@@ -1684,12 +1882,14 @@ function tick(time) {
           if (startRequest && time - startRequest.time > 3000)
             startRequest = null;
         }
+        document.body.dataset.battle = String(isGameplay(info.scene));
+        renderPointerMenu(info);
         renderCharacterRoom();
       }
     }
     if ($("controls-dialog").open) liveControls();
     menuController(time);
-    if (time - lastDeviceCheck > 1000) {
+    if (time - lastDeviceCheck > 250) {
       refreshDevices();
       lastDeviceCheck = time;
     }

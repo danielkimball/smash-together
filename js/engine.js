@@ -1,4 +1,5 @@
 import { assetURL } from "./service.js";
+import { menuRows } from "./native-menus.js";
 // Browser integration for the pinned N64Wasm core. ROM bytes never leave this browser.
 export const ROM_SHA1 = "e2929e10fccc0aa84e5776227e798abc07cedabf";
 export async function sha1(data) {
@@ -91,7 +92,18 @@ export class Engine {
     // redundant DOM key handlers prevent normal typing and form submission
     // even while its game is paused, so remove only those keyboard handlers.
     for (const target of [window, document, this.canvas])
-      for (const type of ["keydown", "keyup", "keypress"])
+      for (const type of [
+        "keydown",
+        "keyup",
+        "keypress",
+        "mousedown",
+        "mouseup",
+        "mousemove",
+        "touchstart",
+        "touchmove",
+        "touchend",
+        "wheel",
+      ])
         window.JSEvents.removeAllHandlersOnTarget(target, type);
     this.module._netplay_set_enabled(1);
     this.module._toggleFPS(0);
@@ -131,6 +143,7 @@ export class Engine {
     m.HEAPU8.set(bytes, m._netplay_get_state_buffer());
     if (!m._netplay_unserialize_state(bytes.length))
       throw Error("Could not restore the game state.");
+    this.info = null;
     this.flushAudio();
   }
   unlockAll() {
@@ -142,6 +155,83 @@ export class Engine {
     state[448 + ((0xa44e0 + 0x458) ^ 3)] |= 0x0f;
     state[448 + ((0xa44e0 + 0x459) ^ 3)] = 0xff;
     this.restore(state);
+  }
+  menuPointer({ scene, slot = 0, x, y }) {
+    if (this.inspect().scene !== scene || scene === 22) return false;
+    if (scene === 24) return true;
+    const state = this.snapshot(),
+      data = new DataView(state.buffer, state.byteOffset, state.byteLength);
+    const at = (address) => 448 + (address & 0x7fffff);
+    const word = (address) => data.getUint32(at(address), true);
+    const put = (address, value) => data.setUint32(at(address), value, true);
+    if ([16, 17, 18, 19, 20].includes(scene)) {
+      // MNPlayersSlotVS.cursor -> GObj.obj -> SObj.pos, from the US decomp symbols.
+      const address =
+        scene === 16
+          ? 0x8013ba88 + slot * 0xbc
+          : scene === 17
+            ? 0x80138ee8
+            : scene === 18
+              ? 0x80138558 + slot * 0xb8
+              : 0x80137648;
+      const cursor = word(address),
+        sprite = cursor && word(cursor + 0x74);
+      if (!sprite || (sprite & 0x7fffff) > 0x7fff00) return false;
+      const oldX = data.getFloat32(at(sprite + 0x58), true),
+        oldY = data.getFloat32(at(sprite + 0x5c), true);
+      const nx = Math.max(0, Math.min(280, x - 25)),
+        ny = Math.max(10, Math.min(205, y - 3));
+      data.setFloat32(at(sprite + 0x58), nx, true);
+      data.setFloat32(at(sprite + 0x5c), ny, true);
+      const next = word(sprite + 8);
+      if (next) {
+        data.setFloat32(
+          at(next + 0x58),
+          data.getFloat32(at(next + 0x58), true) + nx - oldX,
+          true,
+        );
+        data.setFloat32(
+          at(next + 0x5c),
+          data.getFloat32(at(next + 0x5c), true) + ny - oldY,
+          true,
+        );
+      }
+    } else if (scene === 21) {
+      if (x < 30 || x > 280 || y < 30 || y > 106) return false;
+      const col = Math.max(0, Math.min(4, Math.floor((x - 30) / 50))),
+        row = y < 68 ? 0 : 1;
+      put(0x80134bd8, col + row * 5);
+    } else return false;
+    this.restore(state);
+    return true;
+  }
+  setTeams(room) {
+    if (!room.teamsConfigured || this.inspect().scene !== 16) return;
+    const slot = room.members.find((p) => p.slot >= 0)?.slot ?? 0;
+    const click = (x, y) => {
+      this.menuPointer({ scene: 16, slot, x, y });
+      for (let f = 0; f < 12; f++)
+        this.frame(
+          [0, 1, 2, 3].map((i) => ({
+            buttons: i === slot && f < 2 ? 128 : 0,
+            x: 0,
+            y: 0,
+          })),
+        );
+    };
+    // Use native clicks so labels, costumes and team colors update together.
+    if (this.inspect().teams !== room.teams) click(80, 25);
+    if (room.teams)
+      for (const p of room.members.filter((p) => p.slot >= 0)) {
+        for (
+          let i = 0;
+          i < 3 && this.inspect().players[p.slot].team !== p.team;
+          i++
+        )
+          click(51 + p.slot * 69, 136);
+      }
+    this.menuPointer({ scene: 16, slot, x: 36 + slot * 69, y: 205 });
+    this.flushAudio();
   }
   enableStageSelect() {
     const state = this.snapshot();
@@ -191,6 +281,7 @@ export class Engine {
         scene === 24
           ? {
               ticks: word(0x80139b78),
+              exitTicks: word(0x80139c18),
               kind: word(0x80139c10),
               teams: !!word(0x80139c14),
               players: [0, 1, 2, 3].map((slot) => ({
@@ -228,14 +319,21 @@ export class Engine {
               ? { row: word(0x801348e0), hasItems: !!word(0x80134904) }
               : scene === 11
                 ? { row: word(0x801333d8), items: word(0x80133420) }
-                : null,
+                : menuRows[scene]
+                  ? {
+                      row: word(menuRows[scene].address),
+                      confirmation: scene === 47 ? word(0x801330d0) : 0,
+                    }
+                  : null,
     };
     return this.info;
   }
   async audioStart() {
     if (!this.loaded) return;
+    const Context = window.AudioContext || window.webkitAudioContext;
+    if (!Context) return;
     if (!this.audio) {
-      const ctx = new AudioContext({
+      const ctx = new Context({
         sampleRate: 44100,
         latencyHint: "interactive",
       });
