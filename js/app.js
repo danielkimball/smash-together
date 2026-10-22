@@ -26,9 +26,9 @@ let rom = null,
   menuState,
   homeBooting = false,
   startRequest = null,
-  startPulse = 0,
+  selectionButtons = 0,
+  enteredStage = false,
   roomSetup = null,
-  lastScene = -1,
   menuInput = [],
   waitForMenuRelease = false,
   view = "home",
@@ -69,6 +69,12 @@ controls.touch = new TouchControls($("touch-controls"), controls, {
 $("touch-mode").value = controls.touch.mode || "auto";
 $("touch-mode").onchange = (event) =>
   controls.touch.setMode(event.target.value);
+document.querySelectorAll("[data-touch-toggle]").forEach((button) => {
+  button.onclick = () => {
+    controls.touch.setMode(controls.touch.enabled ? "off" : "on");
+    $("touch-mode").value = controls.touch.mode;
+  };
+});
 window.smash = {
   engine,
   controls,
@@ -91,6 +97,9 @@ window.smash = {
     repairs: net.repairs,
     frames: engine.frames,
     rtt: net.rtt,
+    relayRTT: net.relayRTT || 0,
+    inputBuffer: net.personalDelay || net.delay,
+    lateInputs: net.lateInputs || 0,
     fps: lastFPS,
     logs: engine.logs.slice(-15),
   }),
@@ -208,12 +217,16 @@ document.querySelectorAll("[data-fullscreen]").forEach(
   (b) =>
     (b.onclick = attempt(async () => {
       if (document.fullscreenElement) await document.exitFullscreen();
-      else if (document.documentElement.requestFullscreen)
-        await document.documentElement.requestFullscreen();
-      else
-        toast(
-          "Use your browser’s fullscreen command. The game already fills this window.",
-        );
+      else if (
+        document.fullscreenEnabled &&
+        document.documentElement.requestFullscreen
+      ) {
+        try {
+          await document.documentElement.requestFullscreen();
+        } catch {
+          dialog("fullscreen-help");
+        }
+      } else dialog("fullscreen-help");
     })),
 );
 document
@@ -325,6 +338,29 @@ async function withCartridge(action) {
   if (rom || engine.loaded) return action();
   pendingAction = action;
   if (view === "home") attract.holdTitle();
+  const status = await hostStatus;
+  if (status?.testingAutoLoad) {
+    if (loading) return;
+    loading = true;
+    busy("Loading game…", "Getting the testing game from the host.");
+    try {
+      const response = await serviceFetch("/api/testing/cartridge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        signal: AbortSignal.timeout(180000),
+      });
+      if (!response.ok)
+        throw Error("The testing game could not load. Try again shortly.");
+      const bytes = await response.arrayBuffer();
+      loading = false;
+      await loadFile(new File([bytes], "Testing cartridge.z64"));
+    } finally {
+      loading = false;
+      $("busy").hidden = true;
+    }
+    return;
+  }
   $("rom-error").hidden = true;
   dialog("rom-dialog");
 }
@@ -398,7 +434,6 @@ async function showMainMenu() {
     await prepareMain();
     menuInput = [];
     engine.frame([neutral]);
-    lastScene = 7;
     waitForMenuRelease = !!controls
       .pad()
       ?.buttons.some((button) => button.pressed);
@@ -583,8 +618,9 @@ function requestMatch() {
   if (
     !net.allConnected ||
     info.scene !== 16 ||
-    !r.members.every((p) => info.players[p.slot]?.selected) ||
-    info.players.some((p) => p.holding)
+    !r.members.every(
+      (p) => info.players[p.slot]?.selected && !info.players[p.slot]?.holding,
+    )
   )
     return toast("Everyone needs to place their token on a fighter first.");
   if (
@@ -597,18 +633,28 @@ function requestMatch() {
     match: r.match,
     time: performance.now(),
   };
+  enteredStage = false;
   net.send({ type: "seal", revision: r.revision, match: r.match });
 }
 net.filterInput = (input) => {
   const r = net.room;
   if (r?.selecting) {
+    const bPressed = input.buttons & BITS.b && !(selectionButtons & BITS.b);
+    selectionButtons = input.buttons;
+    const info = engine.info || engine.inspect();
+    if (
+      info.scene === 16 &&
+      !info.players[net.player]?.selected &&
+      input.buttons & BITS.b
+    ) {
+      if (bPressed) queueMicrotask(leaveRoom);
+      return neutral;
+    }
     if (input.buttons & BITS.start) requestMatch();
     return { ...input, buttons: input.buttons & ~BITS.start };
   }
-  if (startPulse > 0) {
-    startPulse--;
-    return { ...input, buttons: input.buttons | BITS.start };
-  }
+  if (r && engine.info?.scene === 16)
+    return { ...input, buttons: input.buttons & ~BITS.start };
   return input;
 };
 $("start-game").onclick = requestMatch;
@@ -813,7 +859,10 @@ document
   .forEach((b) => (b.onclick = attempt(copyInvite)));
 function leaveRoom() {
   startRequest = null;
-  startPulse = 0;
+  selectionButtons = 0;
+  enteredStage = false;
+  menuInput = [];
+  roomSetup = null;
   closeDialogs();
   net.leave();
   paused = true;
@@ -824,6 +873,7 @@ function leaveRoom() {
   refreshRooms();
 }
 $("game-leave").onclick = leaveRoom;
+$("selection-back").onclick = leaveRoom;
 function renameRoom() {
   if (!net.isHost) return;
   $("rename-name").value = net.room.name;
@@ -843,8 +893,8 @@ $("rename-form").onsubmit = (event) => {
   $("rename-dialog").close();
 };
 function returnLobby() {
+  enteredStage = false;
   startRequest = null;
-  startPulse = 0;
   closeDialogs();
   net.send({ type: "lobby" });
 }
@@ -871,7 +921,8 @@ function renderCharacterRoom() {
         ? `${winner ? "Winner’s pick" : "Host’s pick"} · Choose a stage · A to start`
         : `${chooser?.name || "Host"} is choosing the stage…`;
   }
-  const showing = r && r.selecting && view === "game";
+  const showing =
+    r && r.selecting && engine.info?.scene === 16 && view === "game";
   $("character-room").hidden = !showing;
   if (!showing) return;
   $("room-title").textContent = r.name;
@@ -1003,7 +1054,6 @@ net.addEventListener("change", () => {
     )
       startRequest = null;
     else if (!net.room.selecting) {
-      startPulse = 6;
       startRequest = null;
     }
   }
@@ -1044,9 +1094,22 @@ $("quit-game").onclick = () => {
   if (online) leaveRoom();
   else attempt(showMainMenu)();
 };
-$("canvas").onclick = attempt(() => engine.audioStart());
+$("canvas").onclick = attempt((event) => {
+  // Make the original game's top-right BACK label work with mouse/touch too.
+  if (net.room?.selecting && engine.inspect().scene === 16) {
+    const box = $("canvas").getBoundingClientRect();
+    const x = (event.clientX - box.left) / box.width;
+    const y = (event.clientY - box.top) / box.height;
+    if (x >= 0.78 && x <= 0.96 && y >= 0 && y <= 0.08) {
+      leaveRoom();
+      return;
+    }
+  }
+  return engine.audioStart();
+});
 $("volume").oninput = () => engine.setVolume(Number($("volume").value) / 100);
 function refreshDevices() {
+  controls.touch.refresh();
   const devices = controls.devices(),
     key = devices.map((p) => `${p.index}:${p.id}`).join("|");
   if (
@@ -1298,7 +1361,7 @@ $("reset").onclick = () => {
 };
 function diagnostics() {
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nRelay: available for every player\nLatency: ${net.rtt || "—"} ms\nInput buffer: ${net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.4.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nGame inputs: server-agreed frames\nServer latency: ${net.relayRTT || "—"} ms\nYour input buffer: ${net.personalDelay || net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.5.0`;
 }
 function menuController(time) {
   const pad = controls.pad();
@@ -1316,9 +1379,11 @@ function menuController(time) {
     menuEdges = { a: !!(buttons & BITS.a), b: !!(buttons & BITS.b) };
     return;
   }
-  if (!pad || controls.capture || $("busy").hidden === false) return;
-  const input = evaluate(controls.profile, pad),
-    buttons = input.buttons;
+  if (controls.capture || $("busy").hidden === false) return;
+  const input = evaluate(controls.profile, pad, controls.keys);
+  const touchInput = controls.touch.sample();
+  input.buttons |= touchInput.buttons;
+  const buttons = input.buttons;
   const active = {
     down: input.y < -45 || !!(buttons & BITS.dd),
     up: input.y > 45 || !!(buttons & BITS.du),
@@ -1368,6 +1433,30 @@ function menuController(time) {
   }
   active.chord = chord;
   if (
+    view === "game" &&
+    net.room?.selecting &&
+    !chord &&
+    !document.querySelector("dialog[open]") &&
+    active.b &&
+    !menuEdges.b
+  ) {
+    const info = engine.info || engine.inspect();
+    if (info.scene === 16 && !info.players[net.player]?.selected) {
+      menuEdges = active;
+      leaveRoom();
+      return;
+    }
+  }
+  if (
+    view === "game" &&
+    net.room?.selecting &&
+    !chord &&
+    !document.querySelector("dialog[open]") &&
+    active.start &&
+    !menuEdges.start
+  )
+    requestMatch();
+  if (
     !["game", "native"].includes(view) ||
     document.querySelector("dialog[open]")
   ) {
@@ -1407,6 +1496,43 @@ function menuController(time) {
 }
 window.addEventListener("keydown", (e) => {
   if (
+    view === "game" &&
+    net.room?.selecting &&
+    !e.repeat &&
+    !controls.capture &&
+    controls.selected === "keyboard" &&
+    !e.target.closest("input,select,textarea") &&
+    !document.querySelector("dialog[open]")
+  ) {
+    const pressed = evaluate(controls.profile, null, new Set([e.code])).buttons;
+    const info = engine.info || engine.inspect();
+    if (
+      pressed & BITS.b &&
+      info.scene === 16 &&
+      !info.players[net.player]?.selected
+    ) {
+      e.preventDefault();
+      leaveRoom();
+      return;
+    }
+    if (pressed & BITS.start) {
+      e.preventDefault();
+      requestMatch();
+      return;
+    }
+  }
+  if (
+    view === "browse" &&
+    e.code === "KeyK" &&
+    !e.repeat &&
+    !e.target.closest("input,select,textarea") &&
+    !document.querySelector("dialog[open]")
+  ) {
+    e.preventDefault();
+    attempt(showMainMenu)();
+    return;
+  }
+  if (
     e.code !== "Escape" ||
     e.defaultPrevented ||
     controls.capture ||
@@ -1427,7 +1553,7 @@ document.addEventListener("pointermove", () => {
   $("game-view").classList.remove("idle");
 });
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden && view === "game") pause();
+  if (document.hidden && view === "game" && net.state === "offline") pause();
 });
 document.addEventListener("dragover", (e) => e.preventDefault());
 document.addEventListener("drop", (e) => {
@@ -1453,8 +1579,17 @@ function tick(time) {
       next = Math.max(next + 1000 / engine.fps, time - 1000 / engine.fps);
     }
     if (engine.loaded && !preparing && ["game", "native"].includes(view)) {
-      if (net.state !== "offline") net.tick(time);
-      else if (!paused && time + 1 >= next) {
+      if (net.state !== "offline") {
+        const budget = performance.now();
+        for (let n = 0; n < 6; n++) {
+          if (
+            !net.tick(time) ||
+            net.serverFrame - net.frame < 2 ||
+            performance.now() - budget > 12
+          )
+            break;
+        }
+      } else if (!paused && time + 1 >= next) {
         const inputs = [
           menuInput.length ? menuInput.shift() : controls.sample(),
         ];
@@ -1525,19 +1660,17 @@ function tick(time) {
         )
           setView("native");
         if (net.isHost && net.running) {
-          if ([7, 9].includes(info.scene)) net.send({ type: "lobby" });
-          else if (
-            info.scene === 16 &&
-            !net.room.selecting &&
-            lastScene !== 16
-          ) {
+          if ([21, 22, 24].includes(info.scene)) enteredStage = true;
+          if ([7, 9].includes(info.scene)) leaveRoom();
+          else if (info.scene === 16 && !net.room.selecting && enteredStage) {
+            enteredStage = false;
             net.send({
               type: "open",
               match: net.room.match,
               revision: net.room.revision,
             });
           }
-          if (info.scene === 16 && !net.room.selecting && !startPulse) {
+          if (info.scene === 16 && !net.room.selecting) {
             if (!engine.sealedAt) engine.sealedAt = engine.frames;
             if (engine.frames - engine.sealedAt > 180) {
               net.send({
@@ -1551,7 +1684,6 @@ function tick(time) {
           if (startRequest && time - startRequest.time > 3000)
             startRequest = null;
         }
-        lastScene = info.scene;
         renderCharacterRoom();
       }
     }
@@ -1596,16 +1728,23 @@ const savedCartridge = storage
     }
   })
   .catch(() => {});
-serviceFetch("/api/status")
+const hostStatus = serviceFetch("/api/status")
   .then((r) => r.json())
   .then((s) => {
     shareUrl = s.shareUrl;
     publicUrl = s.publicUrl;
+    if (s.testingAutoLoad) {
+      document.body.dataset.testingMode = "auto";
+      $("cartridge-badge").textContent = "Testing build";
+      for (const button of document.querySelectorAll("[data-testing]"))
+        button.onclick = attempt(() => withCartridge(showMainMenu));
+    }
     if (window.parent !== window && publicUrl)
       window.parent.postMessage(
         { type: "smash-ready" },
         new URL(publicUrl).origin,
       );
+    return s;
   })
   .catch(() => {});
 function followInvitation() {

@@ -43,10 +43,17 @@ export class TouchControls {
   }
   refresh() {
     this.enabled =
-      this.mode === "on" || (this.mode !== "off" && this.media.matches);
+      this.mode === "on" ||
+      (this.mode !== "off" &&
+        this.media.matches &&
+        !this.controls.devices().length);
     document.body.dataset.touch = this.enabled ? "on" : "off";
     this.root.hidden = !this.enabled;
     if (!this.enabled) this.reset();
+    for (const button of document.querySelectorAll("[data-touch-toggle]")) {
+      button.textContent = this.enabled ? "Hide controls" : "Touch controls";
+      button.setAttribute("aria-pressed", String(this.enabled));
+    }
   }
   setMode(mode) {
     this.mode = mode;

@@ -1,4 +1,43 @@
 /* Smash Portal brand system, from Dan's October 2026 references. */
+#phone-tools {
+  display: none;
+}
+.room-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+body[data-testing-mode="auto"] #cartridge-open,
+body[data-testing-mode="auto"] [data-testing] {
+  display: none;
+}
+@media (any-pointer: coarse) {
+  #phone-tools {
+    display: flex;
+    position: fixed;
+    z-index: 12;
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(6px, env(safe-area-inset-bottom));
+    gap: 6px;
+  }
+  #phone-tools button {
+    min-height: 38px;
+    padding: 7px 10px;
+    font-size: 11px;
+    background: #111;
+    color: #fafafa;
+    border: 1px solid #8282aa;
+  }
+  #touch-controls {
+    margin-bottom: 38px;
+  }
+  body[data-view="browse"] footer {
+    padding-bottom: 48px;
+  }
+  .toast {
+    bottom: max(56px, calc(env(safe-area-inset-bottom) + 56px));
+  }
+}
 :root {
   --bg: #000000;
   --panel: #000000;
