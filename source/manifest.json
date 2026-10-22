@@ -1,0 +1,55 @@
+{
+  "application": "Smash Portal",
+  "version": "3.4.0",
+  "engine_source": "https://github.com/waveplate/M64Wasm",
+  "engine_commit": "f6b5d6cc31821ec501a94aa761eae022d08f5a9d",
+  "emscripten": "2.0.7",
+  "font": "Abel Regular / SIL OFL",
+  "ui_fonts": [
+    "Josefin Sans Semibold",
+    "Instrument Sans Condensed Medium Italic",
+    "Orbitron Medium"
+  ],
+  "media": "Audiovisual recordings of the original US game attract sequence; no ROM or savestate",
+  "files": {
+    "engine/n64wasm.js": {
+      "sha256": "9746baf9719a81732ae02bd7601cf3e3f98766a463bed33427d4e9bfd1eabad1",
+      "bytes": 256024,
+      "modified": false
+    },
+    "engine/n64wasm.wasm": {
+      "sha256": "2e0305468f4eeab8ed794533e87315d90d9665a6c673e53f10a3c6f8da199fdc",
+      "bytes": 2527207,
+      "modified": false
+    },
+    "engine/assets.zip": {
+      "sha256": "c99e553befe6c2e97c92e9fe3222036f3bb2919bb04a3a2dc9d5c9b2ecb00144",
+      "bytes": 33302,
+      "modified": true
+    },
+    "brand/smash-portal.jpeg": {
+      "sha256": "39bd075a6f4d4bfb87023b6b061c8c90601aae97f2379f3394b28f274b77d643",
+      "bytes": 79943
+    },
+    "fonts/instrumentsans.ttf": {
+      "sha256": "a74203cc5066a3b2f8de1a7b0887ef897773c2319dc86c911f8e85350cde0d07",
+      "bytes": 202128
+    },
+    "fonts/josefinsans.ttf": {
+      "sha256": "9255abdb5f393bc51e101abbd07a716a977fd3e15472b1b84b260f426a342bfd",
+      "bytes": 118588
+    },
+    "fonts/orbitron.ttf": {
+      "sha256": "f42db2dd16e642258e35782916eceb1dcdbea06fb958d77ad71dc5963587e8fd",
+      "bytes": 38576
+    },
+    "media/fire.mp4": {
+      "sha256": "14cb1e5af1b322751fc44f2df4a52ae144d9f0ddbcbeb5de470d6ca3ab3b18e6",
+      "bytes": 675214
+    },
+    "media/opening.mp4": {
+      "sha256": "731efb1d1f33b98d120fd8a128b247a5955b5960f9616a51adca4de1d16382e8",
+      "bytes": 15716120
+    }
+  }
+}

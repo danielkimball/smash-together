@@ -2,104 +2,747 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#000000" />
-    <title>Smash Portal</title>
-    <style>
-      @font-face {
-        font-family: "Josefin Sans";
-        src: url("./josefinsans.ttf") format("truetype");
-        font-weight: 100 700;
-        font-display: swap;
-      }
-    </style>
-    <style>
-      * {
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        margin: 0;
-        width: 100%;
-        height: 100%;
-        background: #000000;
-        color: #fafafa;
-        font-family: "Josefin Sans", sans-serif;
-        text-transform: uppercase;
-      }
-      #connection {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-content: center;
-        text-align: center;
-        padding: 24px;
-        background: #000000;
-        z-index: 2;
-      }
-      #connection[hidden] {
-        display: none;
-      }
-      h1 {
-        font-size: clamp(30px, 7vw, 58px);
-        font-style: normal;
-        color: #ff0028;
-        margin: 0;
-      }
-      p {
-        max-width: 450px;
-        color: #fafafa;
-        line-height: 1.5;
-      }
-      button {
-        border: 0;
-        border-radius: 999px;
-        background: #ff0028;
-        padding: 13px 24px;
-        font-weight: 700;
-        font-size: 16px;
-        cursor: pointer;
-      }
-    </style>
+    <title>Smash Portal · Super Smash Bros. Online</title>
+    <link rel="icon" href="./mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./type.css" />
+    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./touch.css" />
+    <link rel="stylesheet" href="./portal.css" />
+    <script type="module" src="./js/app.js"></script>
   </head>
   <body>
-    <div id="connection">
-      <h1>SMASH PORTAL</h1>
-      <p id="message">Connecting to the game…</p>
-      <button id="retry" hidden>Try again</button>
+    <section id="game-view" hidden aria-label="Game">
+      <canvas
+        id="canvas"
+        width="640"
+        height="480"
+        tabindex="0"
+        aria-label="Super Smash Bros. game"
+      ></canvas>
+      <div id="native-menu" hidden>
+        <nav class="native-hitbox" aria-label="Smash main menu">
+          <button
+            id="native-single"
+            class="native-choice native-1p"
+            aria-label="Single player — 1P Mode"
+          >
+            <span>Single player</span>
+          </button>
+          <button
+            id="native-online"
+            class="native-choice native-vs"
+            aria-label="Multiplayer — VS Mode"
+          >
+            <span>Multiplayer</span>
+          </button>
+          <button
+            id="native-options"
+            class="native-choice native-options"
+            aria-label="Game options"
+          >
+            <span>Game options</span>
+          </button>
+          <button
+            id="native-data"
+            class="native-choice native-data"
+            aria-label="Game data"
+          >
+            <span>Game data</span>
+          </button>
+        </nav>
+        <div class="native-tools">
+          <button data-controls>Controllers</button
+          ><button data-fullscreen>Fullscreen</button>
+        </div>
+        <p class="native-legend">
+          <b>↑ ↓</b> Choose &nbsp; <b>A / J</b> Select &nbsp;
+          <b>1P Mode</b> Single player &nbsp; <b>VS Mode</b> Multiplayer
+        </p>
+      </div>
+      <section
+        id="room-setup"
+        class="room-setup"
+        hidden
+        aria-label="Multiplayer game settings"
+      >
+        <div class="setup-heading">
+          <div>
+            <span class="eyebrow"
+              >1 · GAME RULES　 →　 2 · FIGHTERS　 →　 3 · BATTLE</span
+            ><strong id="setup-title">Set up your match</strong>
+          </div>
+          <button id="setup-cancel">Cancel</button>
+        </div>
+        <div class="setup-footer">
+          <p id="setup-help">
+            Choose Time or Stock, set the limit, then open VS Options for items.
+            VS START continues.
+          </p>
+          <div class="setup-inputs" aria-label="Native menu controls">
+            <button data-native-input="up" aria-label="Menu up">↑</button
+            ><button data-native-input="down" aria-label="Menu down">↓</button
+            ><button data-native-input="left" aria-label="Decrease setting">
+              ←</button
+            ><button data-native-input="right" aria-label="Increase setting">
+              →</button
+            ><button data-native-input="a">A · Select</button
+            ><button data-native-input="b">B · Back</button>
+          </div>
+          <span>Stick / WASD: move & adjust · A / J: select · B / K: back</span>
+        </div>
+      </section>
+      <section
+        id="character-room"
+        class="character-room"
+        hidden
+        aria-label="Live character-selection room"
+      >
+        <div class="room-ribbon">
+          <div>
+            <div class="room-name-line">
+              <strong id="room-title">VS ROOM</strong>
+              <button
+                id="rename-open"
+                class="room-rename"
+                aria-label="Rename room"
+                hidden
+              >
+                ✎ Rename
+              </button>
+            </div>
+            <span id="room-waiting"
+              >Choose your fighter while friends join</span
+            >
+          </div>
+          <button id="copy-invite" data-invite>Invite friends</button>
+        </div>
+        <div class="room-bottom">
+          <div id="player-slots" class="native-ports" aria-live="polite"></div>
+          <div class="room-commands">
+            <span
+              >Move your colored hand · <b>A / J</b> Choose ·
+              <b>B / K</b> Change</span
+            ><button id="start-game" disabled>
+              START MATCH <kbd>Start / Enter</kbd>
+            </button>
+          </div>
+        </div>
+      </section>
+      <div class="game-hud" id="game-hud">
+        <button id="game-menu" class="glass">
+          ☰ <span>Menu</span> <kbd>Esc</kbd>
+        </button>
+        <div id="game-players" class="game-players"></div>
+        <button class="glass" data-fullscreen>⛶ <span>Fullscreen</span></button>
+      </div>
+      <div id="game-notice" class="game-notice" hidden>
+        <div class="notice-card">
+          <span class="eyebrow" id="game-notice-label"
+            >GETTING EVERYONE TOGETHER</span
+          >
+          <h2 id="game-notice-title">Preparing the arena…</h2>
+          <p id="game-notice-detail">
+            Opening character selection for everyone.
+          </p>
+          <div class="actions">
+            <button id="game-resume" class="primary" hidden>Resume game</button
+            ><button id="game-rejoin" hidden>Reconnect</button
+            ><button id="game-back-lobby" hidden>Character selection</button
+            ><button id="game-leave" class="quiet">Leave game</button>
+          </div>
+        </div>
+      </div>
+      <p id="fighter-hint" class="fighter-hint" hidden>
+        Move your colored hand to a fighter · A to choose · Start when everyone
+        has chosen
+      </p>
+      <p id="stage-choice" class="stage-choice" aria-live="polite" hidden></p>
+      <section id="touch-controls" aria-label="Touch N64 controller" hidden>
+        <span class="touch-brand" aria-hidden="true">SMASH <b>PORTAL</b></span>
+        <button
+          class="touch-shoulder touch-l"
+          data-touch="l"
+          aria-label="L shoulder"
+        >
+          L
+        </button>
+        <button
+          class="touch-shoulder touch-r"
+          data-touch="r"
+          aria-label="R shield"
+        >
+          R
+        </button>
+        <div
+          class="touch-stick"
+          role="group"
+          aria-label="Analog stick, drag to move"
+        >
+          <span class="stick-gate"></span><span class="stick-thumb"></span>
+        </div>
+        <div class="touch-dpad" role="group" aria-label="Directional pad">
+          <span class="dpad-cross"></span>
+          <button data-touch="du" aria-label="D-pad up">⌃</button>
+          <button data-touch="dl" aria-label="D-pad left">‹</button>
+          <button data-touch="dr" aria-label="D-pad right">›</button>
+          <button data-touch="dd" aria-label="D-pad down">⌄</button>
+        </div>
+        <div class="touch-face">
+          <button class="touch-z" data-touch="z" aria-label="Z grab">Z</button>
+          <button class="touch-b" data-touch="b" aria-label="B special or back">
+            B
+          </button>
+          <button
+            class="touch-a"
+            data-touch="a"
+            aria-label="A attack or select"
+          >
+            A
+          </button>
+        </div>
+        <div class="touch-c" role="group" aria-label="C buttons, jump">
+          <button data-touch="cu" aria-label="C up">▴</button>
+          <button data-touch="cl" aria-label="C left">◂</button>
+          <button data-touch="cr" aria-label="C right">▸</button>
+          <button data-touch="cd" aria-label="C down">▾</button>
+        </div>
+        <button class="touch-menu" aria-label="Open game menu">
+          <i></i><span>MENU</span>
+        </button>
+        <button class="touch-start" data-touch="start" aria-label="Start">
+          <i></i><span>START</span>
+        </button>
+      </section>
+    </section>
+    <div id="shell" class="shell">
+      <header class="topbar">
+        <span id="cartridge-badge" class="status-badge">Insert cartridge</span>
+        <div class="header-actions">
+          <button
+            id="attract-sound"
+            class="quiet"
+            aria-pressed="false"
+            aria-label="Turn opening sound on"
+          >
+            Sound off
+          </button>
+          <button class="quiet" data-controls>Controller</button>
+          <button class="quiet" data-fullscreen>Fullscreen</button>
+        </div>
+      </header>
+      <main>
+        <section
+          id="home-screen"
+          class="screen home-screen"
+          aria-label="Super Smash Bros. opening"
+        >
+          <div class="attract-display">
+            <video
+              id="attract-opening"
+              src="./media/opening.mp4"
+              preload="auto"
+              autoplay
+              muted
+              playsinline
+              disablepictureinpicture
+              aria-label="Original Nintendo 64 opening and Master Hand introduction"
+            ></video>
+            <video
+              id="attract-title"
+              src="./media/fire.mp4"
+              loop
+              preload="auto"
+              muted
+              playsinline
+              disablepictureinpicture
+              hidden
+              aria-label="Original Super Smash Bros. title screen"
+            ></video>
+            <div id="attract-fallback" hidden>
+              <img src="./brand/smash-portal.jpeg" alt="Smash Portal" />
+              <p>PRESS START</p>
+            </div>
+            <button
+              id="power-on"
+              class="attract-start"
+              aria-label="Skip opening to title screen"
+            >
+              <span id="attract-hint">PRESS ANY BUTTON</span>
+            </button>
+          </div>
+        </section>
+        <section
+          id="browse-screen"
+          class="screen lobby-screen"
+          hidden
+          aria-label="Multiplayer lobby"
+        >
+          <h1 class="sr-only">Smash Portal multiplayer lobby</h1>
+          <div class="lobby-logo">
+            <img
+              src="./brand/smash-portal.jpeg"
+              alt="Smash Portal"
+              width="656"
+              height="655"
+            />
+          </div>
+          <div class="lobby-side">
+            <div class="lobby-actions">
+              <div class="name-field">
+                <label class="player-name-label" for="player-name"
+                  >Change your name</label
+                >
+                <input
+                  id="player-name"
+                  maxlength="30"
+                  placeholder="Your name"
+                  autocomplete="nickname"
+                  aria-label="Your name"
+                />
+              </div>
+              <button id="create-open" class="primary">Create a room</button>
+              <button id="join-open">Join a room</button>
+            </div>
+          </div>
+          <section class="room-browser" aria-label="Available rooms">
+            <div class="list-heading">
+              <span>OPEN ROOMS · ↑ ↓ CHOOSE · A JOIN</span
+              ><button
+                id="refresh-rooms"
+                data-controller-skip
+                class="quiet"
+                aria-label="Refresh rooms"
+              >
+                ↻ Refresh
+              </button>
+            </div>
+            <div id="room-list" class="room-list" aria-live="polite"></div>
+            <div id="rooms-empty" class="empty-room">
+              <p>No challengers. Yet.</p>
+              <button id="create-empty" class="quiet">
+                Be the first. Create a room →
+              </button>
+            </div>
+            <p id="browser-status" class="subtext" role="status">
+              Finding rooms…
+            </p>
+          </section>
+        </section>
+      </main>
+      <footer>
+        <button
+          id="brand-home"
+          class="quiet"
+          data-home
+          aria-label="Back to main menu"
+        >
+          ← Main menu
+        </button>
+        <span id="footer-input">Keyboard or paired controller</span>
+        <div>
+          <button id="cartridge-open" class="quiet">Your cartridge</button
+          ><button id="diagnostics-open" class="quiet">Connection</button
+          ><a href="./credits.html">Credits & source</a>
+        </div>
+      </footer>
     </div>
-    <script type="module">
-      const message = document.getElementById("message"),
-        retry = document.getElementById("retry");
-      async function connect() {
-        retry.hidden = true;
-        try {
-          const response = await fetch("./server.json?t=" + Date.now(), {
-            cache: "no-store",
-          });
-          if (!response.ok) throw Error("Host unavailable");
-          const data = await response.json(),
-            url = new URL(data.url);
-          if (
-            url.protocol !== "https:" ||
-            !/^[a-z0-9-]+\.trycloudflare\.com$/.test(url.hostname) ||
-            url.pathname !== "/"
-          )
-            throw Error("Invalid host");
-          message.textContent = "Opening the game directly on Cloudflare…";
-          location.replace(
-            url.origin +
-              "/" +
-              (/^#room=[a-f0-9]{36}$/.test(location.hash) ? location.hash : ""),
-          );
-        } catch {
-          message.textContent =
-            "The host is unavailable. Ask your host for the current Cloudflare link.";
-          retry.hidden = false;
-        }
-      }
-      retry.onclick = connect;
-      connect();
-    </script>
+    <input id="rom-file" type="file" accept=".z64,.v64,.n64" hidden />
+    <input id="save-file" type="file" accept=".smash64" hidden />
+    <dialog id="rom-dialog">
+      <button
+        class="testing-dot"
+        data-testing
+        aria-label="Testing access"
+        title="Testing access"
+      >
+        ◇
+      </button>
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">YOUR CARTRIDGE. YOUR GAME.</p>
+          <h2>Add your ROM</h2>
+        </div>
+        <button
+          class="close"
+          data-close="rom-dialog"
+          aria-label="Close cartridge setup"
+        >
+          ×
+        </button>
+      </div>
+      <p>
+        Choose your original US Super Smash Bros. ROM. Your file stays in this
+        browser, and we’ll remember it for next time.
+      </p>
+      <div class="cartridge-card">
+        <img src="./mark.svg" width="56" height="56" alt="" />
+        <div>
+          <strong>Super Smash Bros.</strong>
+          <p id="rom-status">Original US release · .z64, .v64 or .n64</p>
+        </div>
+      </div>
+      <p id="rom-error" class="error-text" role="alert" hidden></p>
+      <div class="actions">
+        <button id="choose-rom" class="primary">Choose ROM file</button
+        ><button id="rom-continue" class="primary" hidden>Continue →</button
+        ><button id="forget-rom" class="quiet" hidden>Forget saved ROM</button>
+      </div>
+      <p class="subtext">
+        Your ROM is verified locally. No upload or account needed.
+      </p>
+    </dialog>
+    <button
+      id="testing-access"
+      class="testing-corner"
+      data-testing
+      aria-label="Testing access"
+      title="Testing access"
+    >
+      ◇
+    </button>
+    <dialog id="testing-dialog">
+      <form id="testing-form">
+        <div class="dialog-heading">
+          <h2>Testing access</h2>
+          <button
+            type="button"
+            class="close"
+            data-close="testing-dialog"
+            aria-label="Close testing access"
+          >
+            ×
+          </button>
+        </div>
+        <label for="testing-password">PASSWORD</label
+        ><input
+          id="testing-password"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
+        <p id="testing-error" class="subtext" hidden></p>
+        <button id="testing-enter" class="primary wide" type="submit">
+          Enter game
+        </button>
+      </form>
+    </dialog>
+    <dialog id="create-dialog">
+      <form id="create-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">HOST A MATCH</p>
+            <h2>CREATE ROOM</h2>
+          </div>
+          <button
+            type="button"
+            class="close"
+            data-close="create-dialog"
+            aria-label="Close create room"
+          >
+            ×
+          </button>
+        </div>
+        <label for="room-name">ROOM NAME</label
+        ><input id="room-name" maxlength="40" placeholder="One more match" />
+        <div class="form-grid">
+          <div>
+            <label for="capacity">PLAYERS</label
+            ><select id="capacity">
+              <option value="4">Up to 4 players</option>
+              <option value="3">Up to 3 players</option>
+              <option value="2">Just us two</option>
+            </select>
+          </div>
+          <div>
+            <label for="visibility">WHO CAN JOIN</label
+            ><select id="visibility">
+              <option value="public">Anyone on this server</option>
+              <option value="private">Invite only</option>
+            </select>
+          </div>
+        </div>
+        <details>
+          <summary>Connection settings</summary>
+          <label for="delay">INPUT BUFFER</label
+          ><select id="delay">
+            <option value="4" selected>Responsive · 4 frames</option>
+            <option value="6">Balanced · 6 frames</option>
+            <option value="9">Long distance · 9 frames</option>
+            <option value="12">Extra steady · 12 frames</option>
+          </select>
+          <p class="subtext">
+            A higher buffer can smooth out a distant connection.
+          </p>
+        </details>
+        <button id="create-room" class="primary wide" type="submit">
+          Next: game rules →
+        </button>
+      </form>
+    </dialog>
+    <dialog id="rename-dialog">
+      <form id="rename-form">
+        <div class="dialog-heading">
+          <h2>Rename room</h2>
+          <button
+            type="button"
+            class="close"
+            data-close="rename-dialog"
+            aria-label="Cancel rename"
+          >
+            ×
+          </button>
+        </div>
+        <label for="rename-name">ROOM NAME</label>
+        <input id="rename-name" maxlength="40" required autocomplete="off" />
+        <p class="subtext">Everyone in the room will see the new name.</p>
+        <button id="rename-save" class="primary wide" type="submit">
+          Save name
+        </button>
+      </form>
+    </dialog>
+    <dialog id="join-dialog">
+      <form id="join-form">
+        <div class="dialog-heading">
+          <h2>Join your friend.</h2>
+          <button
+            type="button"
+            class="close"
+            data-close="join-dialog"
+            aria-label="Close join room"
+          >
+            ×
+          </button>
+        </div>
+        <label for="join-name">YOUR NAME</label>
+        <input
+          id="join-name"
+          maxlength="30"
+          placeholder="Player"
+          autocomplete="nickname"
+        />
+        <label for="invite-input">INVITATION LINK</label
+        ><input
+          id="invite-input"
+          placeholder="Paste the link your friend sent"
+        /><button id="join-room" class="primary wide" type="submit">
+          Join room →
+        </button>
+      </form>
+    </dialog>
+    <dialog id="invite-dialog">
+      <div class="dialog-heading">
+        <h2>Invite your friends.</h2>
+        <button
+          class="close"
+          data-close="invite-dialog"
+          aria-label="Close invitation"
+        >
+          ×
+        </button>
+      </div>
+      <p>
+        Copy this link and send it to your friends. They’ll appear beside you in
+        character selection.
+      </p>
+      <label for="invite-link">YOUR ROOM INVITATION</label
+      ><input id="invite-link" readonly />
+      <p class="subtext">
+        Press ⌘C on Mac or Ctrl+C on Windows to copy the selected link.
+      </p>
+      <button class="primary wide" data-close="invite-dialog">Done</button>
+    </dialog>
+    <dialog id="menu-dialog">
+      <div class="dialog-heading">
+        <h2>Take a breather.</h2>
+        <button class="close" data-close="menu-dialog" aria-label="Resume game">
+          ×
+        </button>
+      </div>
+      <div class="pause-menu">
+        <button id="resume-menu" class="primary">Resume game</button
+        ><button data-controls>Controller setup</button
+        ><button id="help-open">Controls guide</button
+        ><button data-fullscreen>Toggle fullscreen</button
+        ><label class="volume-label"
+          >VOLUME<input id="volume" type="range" min="0" max="100" value="55"
+        /></label>
+        <div id="local-save-actions" class="form-grid">
+          <button id="save">Save progress</button
+          ><button id="load-save">Load progress</button
+          ><button id="export-save">Export save</button
+          ><button id="import-save">Import save</button>
+        </div>
+        <button id="rename-menu" hidden>Rename room</button>
+        <button id="back-lobby">Return to character selection</button
+        ><button id="reset">Restart local game</button
+        ><button id="quit-game" class="quiet">Leave game</button>
+      </div>
+    </dialog>
+    <dialog id="name-dialog">
+      <form id="name-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">MAKE A NAME FOR YOURSELF</p>
+            <h2>Change your name</h2>
+          </div>
+          <button
+            type="button"
+            class="close"
+            data-close="name-dialog"
+            aria-label="Cancel name change"
+          >
+            ×
+          </button>
+        </div>
+        <label for="name-draft">Your name</label
+        ><input id="name-draft" maxlength="30" autocomplete="nickname" />
+        <div
+          id="name-keys"
+          class="name-keys"
+          aria-label="Controller keyboard"
+        ></div>
+        <p class="subtext">
+          Stick / D-pad: choose · A: type · B: delete · Start: done
+        </p>
+      </form>
+    </dialog>
+    <dialog id="controls-dialog">
+      <div class="dialog-heading">
+        <div>
+          <div class="eyebrow">MAKE YOURSELF AT HOME</div>
+          <h2>Controller setup</h2>
+        </div>
+        <button
+          class="close"
+          data-close="controls-dialog"
+          aria-label="Close controller setup"
+        >
+          ×
+        </button>
+      </div>
+      <p class="dialog-description">
+        Pair Bluetooth controllers in your device’s settings, or connect by USB.
+        Then press a button. Xbox and DragonRise N64 USB controllers have
+        presets. Custom mappings are saved automatically for this controller.
+      </p>
+      <label for="touch-mode">PHONE TOUCH CONTROLS</label>
+      <select id="touch-mode">
+        <option value="auto">Automatic on touch screens</option>
+        <option value="on">Show touch controls</option>
+        <option value="off">Hide · use a paired controller</option>
+      </select>
+      <label for="device">INPUT DEVICE</label
+      ><select id="device">
+        <option value="keyboard">Keyboard</option>
+      </select>
+      <div class="control-actions">
+        <button id="preset" class="subtle-button">Reset preset</button
+        ><button id="wizard" class="button primary compact">Guided setup</button
+        ><button id="calibrate" class="subtle-button">Calibrate center</button>
+      </div>
+      <p id="controller-saved" class="subtext"></p>
+      <p id="mac-controller-help" class="subtext" hidden>
+        On Mac, if B opens Launchpad: System Settings → Game Controllers → turn
+        off “Press Home button to open Launchpad.”
+      </p>
+      <p id="mapping-prompt" class="mapping-prompt" hidden></p>
+      <div class="controller-preview">
+        <div class="stick-meter"><span id="stick-dot"></span></div>
+        <div>
+          <strong id="control-test">Press buttons or move the stick</strong>
+          <p id="raw-input">Your mapping is saved for this device.</p>
+        </div>
+      </div>
+      <div class="sliders">
+        <label
+          >STICK DEADZONE <output id="deadzone-value">12%</output
+          ><input
+            id="deadzone"
+            type="range"
+            min="0"
+            max="40"
+            value="12" /></label
+        ><label
+          >STICK RANGE <output id="range-value">100%</output
+          ><input id="range" type="range" min="50" max="150" value="100"
+        /></label>
+      </div>
+      <label class="checkbox-label"
+        ><input id="invert-y" type="checkbox" /> Invert vertical stick</label
+      >
+      <div id="bindings" class="bindings"></div>
+      <p class="small-print">
+        Click any mapping to change it. Release the controls, then press the
+        desired button or move an axis. Keyboard: press the desired key. Close
+        this panel to resume control of the game.
+      </p>
+    </dialog>
+    <dialog id="help-dialog">
+      <div class="dialog-heading">
+        <h2>Get together. Smash.</h2>
+        <button class="close" data-close="help-dialog" aria-label="Close help">
+          ×
+        </button>
+      </div>
+      <ol class="help-steps">
+        <li>
+          <strong>Choose VS Mode / Multiplayer.</strong> Join a room, create
+          one, or open your friend’s invitation.
+        </li>
+        <li>
+          <strong>Load your own ROM.</strong> We check the original US release
+          and keep it in your browser.
+        </li>
+        <li>
+          <strong>Choose your fighter while you wait.</strong> Your room opens
+          straight into the original character screen. Move your colored hand
+          with the stick or WASD and press A / J to choose. Friends receive the
+          next controller port when they join; your selection stays in place.
+        </li>
+        <li>
+          <strong>Start the match.</strong> When everyone has chosen, the host
+          presses Start / Enter or Start Match. The room closes to new arrivals
+          during the fight and opens again in character selection.
+        </li>
+      </ol>
+      <p>
+        <b>Keyboard:</b> WASD moves · J attacks / selects · K special / back ·
+        Space jumps · L grabs · O shields · Enter starts · Esc opens the menu.
+        On a controller, press L + R + Start together for the menu.
+      </p>
+      <p>
+        Keep the game tab visible. The hosting computer must stay awake. This
+        temporary sharing address may change when its tunnel restarts.
+      </p>
+    </dialog>
+    <dialog id="diagnostics-dialog">
+      <div class="dialog-heading">
+        <h2>Connection details</h2>
+        <button
+          class="close"
+          data-close="diagnostics-dialog"
+          aria-label="Close connection details"
+        >
+          ×
+        </button>
+      </div>
+      <pre id="diagnostics"></pre>
+      <p class="subtext">
+        Direct connections when available, with a free server relay as fallback.
+        Synchronized inputs with a configurable delay; this is not rollback.
+      </p>
+    </dialog>
+    <div id="busy" class="busy" hidden role="status">
+      <div class="spinner"></div>
+      <h2 id="busy-title">Powering on…</h2>
+      <p id="busy-detail">Loading your cartridge in this browser.</p>
+    </div>
+    <div id="toast" class="toast" role="status" hidden></div>
   </body>
 </html>
