@@ -1,10 +1,16 @@
 {
-  "application": "Smash Together",
-  "version": "3.2.0",
+  "application": "Smash Portal",
+  "version": "3.3.0",
   "engine_source": "https://github.com/waveplate/M64Wasm",
   "engine_commit": "f6b5d6cc31821ec501a94aa761eae022d08f5a9d",
   "emscripten": "2.0.7",
   "font": "Abel Regular / SIL OFL",
+  "ui_fonts": [
+    "Josefin Sans Semibold",
+    "Instrument Sans Condensed Medium Italic",
+    "Orbitron Medium"
+  ],
+  "media": "Audiovisual recordings of the original US game attract sequence; no ROM or savestate",
   "files": {
     "engine/n64wasm.js": {
       "sha256": "9746baf9719a81732ae02bd7601cf3e3f98766a463bed33427d4e9bfd1eabad1",
@@ -20,6 +26,34 @@
       "sha256": "c99e553befe6c2e97c92e9fe3222036f3bb2919bb04a3a2dc9d5c9b2ecb00144",
       "bytes": 33302,
       "modified": true
+    },
+    "brand/smash-portal.jpeg": {
+      "sha256": "39bd075a6f4d4bfb87023b6b061c8c90601aae97f2379f3394b28f274b77d643",
+      "bytes": 79943
+    },
+    "fonts/instrumentsans.ttf": {
+      "sha256": "a74203cc5066a3b2f8de1a7b0887ef897773c2319dc86c911f8e85350cde0d07",
+      "bytes": 202128
+    },
+    "fonts/josefinsans.ttf": {
+      "sha256": "9255abdb5f393bc51e101abbd07a716a977fd3e15472b1b84b260f426a342bfd",
+      "bytes": 118588
+    },
+    "fonts/orbitron.ttf": {
+      "sha256": "f42db2dd16e642258e35782916eceb1dcdbea06fb958d77ad71dc5963587e8fd",
+      "bytes": 38576
+    },
+    "media/how-to-play.mp4": {
+      "sha256": "6963505b8c474c2e76f34a3c6a0d5500625a187f71d1c5fad424871dfc115fba",
+      "bytes": 41915989
+    },
+    "media/opening.mp4": {
+      "sha256": "731efb1d1f33b98d120fd8a128b247a5955b5960f9616a51adca4de1d16382e8",
+      "bytes": 15716120
+    },
+    "media/title.mp4": {
+      "sha256": "e8382ff68b47fc47a9b801ea957be094b2724a0ccf43128415abe6fea7668b3c",
+      "bytes": 2398841
     }
   }
 }

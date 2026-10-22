@@ -1,4 +1,4 @@
-# Smash Together · 64
+# Smash Portal · 64
 
 A free, self-hosted, full-window browser app for two to four friends to play the original US Super Smash Bros. N64 game online. Each player supplies their own ROM. Includes the original game menus, a room browser, live character-selection rooms, private invitations, Xbox and remappable N64 controllers, portrait/landscape phone touch controls, keyboard controls, all 12 fighters and all 9 VS stages unlocked, winner-controlled stage selection, direct WebRTC connections, a WebSocket fallback, synchronized save states, local progress saves, and free HTTPS sharing from a Mac.
 
@@ -6,7 +6,7 @@ A free, self-hosted, full-window browser app for two to four friends to play the
 
 Friends use the **current direct Cloudflare address** from **Desktop → Smash Together → Friends Link.webloc**, or the room invite. The shortcut updates when the tunnel changes. The old GitHub bookmark now redirects straight to Cloudflare; the game is never embedded. On the host, open **http://localhost:8787**, or double-click **Desktop → Smash Together → Play Smash.command**. Use Google Chrome or Microsoft Edge on both computers.
 
-1. Press **Start** and select your original US `.z64`, `.v64`, or `.n64` ROM once. It stays in this browser. The actual Smash **Mode Select** menu opens, with its original art and music.
+1. Watch the original N64 / Master Hand opening, or press any key, controller button, or tap to skip to the native title screen. Press again to select your original US `.z64`, `.v64`, or `.n64` ROM once. It stays in this browser. The actual Smash **Mode Select** menu opens, with its original art and music.
 2. Choose **1P Mode** for single-player or **VS Mode** for online multiplayer. Use your controller, WASD + J, or click the native menu choices. The multiplayer room browser lets you join an open room or create a public/invite-only room for 2–4 players.
 3. Creating a room first opens the **original VS Mode settings**. Choose Time or Stock, adjust minutes (including ∞) or lives, and open **VS Options → Item Switch** for item frequency and individual toggles. Handicap, team attack and damage ratio are also available. Stage Select stays enabled so the winner can choose the next stage. Use your controller, WASD + J/K, or the on-screen arrow/A/B controls. Choose **VS START** when ready; the room opens at character selection with those rules. Pick your fighter while friends join.
 4. Click **Invite friends** and send the link to your brother. He enters his name and loads his own ROM. He joins the next controller port on your existing screen. Your fighter stays selected while other friends arrive. There is no separate ready-up screen.
@@ -30,16 +30,16 @@ Only joined players send inputs. The emulator exposes four native controller por
 
 ### Controls
 
-| N64 action | Xbox preset | Keyboard |
-|---|---|---|
-| Move / aim | Left stick | W A S D |
-| A / attack / select | A | J |
-| B / special / back | X | K |
-| Z / grab | Left trigger | L |
-| R / shield | Right bumper | O |
-| Start | Menu / Start | Enter |
-| C / jump | Y, B, or right stick left/right | I, Space, 1, 3 |
-| D-pad / taunt | D-pad | Arrow keys |
+| N64 action          | Xbox preset                     | Keyboard       |
+| ------------------- | ------------------------------- | -------------- |
+| Move / aim          | Left stick                      | W A S D        |
+| A / attack / select | A                               | J              |
+| B / special / back  | X                               | K              |
+| Z / grab            | Left trigger                    | L              |
+| R / shield          | Right bumper                    | O              |
+| Start               | Menu / Start                    | Enter          |
+| C / jump            | Y, B, or right stick left/right | I, Space, 1, 3 |
+| D-pad / taunt       | D-pad                           | Arrow keys     |
 
 N64 adapters differ: the guided mapper accepts any exposed button or signed axis. The live preview shows raw inputs, stick position and mapped actions. Adjust deadzone, range or vertical inversion as needed. Controllers must appear in the browser Gamepad API; pairing alone does not guarantee a particular adapter works. Physical controller hardware must be checked on your devices. Local play can use the selected input plus up to three additional gamepads.
 
@@ -55,7 +55,7 @@ The app, runtime, relay and sharing software cost $0. There are no accounts, pai
 
 Keep the laptop plugged in with its lid open while hosting. `caffeinate -i` prevents idle system sleep, but does not override closing the lid or manually sleeping the Mac. Display sleep is allowed. A server restart closes rooms; create a fresh invitation afterward. Use `node scripts/service.mjs restart` for application updates: it keeps the existing tunnel connection and hostname alive.
 
-A [Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) gives the laptop a free temporary HTTPS address without opening router ports. It has no uptime guarantee and its hostname changes when restarted. This is suitable for the temporary laptop setup. The app copies the direct Cloudflare address. Full host restarts may change it; **Friends Link.webloc** updates automatically. An optional old GitHub bookmark redirects to that same address without an iframe; normal gameplay and invitations do not pass through the bookmark. Logs and the current URL are in `.local/`; these files are not published. A future persistent hostname can use an existing domain and a named tunnel, but the current setup requires no domain purchase.
+A [Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) gives the laptop a free temporary HTTPS address without opening router ports. It has no uptime guarantee and its hostname changes when restarted. The host verifies public health before advertising a URL; it recreates revoked tunnels and connections that fail three consecutive 20-second health probes. This is suitable for the temporary laptop setup. The app copies the direct Cloudflare address. Full host restarts may change it; **Friends Link.webloc** updates automatically. An optional old GitHub bookmark redirects to that same address without an iframe; normal gameplay and invitations do not pass through the bookmark. Logs and the current URL are in `.local/`; these files are not published. A future persistent hostname can use an existing domain and a named tunnel, but the current setup requires no domain purchase.
 
 Service commands:
 
@@ -79,7 +79,7 @@ For foreground development, run `npm ci`, `npm start` and, in a second terminal,
 
 ## How multiplayer works
 
-Each browser runs the same pinned N64Wasm emulator locally. The room checks ROM and engine identities. The host configures the native rules before the room opens and can then run alone in character selection. Every new match in that room restores its configured selection snapshot. When a friend joins, all clients pause briefly while the host sends a compressed snapshot of the current selection; **all** players restore it so the interpreter begins from the same boundary. Each frame is executed only once every active player’s frame-numbered input is available. Inputs are delayed by 4/6/9/12 frames (about 67/100/150/200 ms at 60 FPS); choose a larger buffer for high latency. A short repeated input history covers direct-to-relay transitions. State hashes are compared every 60 frames; mismatches pause and restore the host's authoritative state automatically.
+Each browser runs the same pinned N64Wasm emulator locally. The room checks ROM and engine identities. The host configures the native rules before the room opens and can then run alone in character selection. Every new match in that room restores its configured selection snapshot. When a friend joins, all clients pause briefly while the host sends a compressed snapshot of the current selection; **all** players restore it so the interpreter begins from the same boundary. Each frame is executed only once every active player’s frame-numbered input is available. New rooms default to the responsive four-frame buffer. Inputs can be delayed by 4/6/9/12 frames (about 67/100/150/200 ms at 60 FPS); choose a larger buffer for high latency. A short repeated input history covers direct-to-relay transitions. State hashes are compared every 60 frames; mismatches pause and restore the host's authoritative state automatically.
 
 This is **delayed lockstep, not rollback**. Slow hardware or a slow connection can cause stalls and audio underruns. Direct peer connections use a public Cloudflare STUN service. When that is unavailable or blocked, the laptop's WebSocket relay carries inputs, avoiding a paid TURN service. Snapshots use the relay even with a direct input connection. Ordinary save states are roughly 16 MB before compression.
 
@@ -100,15 +100,22 @@ The end-to-end test needs a locally supplied ROM and Chrome. It never places tha
 
 The browser game uses [waveplate/M64Wasm](https://github.com/waveplate/M64Wasm), pinned at `f6b5d6cc31821ec501a94aa761eae022d08f5a9d`, based on Neil Barkhina's N64Wasm and the Mupen64Plus/libretro ecosystem. This is emulation, not a native Smash decompilation port. The [Smash decompilation](https://github.com/VetriTheRetri/ssb-decomp-re) is a separate project; its existence does not itself provide a browser multiplayer engine.
 
-`upstream/m64wasm` is a Git submodule. Restore it with `git submodule update --init`. The distributed `.wasm` and JS are unmodified copies from the pinned upstream `dist`; `public/source/manifest.json` records their hashes. Runtime `assets.zip` replaces the upstream fonts with OFL-licensed Abel. Nintendo game assets are not included.
+`upstream/m64wasm` is a Git submodule. Restore it with `git submodule update --init`. The distributed `.wasm` and JS are unmodified copies from the pinned upstream `dist`; `public/source/manifest.json` records their hashes. Runtime `assets.zip` replaces the upstream fonts with OFL-licensed Abel. No ROM or executable game data is included. The pre-ROM audiovisual attract recordings are served from `public/media`; live gameplay still requires the player’s verified ROM.
 
 To rebuild the emulator: install/activate **Emscripten 2.0.7**, enter `upstream/m64wasm/code`, run `make clean` then `make`, and copy `dist/n64wasm.js` and `dist/n64wasm.wasm` to `public/engine/`. Change the protocol/build identifier when changing emulator behavior. `python3 scripts/package-source.py` rebuilds safe font assets, notices, the manifest, and the downloadable corresponding source archive. The archive includes the emulator code and build Makefile, application source, tests, and licenses, without ROMs or local service data.
 
-Application code is GPL-3.0-or-later. N64Wasm's wrapper is MIT; incorporated emulator components keep their respective GPL/LGPL/BSD/MIT licenses and copyright notices. See `public/credits.html` and the source archive. Abel is SIL OFL; ws is MIT. Cloudflared is downloaded from its official release with a pinned SHA-256 check. This independent project is not affiliated with Nintendo or HAL Laboratory.
-
+Application code is GPL-3.0-or-later. N64Wasm's wrapper is MIT; incorporated emulator components keep their respective GPL/LGPL/BSD/MIT licenses and copyright notices. See `public/credits.html` and the source archive. Abel, Josefin Sans, Instrument Sans and Orbitron are SIL OFL; ws is MIT. The supplied Smash Portal branding and native game recordings retain their respective ownership. Cloudflared is downloaded from its official release with a pinned SHA-256 check. This independent project is not affiliated with Nintendo or HAL Laboratory.
 
 ### Direct hosting and testing configuration
 
 Private `.local/config.json` supports optional `testing: { romPath, passwordHash }`, plus `pagesRepo` (owner/repo) and `ghPath` only for the legacy bookmark redirect. The password hash is SHA-256; do not place a plaintext password or ROM in the repository. Direct Cloudflare URLs are always used for invites; the old `publicUrl` setting is ignored. Framing the game is disabled. `scripts/publish-link.mjs` can update the legacy `server.json` using the host's existing GitHub CLI authentication. The files in `launcher/` only redirect to the current host and contain no game data.
 
 The emulator's redundant DOM keyboard handlers are removed after initialization; the app supplies keyboard, controller and touch input. Native unlocks are applied to browser-local session save data through the official serializer; ROM bytes are unchanged. All other match rules use the original menus.
+
+## Smash Portal opening and branding
+
+The black / CRT white / red / idle blue / yellow / green palette is defined in `public/portal.css`. Headers and buttons use Josefin Sans Semibold, medium copy uses Instrument Sans Condensed Medium Italic, and small labels use Orbitron Medium. Fonts are local, with their OFL notices. The supplied logo is preserved in `public/brand`.
+
+Before a cartridge is loaded, the original N64 boot, opening, fiery title and idle How to Play / attract cycle play as H.264/AAC recordings of the host’s copy. Browser autoplay begins muted; a click/keypress enables sound, or use Sound On. Controller navigation keeps working silently if the browser requires a click before allowing audio. A press during the opening/tutorial reaches the title; another opens the ROM modal over the fire. Invalid ROMs remain blocked. A verified or remembered cartridge opens the live native Mode Select. VS Mode opens the branded lobby; 1P, Options and Data remain native. Videos and their network requests are released before gameplay.
+
+`SMASH_ROM='/absolute/path/your.z64' node scripts/capture-attract.mjs` reproduces the recordings using isolated Chrome and ffmpeg; temporary recordings and scene observations stay in ignored `artifacts/attract-capture`. No ROM or savestate is published. The capture is an audiovisual preview, not an emulated game available before ROM verification. `SMASH_ROM='/absolute/path/your.z64' SMASH_URL='http://localhost:8790' node scripts/portal-check.mjs` checks the entry flow, validation and responsive branding.

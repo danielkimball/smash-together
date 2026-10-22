@@ -9,6 +9,7 @@ import {
 } from "./controls.js";
 import { Netplay, compress, decompress } from "./netplay.js";
 import { TouchControls } from "./touch.js";
+import { Attract } from "./attract.js";
 import * as storage from "./storage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -26,6 +27,7 @@ let rom = null,
   roomSetup = null,
   lastScene = -1,
   menuInput = [],
+  waitForMenuRelease = false,
   view = "home",
   paused = true,
   next = 0;
@@ -47,6 +49,12 @@ let toastTimer,
 let shareUrl = null,
   publicUrl = null,
   polling = false;
+const attract = new Attract({
+  start: () => attempt(() => withCartridge(showMainMenu))(),
+  hasDialog: () => !!document.querySelector("dialog[open]"),
+});
+document.body.dataset.view = "home";
+document.body.dataset.attract = "opening";
 controls.blocked = true;
 controls.touch = new TouchControls($("touch-controls"), controls, {
   menu: () => {
@@ -62,6 +70,7 @@ window.smash = {
   engine,
   controls,
   net,
+  attract,
   get bootState() {
     return bootState;
   },
@@ -129,6 +138,7 @@ function setView(name) {
   $("game-notice").hidden = name === "native";
   $("room-setup").hidden = !roomSetup || name !== "game";
   document.body.dataset.view = name;
+  attract.setActive(name === "home");
   blockInput();
   if (changed) {
     window.scrollTo(0, 0);
@@ -158,6 +168,7 @@ function dialog(id, { pauseGame = true } = {}) {
   }
   if (id === "diagnostics-dialog") diagnostics();
   d.showModal();
+  if (id === "rom-dialog") $(rom ? "rom-continue" : "choose-rom").focus();
   blockInput();
 }
 function closeDialogs() {
@@ -203,13 +214,6 @@ $("brand-home").onclick = () => {
   if (!net.room) attempt(showMainMenu)();
   else toast("Leave your room to return to the main menu.");
 };
-$("multiplayer").onclick = attempt(() =>
-  withCartridge(async () => {
-    await powerOn();
-    setView("browse");
-  }),
-);
-$("power-on").onclick = attempt(() => withCartridge(showMainMenu));
 $("native-online").onclick = () => setView("browse");
 $("native-single").onclick = () => chooseNative(0);
 $("native-options").onclick = () => chooseNative(2);
@@ -256,6 +260,8 @@ $("testing-form").onsubmit = async (event) => {
 };
 $("diagnostics-open").onclick = () => dialog("diagnostics-dialog");
 function romReady() {
+  clearTimeout(toastTimer);
+  $("toast").hidden = true;
   $("rom-status").textContent = "Original US release · Verified and ready";
   $("cartridge-badge").textContent = "Cartridge ready";
   $("cartridge-badge").classList.add("ready");
@@ -297,6 +303,7 @@ async function loadFile(file) {
 function withCartridge(action) {
   if (rom || engine.loaded) return action();
   pendingAction = action;
+  if (view === "home") attract.holdTitle();
   $("rom-error").hidden = true;
   dialog("rom-dialog");
 }
@@ -371,6 +378,9 @@ async function showMainMenu() {
     menuInput = [];
     engine.frame([neutral]);
     lastScene = 7;
+    waitForMenuRelease = !!controls
+      .pad()
+      ?.buttons.some((button) => button.pressed);
     paused = false;
     next = performance.now();
     setView("native");
@@ -495,7 +505,10 @@ net.prepare = () => {
 };
 $("rom-file").onchange = attempt((e) => loadFile(e.target.files[0]));
 $("choose-rom").onclick = () => $("rom-file").click();
-$("cartridge-open").onclick = () => dialog("rom-dialog");
+$("cartridge-open").onclick = () => {
+  if (view === "home") attract.holdTitle();
+  dialog("rom-dialog");
+};
 $("rom-continue").onclick = attempt(async () => {
   $("rom-dialog").close();
   const action = pendingAction;
@@ -507,7 +520,6 @@ $("forget-rom").onclick = attempt(async () => {
   toast("Saved cartridge removed. Reload the page to choose a different file.");
   $("forget-rom").hidden = true;
 });
-$("local-play").onclick = attempt(() => withCartridge(showMainMenu));
 net.removePlayers = (slots) => {
   if (engine.inspect().scene !== 16) return;
   // Recall only the departing tokens, then park those hands below the
@@ -1178,10 +1190,24 @@ $("reset").onclick = () => {
 };
 function diagnostics() {
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nRelay: available for every player\nLatency: ${net.rtt || "—"} ms\nInput buffer: ${net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.2.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nRelay: available for every player\nLatency: ${net.rtt || "—"} ms\nInput buffer: ${net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.3.0`;
 }
 function menuController(time) {
   const pad = controls.pad();
+  const homeInput = view === "home" && !document.querySelector("dialog[open]");
+  attract.tick(
+    pad ||
+      (homeInput
+        ? controls
+            .devices()
+            .find((device) => device.buttons.some((button) => button.pressed))
+        : null),
+  );
+  if (homeInput) {
+    const buttons = pad ? evaluate(controls.profile, pad).buttons : 0;
+    menuEdges = { a: !!(buttons & BITS.a), b: !!(buttons & BITS.b) };
+    return;
+  }
   if (!pad || controls.capture || $("busy").hidden === false) return;
   const input = evaluate(controls.profile, pad),
     buttons = input.buttons;
@@ -1277,6 +1303,12 @@ function tick(time) {
         const inputs = [
           menuInput.length ? menuInput.shift() : controls.sample(),
         ];
+        if (waitForMenuRelease) {
+          waitForMenuRelease = !!controls
+            .pad()
+            ?.buttons.some((button) => button.pressed);
+          inputs[0] = neutral;
+        }
         for (const pad of controls
           .devices()
           .filter((p) => String(p.index) !== controls.selected)

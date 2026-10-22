@@ -48,9 +48,14 @@ try {
   let b = bPage;
   for (const p of [a, b]) p.on("pageerror", (e) => errors.push(e.message));
   await a.goto(url);
-  await a.locator("#multiplayer").click();
+  await a.keyboard.press("Enter");
   await a.locator("#rom-file").setInputFiles(rom);
-  await a.waitForFunction(() => smash.view === "browse");
+  await a.waitForFunction(
+    () => smash.view === "native" && !smash.paused,
+    null,
+    { timeout: 90000 },
+  );
+  await a.locator("#native-online").click();
   await a.locator("#player-name").fill("Dan");
   await a.locator("#create-open").click();
   await a.locator("#room-name").fill("Invite flow check");

@@ -18,7 +18,7 @@ function startServer() {
   });
 }
 
-console.log(`Smash Together is running at http://localhost:${port}`);
+console.log(`Smash Portal is running at http://localhost:${port}`);
 let tunnel = null,
   timer = null,
   stopping = false;

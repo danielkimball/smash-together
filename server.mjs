@@ -1,5 +1,6 @@
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
@@ -15,6 +16,9 @@ const MIME = {
   ".zip": "application/zip",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".jpeg": "image/jpeg",
+  ".mp4": "video/mp4",
+  ".ttf": "font/ttf",
   ".json": "application/json",
   ".txt": "text/plain; charset=utf-8",
   ".gz": "application/gzip",
@@ -118,7 +122,7 @@ export function createApp({
         return res.end(
           JSON.stringify({
             ok: true,
-            version: "3.2.0",
+            version: "3.3.0",
             shareUrl,
             publicUrl: shareUrl,
             testingAvailable: !!config.testing?.romPath,
@@ -162,8 +166,45 @@ export function createApp({
       res.setHeader("Content-Type", MIME[ext]);
       res.setHeader(
         "Cache-Control",
-        file.includes("/engine/") ? "public, max-age=86400" : "no-cache",
+        /\/(engine|media|fonts|brand)\//.test(file)
+          ? "public, max-age=86400"
+          : "no-cache",
       );
+      // Stream seekable video without loading whole recordings into memory or
+      // monopolizing the relay's event loop. Safari requests byte ranges too.
+      if (ext === ".mp4") {
+        res.setHeader("Accept-Ranges", "bytes");
+        let start = 0,
+          end = info.size - 1;
+        if (req.headers.range) {
+          const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+          if (!range || (!range[1] && !range[2])) {
+            res.writeHead(416, { "Content-Range": `bytes */${info.size}` });
+            return res.end();
+          }
+          if (range[1]) {
+            start = Number(range[1]);
+            if (range[2]) end = Math.min(Number(range[2]), end);
+          } else start = Math.max(0, info.size - Number(range[2]));
+          if (
+            !Number.isSafeInteger(start) ||
+            !Number.isSafeInteger(end) ||
+            start > end ||
+            start >= info.size
+          ) {
+            res.writeHead(416, { "Content-Range": `bytes */${info.size}` });
+            return res.end();
+          }
+          res.statusCode = 206;
+          res.setHeader("Content-Range", `bytes ${start}-${end}/${info.size}`);
+        }
+        res.setHeader("Content-Length", end - start + 1);
+        if (req.method === "HEAD") return res.end();
+        const stream = createReadStream(file, { start, end });
+        stream.on("error", () => res.destroy());
+        res.on("close", () => stream.destroy());
+        return stream.pipe(res);
+      }
       res.setHeader("Content-Length", info.size);
       res.end(req.method === "HEAD" ? undefined : await readFile(file));
     } catch {

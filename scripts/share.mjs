@@ -6,6 +6,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { publishLink } from "./publish-link.mjs";
+import { TunnelState } from "./tunnel-state.mjs";
 export const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const run = promisify(execFile);
 export async function writeFriendsShortcut(url) {
@@ -72,35 +73,92 @@ export async function share(port = 8787) {
     ],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
+  const state = new TunnelState();
   let published = false,
-    buffer = "";
-  function output(chunk) {
-    const line = chunk.toString();
-    process.stdout.write(line);
-    buffer = (buffer + line).slice(-12000);
-    const match = buffer.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
-    if (match && !published) {
-      published = true;
-      writeFile(
+    checking = false,
+    stopping = false,
+    publicationTimer,
+    lastCheck = 0;
+  const alive = () => !stopping && child.exitCode === null && !child.killed;
+  function recycle(reason) {
+    if (!alive()) return;
+    stopping = true;
+    console.error("Recreating sharing tunnel:", reason);
+    rm(path.join(root, ".local/share.json"), { force: true }).catch(() => {});
+    child.kill("SIGTERM");
+    const deadline = setTimeout(() => {
+      if (child.exitCode === null) child.kill("SIGKILL");
+    }, 5000);
+    deadline.unref();
+    child.once("exit", () => clearTimeout(deadline));
+  }
+  async function check() {
+    if (checking || !alive() || !state.url || !state.registered) return;
+    if (Date.now() - lastCheck < 20000) return;
+    lastCheck = Date.now();
+    checking = true;
+    try {
+      const response = await fetch(state.url + "/api/status", {
+        signal: AbortSignal.timeout(8000),
+        cache: "no-store",
+      });
+      const ok = response.ok && (await response.json()).ok === true;
+      if (!alive()) return;
+      if (published && state.health(ok))
+        return recycle("public health checks failed three times");
+      if (!ok || published) return;
+      await writeFile(
         path.join(root, ".local/share.json"),
         JSON.stringify({
-          url: match[0],
+          url: state.url,
           pid: process.pid,
           started: new Date().toISOString(),
         }) + "\n",
-      ).then(() => {
-        console.log(`SHARE_URL=${match[0]}`);
-        writeFriendsShortcut(match[0]).catch((error) =>
-          console.error("Friends shortcut:", error.message),
-        );
-        const publish = () =>
-          publishLink(match[0]).catch((error) => {
-            console.error("Stable link update:", error.message);
-            if (child.exitCode === null) setTimeout(publish, 30000).unref();
-          });
-        publish();
-      });
+      );
+      if (!alive()) {
+        await rm(path.join(root, ".local/share.json"), { force: true });
+        return;
+      }
+      published = true;
+      console.log(`SHARE_URL=${state.url}`);
+      await writeFriendsShortcut(state.url);
+      const publish = async () => {
+        if (!alive()) return;
+        try {
+          await publishLink(state.url);
+        } catch (error) {
+          console.error("Stable link update:", error.message);
+          if (alive()) publicationTimer = setTimeout(publish, 30000);
+        }
+      };
+      publish();
+    } catch (error) {
+      if (alive() && published && state.health(false))
+        recycle("public endpoint is unreachable");
+    } finally {
+      checking = false;
     }
+  }
+  const healthTimer = setInterval(check, 20000);
+  healthTimer.unref();
+  // A stalled launch with no registration must not leave sharing dead forever.
+  const startupTimer = setTimeout(() => {
+    if (!published) recycle("tunnel did not become publicly reachable");
+  }, 180000);
+  startupTimer.unref();
+  child.once("exit", () => {
+    stopping = true;
+    clearInterval(healthTimer);
+    clearTimeout(startupTimer);
+    clearTimeout(publicationTimer);
+  });
+  child.on("error", (error) => console.error("Tunnel process:", error.message));
+  function output(chunk) {
+    const line = chunk.toString();
+    process.stdout.write(line);
+    state.log(line);
+    if (state.revoked) recycle("Cloudflare revoked the old Quick Tunnel");
+    else if (!published) check();
   }
   child.stdout.on("data", output);
   child.stderr.on("data", output);

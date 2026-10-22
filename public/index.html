@@ -7,15 +7,16 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="theme-color" content="#101319" />
-    <title>Smash Together · Smash 64 Online</title>
+    <meta name="theme-color" content="#000000" />
+    <title>Smash Portal · Super Smash Bros. Online</title>
     <link rel="icon" href="/mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/type.css" />
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/touch.css" />
+    <link rel="stylesheet" href="/portal.css" />
     <script type="module" src="/js/app.js"></script>
   </head>
   <body>
-    <div class="ambient" aria-hidden="true"><span>64</span></div>
     <section id="game-view" hidden aria-label="Game">
       <canvas
         id="canvas"
@@ -163,7 +164,7 @@
       </p>
       <p id="stage-choice" class="stage-choice" aria-live="polite" hidden></p>
       <section id="touch-controls" aria-label="Touch N64 controller" hidden>
-        <span class="touch-brand" aria-hidden="true">SMASH <b>64</b></span>
+        <span class="touch-brand" aria-hidden="true">SMASH <b>PORTAL</b></span>
         <button
           class="touch-shoulder touch-l"
           data-touch="l"
@@ -221,79 +222,132 @@
     </section>
     <div id="shell" class="shell">
       <header class="topbar">
-        <button id="brand-home" class="brand" aria-label="Home">
-          <span class="brand-mark">64</span> SMASH <b>TOGETHER</b>
-        </button>
+        <span id="cartridge-badge" class="status-badge">Insert cartridge</span>
         <div class="header-actions">
-          <span id="cartridge-badge" class="status-badge">Bring your ROM</span
-          ><button class="quiet" data-controls>⌘ <span>Controller</span></button
-          ><button class="quiet" data-fullscreen>
-            ⛶ <span>Fullscreen</span>
+          <button
+            id="attract-sound"
+            class="quiet"
+            aria-pressed="false"
+            aria-label="Turn opening sound on"
+          >
+            Sound off
           </button>
+          <button class="quiet" data-controls>Controller</button>
+          <button class="quiet" data-fullscreen>Fullscreen</button>
         </div>
       </header>
       <main>
-        <section id="home-screen" class="screen home-screen">
-          <div class="cartridge-intro">
-            <p class="console-eyebrow">SMASH TOGETHER · NINTENDO 64</p>
-            <h1 class="smash-title">
-              <span>SUPER</span>SMASH<small>BROS.</small>
-            </h1>
-            <button id="power-on" class="power-on">
-              PRESS START <span>Open your game</span>
+        <section
+          id="home-screen"
+          class="screen home-screen"
+          aria-label="Super Smash Bros. opening"
+        >
+          <div class="attract-display">
+            <video
+              id="attract-opening"
+              src="/media/opening.mp4"
+              preload="auto"
+              autoplay
+              muted
+              playsinline
+              disablepictureinpicture
+              aria-label="Original Nintendo 64 opening and Master Hand introduction"
+            ></video>
+            <video
+              id="attract-title"
+              src="/media/title.mp4"
+              preload="auto"
+              muted
+              playsinline
+              disablepictureinpicture
+              hidden
+              aria-label="Original Super Smash Bros. title screen"
+            ></video>
+            <video
+              id="attract-how-to-play"
+              src="/media/how-to-play.mp4"
+              preload="none"
+              muted
+              playsinline
+              disablepictureinpicture
+              hidden
+              aria-label="Original Super Smash Bros. how to play demonstration"
+            ></video>
+            <div id="attract-fallback" hidden>
+              <img src="/brand/smash-portal.jpeg" alt="Smash Portal" />
+              <p>PRESS START</p>
+            </div>
+            <button
+              id="power-on"
+              class="attract-start"
+              aria-label="Skip opening to title screen"
+            >
+              <span id="attract-hint">PRESS ANY BUTTON</span>
             </button>
-            <p>Bring your cartridge. Step into the original game.</p>
-            <nav class="boot-shortcuts" aria-label="Quick start">
-              <button id="multiplayer">Multiplayer</button
-              ><button id="local-play">Single player</button
-              ><button id="help-open">How to play</button>
-            </nav>
           </div>
         </section>
-        <section id="browse-screen" class="screen" hidden>
-          <button class="back quiet" data-home>← Main menu</button>
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">MULTIPLAYER</p>
-              <h1>VS MODE</h1>
-              <p>
-                Join a room. Choose your fighter. Wait for your challengers.
-              </p>
-            </div>
-            <button id="create-open" class="primary">＋ Create a room</button>
+        <section
+          id="browse-screen"
+          class="screen lobby-screen"
+          hidden
+          aria-label="Multiplayer lobby"
+        >
+          <h1 class="sr-only">Smash Portal multiplayer lobby</h1>
+          <div class="lobby-logo">
+            <img
+              src="/brand/smash-portal.jpeg"
+              alt="Smash Portal"
+              width="656"
+              height="655"
+            />
           </div>
-          <div class="browser-toolbar">
-            <label class="inline-label" for="player-name"
-              >YOUR NAME
+          <div class="lobby-side">
+            <div class="lobby-actions">
+              <label class="sr-only" for="player-name">Your name</label>
               <input
                 id="player-name"
                 maxlength="30"
-                placeholder="Player"
+                placeholder="Enter your name"
                 autocomplete="nickname"
-            /></label>
-            <div class="actions">
-              <button id="join-open">Join with an invite</button
-              ><button id="refresh-rooms" class="quiet">↻ Refresh</button>
+                aria-label="Your name"
+              />
+              <button id="create-open" class="primary">Create a room</button>
+              <button id="join-open">Join a room</button>
             </div>
+            <section class="room-browser" aria-label="Available rooms">
+              <div class="list-heading">
+                <span>OPEN ROOMS</span
+                ><button
+                  id="refresh-rooms"
+                  class="quiet"
+                  aria-label="Refresh rooms"
+                >
+                  ↻ Refresh
+                </button>
+              </div>
+              <div id="room-list" class="room-list" aria-live="polite"></div>
+              <div id="rooms-empty" class="empty-room">
+                <p>No challengers. Yet.</p>
+                <button id="create-empty" class="quiet">
+                  Be the first. Create a room →
+                </button>
+              </div>
+              <p id="browser-status" class="subtext" role="status">
+                Finding rooms…
+              </p>
+            </section>
           </div>
-          <div class="list-heading">
-            <span>ROOM</span><span>PLAYERS</span><span>STATUS</span>
-          </div>
-          <div id="room-list" class="room-list" aria-live="polite"></div>
-          <div id="rooms-empty" class="empty-room">
-            <span class="empty-symbol" aria-hidden="true">＋</span>
-            <h2>The next match starts with you.</h2>
-            <p>
-              No open rooms yet. Create one and send your brother the invite.
-            </p>
-            <button id="create-empty" class="primary">Create a room</button>
-          </div>
-          <p id="browser-status" class="subtext">
-            Rooms on this server · No account needed
-          </p>
         </section>
       </main>
       <footer>
+        <button
+          id="brand-home"
+          class="quiet"
+          data-home
+          aria-label="Back to main menu"
+        >
+          ← Main menu
+        </button>
         <span id="footer-input">Keyboard or paired controller</span>
         <div>
           <button id="cartridge-open" class="quiet">Your cartridge</button
@@ -315,8 +369,8 @@
       </button>
       <div class="dialog-heading">
         <div>
-          <p class="eyebrow">ONE-TIME SETUP</p>
-          <h2>Bring your cartridge.</h2>
+          <p class="eyebrow">YOUR CARTRIDGE. YOUR GAME.</p>
+          <h2>Add your ROM</h2>
         </div>
         <button
           class="close"
@@ -331,7 +385,7 @@
         browser, and we’ll remember it for next time.
       </p>
       <div class="cartridge-card">
-        <span aria-hidden="true">64</span>
+        <img src="/mark.svg" width="56" height="56" alt="" />
         <div>
           <strong>Super Smash Bros.</strong>
           <p id="rom-status">Original US release · .z64, .v64 or .n64</p>
@@ -344,7 +398,7 @@
         ><button id="forget-rom" class="quiet" hidden>Forget saved ROM</button>
       </div>
       <p class="subtext">
-        No download, upload, account, or subscription required.
+        Your ROM is verified locally. No upload or account needed.
       </p>
     </dialog>
     <button
@@ -421,8 +475,8 @@
           <summary>Connection settings</summary>
           <label for="delay">INPUT BUFFER</label
           ><select id="delay">
-            <option value="4">Low · 4 frames</option>
-            <option value="6" selected>Balanced · 6 frames</option>
+            <option value="4" selected>Responsive · 4 frames</option>
+            <option value="6">Balanced · 6 frames</option>
             <option value="9">Long distance · 9 frames</option>
             <option value="12">Extra steady · 12 frames</option>
           </select>
@@ -517,6 +571,7 @@
       <div class="pause-menu">
         <button id="resume-menu" class="primary">Resume game</button
         ><button data-controls>Controller setup</button
+        ><button id="help-open">Controls guide</button
         ><button data-fullscreen>Toggle fullscreen</button
         ><label class="volume-label"
           >VOLUME<input id="volume" type="range" min="0" max="100" value="55"

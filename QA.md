@@ -1,6 +1,22 @@
-# Release verification · v3.2.0 · 2026-10-21
+# Release verification · Smash Portal v3.3.0 · 2026-10-22
 
-Tests use Dan's locally supplied original US ROM. No ROM, save, screenshot or extracted game data is committed or served. Reports and visual evidence stay in ignored `artifacts/`.
+- **21 Node tests** pass, including seekable H.264 video delivery (byte ranges, suffixes, HEAD, malformed ranges), revoked-tunnel log detection, outage thresholds, and the existing controller/room/winner tests.
+- **17 public-route checks** pass on v3.3.0 using four isolated Chrome browsers and `https://give-legislation-stationery-foot.trycloudflare.com`: actual four-human battle, two-player rematch, direct-to-relay packet recovery, deliberate desync repair, shared pause, reserved reconnect, host exit, saves and reload persistence. The synchronized rematch recorded 124 matching state checks and zero unexpected repairs at 53 FPS; after the reconnect segment the two clients reported 57/58 FPS. All clients ran on this laptop, so this measures the public route under a multi-browser workload, not geographically separated play. Zero uncaught browser errors. `artifacts/portal-public-four.json`.
+- **7 Portal flow and branding checks**: native opening → any key/tap → title → ROM overlay; invalid ROM rejection; original idle tutorial; verified and cached ROM handoff to actual Mode Select; controller Start/A and held-button guards; actual 1P Mode; brand fonts, idle/hover colors, create/join/controller dialogs and responsive desktop/phone/landscape layouts. `artifacts/portal-check.json` and `portal-*.png`.
+- Fresh-browser controller startup also passes with Chrome's strict user-activation policy. An injected browser `NotAllowedError` separately verifies that blocked audio falls back to moving muted footage; controller navigation still opens the ROM gate, and Sound On enables audible playback after a click. `artifacts/portal-autoplay.json`.
+- **7 native settings checks** pass: testing access, real typing, four-stock/no-items setup, rules inherited by a guest, rename propagation, actual battle, rematch persistence and unlimited Time. `artifacts/settings-check.json`.
+- **11 phone checks** pass, including three-finger controls, all 14 buttons, cleanup on rotation, an unlocked fighter, a real guest victory, winner-only stage choice and a Mushroom Kingdom rematch. The two-browser phone segment ran at 60 FPS, 7 ms measured RTT and zero unexpected repairs. This is local browser emulation, not a claim about inter-city latency. `artifacts/mobile-check.json`.
+- **3 WebKit phone checks** pass: WASM/native menu, full roster, room creation, touch fighter selection, landscape and shared Menu/resume. `artifacts/webkit-check.json`.
+- Public v3.3.0 health, branded HTML/JS/CSS/logo/fonts, ranged video delivery, the desktop shortcut, and the legacy GitHub redirect have been checked against the running Cloudflare origin. `artifacts/portal-public-assets.json`.
+- The legacy bookmark redirects directly to the live origin, with fullscreen/Gamepad permission available and an incorrect testing password rejected. `artifacts/direct-check.json`.
+
+The supplied logo is used without repainting. Josefin Sans Semibold, Instrument Sans Condensed Medium Italic and Orbitron Medium are served locally with OFL notices. Native game pixels and rules remain native. Startup recordings stop decoding and release their network sources before gameplay. New rooms default to four input-buffer frames; larger buffers remain available for distant connections. The emulator binaries and netplay protocol are unchanged.
+
+The Cloudflare host now waits for a publicly verified endpoint before advertising it. Log detection recreates a revoked Quick Tunnel even when cloudflared keeps retrying without exiting. Health checks are spaced at 20 seconds; startup has a three-minute DNS/registration grace period, and three consecutive failures recycle an established connection. Initial tests exposed macOS negative DNS caching for new tunnel names; the grace period prevents premature rotation. No system DNS settings were changed.
+
+# Previous release · v3.2.0 · 2026-10-21
+
+Tests use Dan's locally supplied original US ROM. No ROM or savestate is committed or served as a static asset. The v3.3.0 opening/title/attract recordings are intentionally served audiovisual previews; live emulation still requires ROM verification. QA reports and screenshots stay in ignored `artifacts/`.
 
 ## Completed checks
 

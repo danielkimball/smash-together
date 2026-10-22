@@ -67,9 +67,14 @@ try {
     p.on("pageerror", (e) => errors.push(e.message));
     pages.push(p);
     await p.goto(url);
-    await p.locator("#multiplayer").click();
+    await p.keyboard.press("Enter");
     await p.locator("#rom-file").setInputFiles(rom);
-    await p.waitForFunction(() => smash.view === "browse");
+    await p.waitForFunction(
+      () => smash.view === "native" && !smash.paused,
+      null,
+      { timeout: 90000 },
+    );
+    await p.locator("#native-online").click();
     await p.locator("#player-name").fill(i ? "Brother" : "Dan");
   }
   const [a, b] = pages;

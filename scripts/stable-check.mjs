@@ -16,6 +16,12 @@ try {
   const page = await browser.newPage({
     viewport: { width: 1440, height: 900 },
   });
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [],
+    }),
+  );
   page.on("pageerror", (e) => errors.push(e.message));
   assert.equal(
     publicUrl,

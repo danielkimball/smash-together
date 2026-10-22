@@ -70,7 +70,7 @@ if (command === "install") {
     );
   await writeFile(
     path.join(desktop, "READ ME.txt"),
-    `Smash Together\n\nDouble-click Play Smash.command to open your game.\nPair your Xbox or N64 controller, press a button, then choose Controller setup.\nPress Start to open the original Smash menu. Choose VS Mode / Multiplayer, then create a room.\nYour friends open the link in Chrome/Edge, load their own ROMs and join.\nSet Time/Stock, lives or minutes, and VS Options / Item Switch first. Choose VS START.\nThen choose your fighter while friends join. Invite friends copies your direct Cloudflare room link.\nEach friend joins the next controller port. When everyone has chosen, the host presses Start.\nRename beside the room title changes its name for everyone.\nShare the current Friends Link.webloc or use Invite friends.\nAll 12 fighters and all 9 VS stages are unlocked. The winner picks the next stage.\nPhone touch controls appear automatically; rotate for landscape.\nThe small diamond in the bottom-right corner opens password testing access.\nUse Esc or L + R + Start for the overlay menu; Fullscreen hides browser chrome.\n\nKeep this laptop plugged in, its lid open, and both game tabs visible.\nThe service prevents idle sleep while running. Stop Sharing.command stops\nthe website, relay and sleep prevention. Start Sharing.command starts them.\nThe sharing address can change after a full restart. Friends Link.webloc updates automatically.\nRooms reset after a restart, so copy a fresh room invite.\n\nFull instructions and Mac mini migration: ${path.join(root, "README.md")}\nSource code: ${root}\n`,
+    `Smash Portal\n\nDouble-click Play Smash.command to open your game.\nPair your Xbox or N64 controller, press a button, then choose Controller setup.\nPress Start to open the original Smash menu. Choose VS Mode / Multiplayer, then create a room.\nYour friends open the link in Chrome/Edge, load their own ROMs and join.\nSet Time/Stock, lives or minutes, and VS Options / Item Switch first. Choose VS START.\nThen choose your fighter while friends join. Invite friends copies your direct Cloudflare room link.\nEach friend joins the next controller port. When everyone has chosen, the host presses Start.\nRename beside the room title changes its name for everyone.\nShare the current Friends Link.webloc or use Invite friends.\nAll 12 fighters and all 9 VS stages are unlocked. The winner picks the next stage.\nPhone touch controls appear automatically; rotate for landscape.\nThe small diamond in the bottom-right corner opens password testing access.\nUse Esc or L + R + Start for the overlay menu; Fullscreen hides browser chrome.\n\nKeep this laptop plugged in, its lid open, and both game tabs visible.\nThe service prevents idle sleep while running. Stop Sharing.command stops\nthe website, relay and sleep prevention. Start Sharing.command starts them.\nThe sharing address can change after a full restart. Friends Link.webloc updates automatically.\nRooms reset after a restart, so copy a fresh room invite.\n\nFull instructions and Mac mini migration: ${path.join(root, "README.md")}\nSource code: ${root}\n`,
   );
   try {
     const shared = JSON.parse(
@@ -83,7 +83,7 @@ if (command === "install") {
   );
 } else if (command === "start") {
   await start();
-  console.log("Smash Together is running: http://localhost:8787");
+  console.log("Smash Portal is running: http://localhost:8787");
 } else if (command === "restart") {
   await run("/bin/launchctl", ["kill", "SIGUSR2", domain + "/" + label]);
   console.log(
@@ -91,7 +91,7 @@ if (command === "install") {
   );
 } else if (command === "stop") {
   await stop();
-  console.log("Stopped Smash Together and internet sharing.");
+  console.log("Stopped Smash Portal and internet sharing.");
 } else if (command === "uninstall") {
   await stop();
   await rm(plist, { force: true });
@@ -101,6 +101,6 @@ if (command === "install") {
     const r = await fetch("http://127.0.0.1:8787/api/status");
     console.log(await r.text());
   } catch {
-    console.log("Smash Together is stopped.");
+    console.log("Smash Portal is stopped.");
   }
 } else throw Error("Use install, start, restart, stop, status or uninstall.");

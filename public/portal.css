@@ -1,0 +1,977 @@
+/* Smash Portal brand system, from Dan's October 2026 references. */
+:root {
+  --bg: #000000;
+  --panel: #000000;
+  --panel2: #111111;
+  --line: #fafafa70;
+  --ink: #fafafa;
+  --muted: #b8b8c3;
+  --accent: #ff0028;
+  --idle: #8282aa;
+  --yellow: #ffff00;
+  --green: #22b573;
+  --heading: "Josefin Sans", sans-serif;
+  --body: "Instrument Sans", sans-serif;
+  --label: "Orbitron", sans-serif;
+  font-family: var(--body);
+  font-weight: 500;
+  font-synthesis: none;
+}
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+body,
+button,
+input,
+select {
+  text-transform: uppercase;
+}
+h1,
+h2,
+h3,
+button,
+input,
+select,
+strong {
+  font-family: var(--heading);
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: 0.025em;
+}
+p {
+  font-family: var(--body);
+  font-style: italic;
+  font-stretch: condensed;
+  line-height: 1.55;
+}
+.eyebrow,
+label,
+.subtext,
+.small-print,
+.status-badge,
+.topbar button,
+footer,
+footer button,
+footer a,
+summary {
+  font-family: var(--label);
+  font-weight: 500;
+  font-style: normal;
+  letter-spacing: 0.06em;
+  line-height: 1.6;
+}
+button,
+button.primary {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--idle);
+  color: #000;
+  box-shadow: none;
+  text-shadow: none;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+button:hover:not(:disabled),
+button.primary:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+  box-shadow: none;
+}
+button:active:not(:disabled) {
+  transform: none;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 5px;
+}
+button.quiet,
+button.close {
+  background: transparent;
+  color: var(--ink);
+  border-color: transparent;
+}
+button.quiet:hover:not(:disabled),
+button.close:hover:not(:disabled) {
+  background: transparent;
+  color: var(--accent);
+  border-color: transparent;
+}
+a {
+  color: var(--ink);
+}
+a:hover {
+  color: var(--accent);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.shell {
+  width: calc(100% - 40px);
+  max-width: none;
+  min-height: calc(100dvh - 40px);
+  margin: 20px;
+  border: 1px solid var(--line);
+  position: relative;
+}
+.topbar {
+  height: 66px;
+  min-height: 66px;
+  margin: 0;
+  padding: 0 26px;
+  border-bottom: 1px solid var(--line);
+  gap: 24px;
+}
+.header-actions {
+  gap: clamp(16px, 6vw, 100px);
+}
+.topbar button,
+.status-badge {
+  font-size: clamp(10px, 1.05vw, 16px);
+  white-space: nowrap;
+}
+.topbar button {
+  padding: 10px 0;
+}
+.status-badge {
+  margin: 0;
+  color: var(--ink);
+}
+.status-badge::before,
+.status-badge.ready::before {
+  content: "· ";
+  color: var(--muted);
+  font-size: inherit;
+}
+.status-badge.ready {
+  color: var(--green);
+}
+.status-badge.ready::before {
+  color: var(--green);
+}
+.shell main {
+  width: 100%;
+  min-width: 0;
+}
+.screen {
+  width: 100%;
+  max-width: none;
+  padding: 0;
+}
+.home-screen {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+}
+.attract-display {
+  position: relative;
+  width: 100%;
+  height: calc(100dvh - 170px);
+  min-height: 280px;
+  background: #000;
+}
+.attract-display video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.attract-start,
+.attract-start:hover:not(:disabled),
+.attract-start:active:not(:disabled) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  box-shadow: none;
+  padding: 0;
+}
+.attract-start span {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 90%;
+  padding: 7px 14px;
+  color: var(--ink);
+  font-family: var(--label);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  background: #000c;
+  border: 1px solid #fafafa40;
+}
+.attract-start:focus-visible {
+  outline-offset: -6px;
+}
+#attract-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  background: #000;
+}
+#attract-fallback img {
+  max-width: 70%;
+  max-height: 50dvh;
+}
+#attract-fallback p {
+  font-family: var(--heading);
+  font-style: normal;
+  font-size: 28px;
+}
+.boot-shortcuts {
+  display: none;
+}
+body[data-view="home"] #brand-home,
+body[data-view="home"] #footer-input {
+  display: none;
+}
+body[data-view="home"] footer {
+  justify-content: center;
+}
+/* The lobby follows the reference: large logo, descending pills, room panel. */
+.lobby-screen {
+  display: grid;
+  grid-template-columns: 45% 55%;
+  gap: 0;
+  align-items: center;
+  padding: clamp(40px, 7dvh, 90px) 4% 24px;
+  min-height: calc(100dvh - 163px);
+}
+.lobby-logo {
+  width: 100%;
+  overflow: visible;
+  display: grid;
+  place-items: center;
+}
+.lobby-logo img {
+  display: block;
+  width: 126%;
+  max-width: none;
+  height: auto;
+  max-height: calc(100dvh - 280px);
+  object-fit: contain;
+}
+.lobby-side {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(65px, 15dvh, 180px);
+  padding: clamp(40px, 8dvh, 100px) 0 0;
+  min-width: 0;
+}
+.lobby-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: clamp(22px, 4dvh, 42px);
+}
+.lobby-actions button,
+.lobby-actions input:not([type="range"], [type="checkbox"]) {
+  font-family: var(--heading);
+  font-weight: 600;
+  font-style: normal;
+  font-size: clamp(23px, 2.55vw, 52px);
+  letter-spacing: 0.025em;
+  line-height: 1.1;
+  min-height: 54px;
+  height: auto;
+  padding: 0.22em 0.48em 0.12em;
+  text-align: center;
+  color: #000;
+  border: 1px solid transparent;
+  background: var(--idle);
+  border-radius: 999px;
+}
+.lobby-actions input::placeholder {
+  color: #000;
+  opacity: 1;
+}
+.lobby-actions input:not([type="range"], [type="checkbox"]) {
+  width: 68%;
+  margin-left: 32%;
+}
+.lobby-actions #create-open {
+  width: 60%;
+  margin-left: 22%;
+}
+.lobby-actions #join-open {
+  width: 60%;
+  margin-left: 8%;
+}
+.lobby-actions button:hover:not(:disabled),
+.lobby-actions input:focus {
+  background: var(--accent);
+}
+.room-browser {
+  border: 1px solid var(--line);
+  min-height: clamp(170px, 22dvh, 280px);
+  padding: 18px 20px 12px;
+}
+.room-browser .list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 12px;
+  padding: 0;
+  font: 500 10px var(--label);
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.list-heading button {
+  font: inherit;
+  padding: 0;
+}
+.room-list {
+  max-width: none;
+  display: grid;
+  gap: 0;
+  border: 0;
+  background: transparent;
+}
+.room-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 50px 120px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid #fafafa30;
+  border-radius: 0;
+  text-align: left;
+  color: var(--ink);
+}
+.room-row:hover:not(:disabled) {
+  background: #ff002815;
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.room-row strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 17px;
+}
+.room-row small {
+  display: block;
+  font-family: var(--body);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.room-row .room-count {
+  font: 500 11px var(--label);
+  color: var(--ink);
+}
+.room-row .room-state {
+  font: 500 9px/1.6 var(--label);
+  color: var(--green);
+}
+.room-row:disabled .room-state {
+  color: var(--muted);
+}
+.empty-room {
+  margin: 0;
+  padding: 22px 0 20px;
+  min-height: 110px;
+  text-align: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.empty-room p {
+  font-family: var(--body);
+  font-size: 18px;
+  color: var(--muted);
+  margin: 0;
+}
+.empty-room button {
+  margin-top: 6px;
+  padding: 5px;
+  font: 500 9px/1.6 var(--label);
+  color: var(--ink);
+}
+#browser-status {
+  margin: 10px 0 0;
+  font-size: 8px;
+  color: var(--muted);
+}
+footer {
+  padding: 13px 26px;
+  margin: 0;
+  border: 0;
+  min-height: 46px;
+  gap: 16px;
+  font-size: 8px;
+}
+footer button,
+footer a {
+  font-size: 8px;
+  padding: 0 !important;
+}
+footer > div {
+  gap: 22px;
+  margin-right: 30px;
+}
+footer #brand-home {
+  padding: 0;
+}
+#footer-input {
+  font-size: 8px;
+  color: var(--muted);
+}
+.testing-corner {
+  right: 36px;
+  bottom: 27px;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  color: var(--ink);
+  opacity: 0.85;
+  font: 400 30px/1 sans-serif;
+}
+.testing-corner:hover:not(:disabled),
+.testing-dot:hover:not(:disabled) {
+  background: transparent;
+  color: var(--accent);
+  border-color: transparent;
+}
+.testing-dot {
+  font:
+    400 22px/1 Arial,
+    sans-serif;
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  border-radius: 0;
+}
+.controller-preview {
+  background: #111;
+  border-radius: 0;
+}
+.mapping-prompt {
+  background: #ff002815;
+  border-radius: 0;
+}
+/* Every app overlay uses the same palette and type. Native game pixels remain native. */
+dialog {
+  background: #000;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  color: var(--ink);
+  padding: 32px;
+  box-shadow:
+    0 0 0 8px #000,
+    0 25px 80px #000a;
+}
+dialog::backdrop {
+  background: #0006;
+  backdrop-filter: none;
+}
+dialog h2 {
+  font-family: var(--heading);
+  font-style: normal;
+  color: var(--ink);
+  letter-spacing: 0.035em;
+  font-size: 30px;
+}
+dialog .eyebrow {
+  font-size: 9px;
+  color: var(--accent);
+}
+dialog > p,
+dialog form > p {
+  font-family: var(--body);
+  font-style: italic;
+  font-stretch: condensed;
+  font-size: 15px;
+  color: var(--muted);
+}
+dialog .subtext {
+  font-family: var(--label);
+  font-style: normal;
+  font-size: 9px;
+}
+input:not([type="range"], [type="checkbox"]),
+select {
+  background: var(--idle);
+  color: #000;
+  border: 1px solid var(--idle);
+  border-radius: 999px;
+  font: 600 17px/1.2 var(--heading);
+  padding: 13px 18px 10px;
+}
+input::placeholder {
+  color: #000b;
+}
+input[type="password"] {
+  text-transform: none;
+}
+input[type="range"],
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+label:not(.inline-label, .checkbox-label, .volume-label) {
+  font-size: 9px;
+  color: var(--ink);
+}
+.cartridge-card {
+  border-radius: 0;
+  border-color: var(--line);
+  padding: 20px;
+}
+.cartridge-card strong {
+  font-size: 20px;
+}
+.cartridge-card p {
+  color: var(--muted);
+}
+.error-text {
+  color: var(--accent) !important;
+}
+.notice-card {
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: #000e;
+}
+.notice-card h2 {
+  font-family: var(--heading);
+  font-style: normal;
+}
+.notice-card p {
+  color: var(--muted);
+}
+.busy {
+  background: #000d;
+  backdrop-filter: none;
+}
+.busy h2 {
+  color: var(--ink);
+  font-family: var(--heading);
+  font-style: normal;
+}
+.spinner {
+  border-color: #fafafa30;
+  border-top-color: var(--accent);
+}
+.toast {
+  border-radius: 0;
+  background: #000;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-family: var(--body);
+  font-style: italic;
+}
+.native-tools button,
+.glass {
+  color: var(--ink);
+  background: #000d;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--label);
+  font-size: 10px;
+}
+.native-legend {
+  background: #000d;
+  color: var(--ink);
+  border-color: var(--line);
+  font: 500 9px/1.7 var(--label);
+}
+.native-legend b {
+  color: var(--yellow);
+}
+.native-choice,
+.native-choice:hover:not(:disabled) {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.native-choice:hover:not(:disabled),
+.native-choice:focus-visible {
+  outline-color: var(--accent);
+}
+.native-choice:hover > span,
+.native-choice:focus-visible > span {
+  background: #000d;
+  color: var(--ink);
+}
+.room-ribbon {
+  background: #000;
+  border-bottom: 1px solid var(--line);
+}
+.room-ribbon strong {
+  font-family: var(--heading);
+  color: var(--ink);
+  font-style: normal;
+}
+.room-ribbon span,
+.native-port span {
+  color: var(--muted);
+}
+.room-ribbon button,
+.room-commands button {
+  background: var(--idle);
+  color: #000;
+  border-color: transparent;
+  font-family: var(--heading);
+  font-weight: 600;
+  font-style: normal;
+}
+.room-ribbon .room-rename {
+  color: var(--ink);
+  border-color: var(--line);
+}
+.room-bottom {
+  background: #000;
+}
+.native-port,
+.native-port.empty {
+  background: #111;
+}
+.native-port.p1 {
+  --port: var(--accent);
+}
+.native-port.p2 {
+  --port: var(--idle);
+}
+.native-port.p3 {
+  --port: var(--yellow);
+}
+.native-port.p4 {
+  --port: var(--green);
+}
+.room-commands > span {
+  color: var(--muted);
+}
+.room-commands kbd {
+  background: transparent;
+}
+.setup-heading {
+  background: linear-gradient(#000e, transparent);
+}
+.setup-heading strong {
+  color: var(--ink);
+  font-family: var(--heading);
+  font-style: normal;
+}
+.setup-footer {
+  background: linear-gradient(transparent, #000 25%);
+}
+.setup-footer > span {
+  color: var(--muted);
+}
+.fighter-hint,
+.stage-choice {
+  background: #000d;
+  border-color: var(--line);
+  color: var(--ink);
+}
+.stage-choice.mine {
+  color: var(--green);
+  border-color: var(--green);
+}
+.touch-brand {
+  font-family: var(--heading);
+  font-style: normal;
+  color: #000;
+}
+.touch-brand b {
+  color: var(--accent);
+}
+body[data-touch="on"] .setup-footer {
+  background: #000e;
+}
+@media (orientation: portrait) {
+  body[data-touch="on"] #touch-controls {
+    background: var(--idle);
+  }
+}
+.site-header {
+  background: #000;
+}
+.credits .brand-mark {
+  background: transparent;
+}
+@media (min-width: 1800px) {
+  .shell {
+    width: calc(100% - 60px);
+    margin: 30px;
+    min-height: calc(100dvh - 60px);
+  }
+  .topbar {
+    height: 72px;
+    min-height: 72px;
+  }
+  .lobby-screen {
+    min-height: calc(100dvh - 178px);
+  }
+  .testing-corner {
+    bottom: 42px;
+    right: 40px;
+  }
+  .attract-display {
+    height: calc(100dvh - 186px);
+  }
+}
+@media (max-width: 900px) {
+  .shell {
+    width: calc(100% - 24px);
+    margin: 12px;
+    min-height: calc(100dvh - 24px);
+  }
+  .topbar {
+    padding: 0 15px;
+    height: 54px;
+    min-height: 54px;
+    gap: 8px;
+  }
+  .header-actions {
+    gap: 18px;
+  }
+  .topbar button,
+  .status-badge {
+    font-size: 9px;
+  }
+  .lobby-screen {
+    padding: 30px 4% 22px;
+    min-height: calc(100dvh - 132px);
+  }
+  .lobby-actions button,
+  .lobby-actions input:not([type="range"], [type="checkbox"]) {
+    font-size: clamp(18px, 2.6vw, 28px);
+    min-height: 44px;
+  }
+  .lobby-side {
+    gap: 60px;
+    padding-top: 10px;
+  }
+  .room-browser {
+    padding: 14px;
+  }
+  .room-row {
+    grid-template-columns: minmax(0, 1fr) 40px;
+  }
+  .room-row .room-state {
+    grid-column: 1/-1;
+  }
+  footer {
+    flex-wrap: wrap;
+    padding: 10px 15px;
+  }
+  #footer-input {
+    display: none;
+  }
+  footer > div {
+    gap: 13px;
+  }
+  .testing-corner {
+    right: 21px;
+    bottom: 16px;
+    font-size: 25px;
+  }
+  .attract-display {
+    height: calc(100dvh - 130px);
+  }
+}
+@media (max-width: 600px) and (orientation: portrait) {
+  .shell {
+    width: calc(100% - 20px);
+    margin: 10px;
+    min-height: calc(100dvh - 20px);
+  }
+  .topbar {
+    padding: 0 10px;
+    flex-wrap: wrap;
+    align-content: center;
+    height: 64px;
+    min-height: 64px;
+    gap: 3px;
+  }
+  .status-badge {
+    width: 100%;
+    font-size: 8px;
+  }
+  .header-actions {
+    width: 100%;
+    gap: 20px;
+    justify-content: flex-end;
+  }
+  .header-actions button {
+    padding: 5px 0;
+    font-size: 8px;
+  }
+  #attract-sound {
+    margin-right: auto;
+  }
+  .lobby-screen {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 0 20px 20px;
+  }
+  .lobby-logo {
+    height: 265px;
+    grid-template-rows: 265px;
+    overflow: hidden;
+  }
+  .lobby-logo img {
+    width: 350px;
+    max-width: 120%;
+    max-height: none;
+  }
+  .lobby-side {
+    padding: 0;
+    gap: 32px;
+  }
+  .lobby-actions {
+    gap: 16px;
+    align-items: center;
+  }
+  .lobby-actions input:not([type="range"], [type="checkbox"]),
+  .lobby-actions #create-open,
+  .lobby-actions #join-open {
+    width: 100%;
+    margin: 0;
+    font-size: 24px;
+    padding: 10px 12px 7px;
+  }
+  .room-browser {
+    min-height: 165px;
+  }
+  .room-row {
+    grid-template-columns: minmax(0, 1fr) 38px 78px;
+    gap: 7px;
+  }
+  .room-row .room-state {
+    grid-column: auto;
+    font-size: 8px;
+  }
+  .empty-room {
+    min-height: 85px;
+    padding: 15px 0;
+  }
+  footer {
+    gap: 14px;
+    padding: 14px 12px;
+  }
+  footer > div {
+    margin-right: 24px;
+    gap: 12px;
+  }
+  footer button,
+  footer a {
+    font-size: 7px;
+  }
+  .testing-corner {
+    right: 16px;
+    bottom: 16px;
+  }
+  .attract-display {
+    height: calc(100dvh - 145px);
+  }
+  .attract-start span {
+    bottom: max(15px, calc((100% - 72vw) / 2 - 30px));
+    font-size: 8px;
+  }
+  dialog {
+    padding: 24px 20px;
+    max-width: calc(100vw - 32px);
+  }
+  dialog h2 {
+    font-size: 25px;
+  }
+  dialog .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .dialog-heading {
+    gap: 10px;
+  }
+  .native-legend {
+    font-size: 7px;
+  }
+}
+@media (max-height: 550px) and (orientation: landscape) {
+  .topbar {
+    height: 40px;
+    min-height: 40px;
+  }
+  .lobby-screen {
+    padding: 10px 4%;
+    min-height: calc(100dvh - 112px);
+  }
+  .lobby-logo img {
+    width: min(120%, 365px);
+    max-height: calc(100dvh - 136px);
+  }
+  .lobby-side {
+    gap: 16px;
+    padding: 0;
+  }
+  .lobby-actions {
+    gap: 12px;
+  }
+  .lobby-actions button,
+  .lobby-actions input:not([type="range"], [type="checkbox"]) {
+    min-height: 35px;
+    font-size: 20px;
+  }
+  .room-browser {
+    min-height: 95px;
+    padding: 8px;
+  }
+  .empty-room {
+    min-height: 50px;
+    padding: 4px;
+  }
+  .empty-room p {
+    font-size: 13px;
+  }
+  .room-browser .list-heading {
+    margin-bottom: 4px;
+    font-size: 8px;
+  }
+  #browser-status {
+    font-size: 7px;
+  }
+  .attract-display {
+    min-height: 0;
+    height: calc(100dvh - 112px);
+  }
+  .attract-start span {
+    bottom: 0;
+    font-size: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: none;
+  }
+}

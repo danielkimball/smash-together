@@ -215,9 +215,15 @@ try {
       await p.locator("#join-room").click();
       await p.locator("#rom-file").setInputFiles(rom);
     } else {
-      await p.locator("#multiplayer").click();
+      await p.keyboard.press("Enter");
+      await p.waitForFunction(() => smash.attract.phase === "title");
       await p.locator("#rom-file").setInputFiles(rom);
-      await p.waitForFunction(() => smash.view === "browse");
+      await p.waitForFunction(
+        () => smash.view === "native" && !smash.paused,
+        null,
+        { timeout: 90000 },
+      );
+      await p.locator("#native-online").click();
       await p.locator("#player-name").fill(`Player ${i + 1}`);
       await p.locator("#refresh-rooms").click();
       await p.locator(".room-row").first().click();

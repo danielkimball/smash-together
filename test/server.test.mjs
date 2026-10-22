@@ -48,7 +48,7 @@ test("serves the game, isolates public assets, rejects writes and traversal", as
   const a = await setup(t);
   const page = await fetch(a.http);
   assert.equal(page.status, 200);
-  assert.match(await page.text(), /Smash Together/i);
+  assert.match(await page.text(), /Smash Portal/i);
   assert.match(
     page.headers.get("content-security-policy"),
     /frame-ancestors 'none'/,
@@ -75,6 +75,38 @@ test("serves the game, isolates public assets, rejects writes and traversal", as
     ).status,
     405,
   );
+});
+test("attract media supports seeking, suffix ranges, HEAD, and rejects invalid ranges", async (t) => {
+  const a = await setup(t);
+  const url = a.http + "/media/title.mp4";
+  const head = await fetch(url, { method: "HEAD" });
+  assert.equal(head.status, 200);
+  assert.equal(head.headers.get("content-type"), "video/mp4");
+  assert.equal(head.headers.get("accept-ranges"), "bytes");
+  const size = Number(head.headers.get("content-length"));
+  assert.ok(size > 1000);
+  const first = await fetch(url, { headers: { Range: "bytes=0-31" } });
+  assert.equal(first.status, 206);
+  assert.equal(first.headers.get("content-range"), `bytes 0-31/${size}`);
+  assert.equal((await first.arrayBuffer()).byteLength, 32);
+  const tail = await fetch(url, { headers: { Range: "bytes=-20" } });
+  assert.equal(
+    tail.headers.get("content-range"),
+    `bytes ${size - 20}-${size - 1}/${size}`,
+  );
+  assert.equal((await tail.arrayBuffer()).byteLength, 20);
+  for (const range of [
+    `bytes=${size}-`,
+    "bytes=9-2",
+    "bytes=0-1,8-9",
+    "bytes=-",
+    "bytes=-0",
+  ])
+    assert.equal(
+      (await fetch(url, { headers: { Range: range } })).status,
+      416,
+      range,
+    );
 });
 async function until(c, type, predicate = () => true) {
   for (let i = 0; i < 30; i++) {
@@ -212,7 +244,11 @@ test("explicit leave frees a selection port; signal relay stays within its room"
   const guest = await until(g, "joined");
   await until(g, "room");
   let leaked = false;
-  other.h.s.on("message", () => (leaked = true));
+  // A newly created room may still receive its own asynchronous launch packet.
+  // Only a signal delivered across rooms would be a leak.
+  other.h.s.on("message", (data, binary) => {
+    if (!binary && JSON.parse(data).type === "signal") leaked = true;
+  });
   h.send({
     type: "signal",
     to: guest.id,

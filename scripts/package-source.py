@@ -10,10 +10,14 @@ with zipfile.ZipFile(upstream/'dist/assets.zip') as src,zipfile.ZipFile(root/'pu
  for name in src.namelist():
   info=zipfile.ZipInfo(name,(2026,10,21,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED
   out.writestr(info,font if name.endswith('.ttf') else src.read(name))
-manifest={'application':'Smash Together','version':json.loads((root/'package.json').read_text())['version'],'engine_source':'https://github.com/waveplate/M64Wasm','engine_commit':commit,'emscripten':'2.0.7','font':'Abel Regular / SIL OFL','files':{}}
+manifest={'application':'Smash Portal','version':json.loads((root/'package.json').read_text())['version'],'engine_source':'https://github.com/waveplate/M64Wasm','engine_commit':commit,'emscripten':'2.0.7','font':'Abel Regular / SIL OFL','ui_fonts':['Josefin Sans Semibold','Instrument Sans Condensed Medium Italic','Orbitron Medium'],'media':'Audiovisual recordings of the original US game attract sequence; no ROM or savestate','files':{}}
 for name in ['n64wasm.js','n64wasm.wasm','assets.zip']:
  data=(root/'public/engine'/name).read_bytes();manifest['files']['engine/'+name]={'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data),'modified':name=='assets.zip'}
  if name!='assets.zip':assert data==(upstream/'dist'/name).read_bytes(),'Unexpected engine binary change'
+for directory in ['brand','fonts','media']:
+ for file in sorted((root/'public'/directory).glob('*')):
+  if file.is_file():
+   data=file.read_bytes();manifest['files'][str(file.relative_to(root/'public'))]={'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)}
 source=root/'public/source';source.mkdir(exist_ok=True)
 (source/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 archive=source/'smash-together-source.tar.gz'

@@ -1666,9 +1666,6 @@ button.primary:hover:not(:disabled) {
   color: #d0d9ee;
   font-size: 13px;
 }
-#browse-screen {
-  padding: 24px 6.5vw 35px;
-}
 #browse-screen .section-heading {
   border-bottom: 4px solid #f5ca43;
   padding-bottom: 22px;
