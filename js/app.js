@@ -646,7 +646,11 @@ $("name-keys").replaceChildren(
   ...nameKeys.map((value, index) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = value;
+    button.textContent = value === "Random" ? "Rand" : value;
+    if (value === "Random") {
+      button.title = "Choose a random name";
+      button.setAttribute("aria-label", "Choose a random name");
+    }
     button.dataset.key = value;
     button.dataset.keyIndex = index;
     button.onclick = () => {

@@ -1016,6 +1016,7 @@ body[data-touch="on"] .setup-footer {
 .name-keys button[data-key-index="40"],
 .name-keys button[data-key-index="41"] {
   font-size: 10px;
+  letter-spacing: 0;
 }
 .name-keys button:focus {
   background: var(--accent);
@@ -1046,6 +1047,9 @@ body[data-touch="on"] .setup-footer {
   }
   .name-keys button {
     font-size: 14px;
+  }
+  .name-keys button:nth-child(n + 37) {
+    font-size: 9px;
   }
 }
 .room-browser .list-heading {
