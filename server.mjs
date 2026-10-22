@@ -53,7 +53,7 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
         res.setHeader("Cache-Control", "no-store");
         res.setHeader("Content-Type", "application/json");
         return res.end(
-          JSON.stringify({ ok: true, version: "2.0.0", shareUrl }),
+          JSON.stringify({ ok: true, version: "3.0.0", shareUrl }),
         );
       }
       if (url.pathname === "/api/rooms") {
@@ -69,6 +69,7 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
                 count: r.members.size,
                 capacity: r.capacity,
                 phase: r.phase,
+                selecting: r.selecting,
                 host: r.members.get(r.hostId)?.name || "Host",
               })),
           }),
@@ -126,12 +127,13 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
     delay: r.delay,
     phase: r.phase,
     match: r.match,
+    revision: r.revision,
+    selecting: r.selecting,
     hostId: r.hostId,
     members: [...r.members.values()].map((p) => ({
       id: p.id,
       slot: p.slot,
       name: p.name,
-      ready: p.ready,
       connected: !!p.socket,
       controller: p.controller,
     })),
@@ -169,7 +171,18 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
       const isHost = room?.hostId === meta?.id;
       if (binary) {
         if (!room || !isHost) return fail("Only the host can synchronize.");
-        if (room.phase === "lobby" || data.length < 8) return;
+        if (data.length < 8) return;
+        // A roster can change while a snapshot is compressing. Never forward
+        // an old snapshot to a newly connected controller.
+        try {
+          const length = data.readUInt32BE(0);
+          if (length > 2048 || data.length < 4 + length) return;
+          const header = JSON.parse(data.subarray(4, 4 + length).toString());
+          if (header.match !== room.match || header.revision !== room.revision)
+            return;
+        } catch {
+          return;
+        }
         for (const p of room.members.values()) {
           if (p.id === meta.id || !p.socket) continue;
           if (p.socket.bufferedAmount > 24 * 1024 * 1024)
@@ -189,6 +202,10 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
       if (m.type === "ping") return send(socket, { type: "pong", id: m.id });
       if (m.type === "create" || m.type === "join") {
         if (meta) return fail("Already in a room");
+        if (m.protocol !== 3)
+          return fail(
+            "This page has been updated. Reload to use the new Smash rooms.",
+          );
         if (
           typeof m.rom !== "string" ||
           !/^[a-f0-9]{40}$/.test(m.rom) ||
@@ -214,8 +231,10 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
             ),
             rom: m.rom,
             build: m.build,
-            phase: "lobby",
-            match: 0,
+            phase: "starting",
+            selecting: true,
+            match: 1,
+            revision: 0,
             members: new Map(),
           };
           rooms.set(token, r);
@@ -232,7 +251,7 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
           p = [...r.members.values()].find(
             (p) => m.ticket && p.ticket === m.ticket && !p.socket,
           );
-          if (r.phase !== "lobby" && !p)
+          if (!r.selecting && !p)
             return fail(
               "This game has started. Join when the host returns to the lobby.",
             );
@@ -246,13 +265,13 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
             ticket: randomBytes(18).toString("hex"),
             slot: [0, 1, 2, 3].find((i) => !used.has(i)),
             name,
-            ready: false,
             controller: clean(m.controller, "Keyboard", 80),
           };
           r.members.set(p.id, p);
         }
         if (!r.hostId) r.hostId = p.id;
         p.socket = socket;
+        r.revision++;
         socket.meta = { token: r.token, id: p.id };
         send(socket, {
           type: "joined",
@@ -262,70 +281,49 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
         });
         clearTimeout(joinTimeout);
         update(r);
-        if (
-          r.phase === "paused" &&
-          [...r.members.values()].every((p) => p.socket)
-        )
-          broadcast(r, { type: "reconnected" });
+        if (m.type === "create")
+          broadcast(r, { type: "launch", match: r.match });
         return;
       }
       if (!room || !member) return fail("Join a room first.");
+      if (m.type === "leave") {
+        socket.voluntary = true;
+        socket.close(1000);
+        return;
+      }
       if (m.type === "profile") {
         const controller = clean(m.controller, "Keyboard", 80);
-        if (room.phase === "lobby" && controller !== member.controller)
-          member.ready = false;
         member.controller = controller;
         update(room);
         return;
       }
-      if (m.type === "seat" || m.type === "ready") {
-        if (room.phase !== "lobby")
-          return fail("Return to the lobby to change players.");
-        if (m.type === "seat") {
-          if (
-            !Number.isInteger(m.slot) ||
-            m.slot < 0 ||
-            m.slot >= room.capacity
-          )
-            return fail("Choose an available player slot.");
-          if (
-            [...room.members.values()].some(
-              (p) => p.id !== meta.id && p.slot === m.slot,
-            )
-          )
-            return fail("That controller port is taken.");
-          member.slot = m.slot;
-          member.ready = false;
-        } else member.ready = m.ready === true;
-        update(room);
-        return;
-      }
-      if (m.type === "launch") {
-        if (!isHost) return fail("Only the host can start the game.");
-        if (room.phase !== "lobby") return;
+      if (m.type === "seal" || m.type === "open") {
+        if (!isHost) return fail("Only the host can start or reopen a match.");
+        if (m.match !== room.match || m.revision !== room.revision) return;
         if (
-          room.members.size < 2 ||
-          ![...room.members.values()].every((p) => p.ready && p.socket)
+          m.type === "seal" &&
+          (room.members.size < 2 ||
+            ![...room.members.values()].every((p) => p.socket))
         )
-          return fail(
-            "At least two players must join, and everyone must be ready.",
-          );
-        room.phase = "starting";
-        room.match++;
+          return fail("Wait for at least two connected players.");
+        room.selecting = m.type === "open";
+        room.phase = room.selecting ? "selecting" : "playing";
         update(room);
-        broadcast(room, { type: "launch", match: room.match });
         return;
       }
       if (m.type === "lobby") {
         if (!isHost)
-          return fail("Only the host can return everyone to the lobby.");
-        room.phase = "lobby";
+          return fail(
+            "Only the host can return everyone to character selection.",
+          );
+        room.phase = "starting";
+        room.selecting = true;
         room.match++;
-        for (const p of room.members.values()) {
+        room.revision++;
+        for (const p of room.members.values())
           if (!p.socket) room.members.delete(p.id);
-          else p.ready = false;
-        }
         update(room);
+        broadcast(room, { type: "launch", match: room.match });
         return;
       }
       const recipients = [...room.members.values()].filter(
@@ -357,10 +355,10 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
           return;
         if (["start", "sync"].includes(g.type) && !isHost)
           return fail("Only the host can start or synchronize.");
-        if (room.phase === "lobby" || g.match !== room.match) return;
+        if (g.match !== room.match || g.revision !== room.revision) return;
         if (g.type === "start") {
           if (![...room.members.values()].every((p) => p.socket)) return;
-          room.phase = "playing";
+          room.phase = room.selecting ? "selecting" : "playing";
           update(room);
         }
         for (const p of recipients) {
@@ -394,11 +392,14 @@ export function createApp({ host = "127.0.0.1", port = 8787 } = {}) {
             p.socket.close(1000);
           }
       } else {
-        if (room.phase === "lobby") room.members.delete(meta.id);
+        // Reserve the port on network loss. An explicit leave in character
+        // selection frees it; the host clears its token using native input.
+        if (socket.voluntary && room.selecting) room.members.delete(meta.id);
         else {
           member.socket = null;
           room.phase = "paused";
         }
+        room.revision++;
         update(room);
       }
     });

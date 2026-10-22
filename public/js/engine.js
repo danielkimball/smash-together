@@ -124,6 +124,35 @@ export class Engine {
       throw Error("Could not restore the game state.");
     this.flushAudio();
   }
+  inspect() {
+    // Read-only introspection of the verified US cartridge. The pinned core's
+    // official savestate stores word-swapped RDRAM at byte 448. No ROM patches
+    // or game assets are needed. Symbols: VetriTheRetri/ssb-decomp-re,
+    // symbols_us.txt, scdef.h and mntypes.h (MNPlayersSlotVS = 0xbc bytes).
+    const m = this.module;
+    if (!m._netplay_serialize_state())
+      return this.info || { scene: -1, players: [] };
+    const base = m._netplay_get_state_buffer() + 448;
+    const byte = (address) => m.HEAPU8[base + ((address & 0x7fffff) ^ 3)];
+    const word = (address) => m.HEAP32[(base + (address & 0x7fffff)) >>> 2];
+    const scene = byte(0x800a4ad0);
+    const players =
+      scene === 16
+        ? [0, 1, 2, 3].map((slot) => {
+            const p = 0x8013ba88 + slot * 0xbc;
+            return {
+              slot,
+              fighter: word(p + 0x48),
+              selected: !!word(p + 0x88),
+              kind: word(p + 0x84),
+              holding: !!word(p) && word(p + 0x54) === 1,
+              team: word(p + 0x40),
+            };
+          })
+        : [];
+    this.info = { scene, players, teams: scene === 16 && !!word(0x8013bda8) };
+    return this.info;
+  }
   async audioStart() {
     if (!this.loaded) return;
     if (!this.audio) {

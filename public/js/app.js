@@ -18,6 +18,12 @@ const engine = new Engine($("canvas")),
 let rom = null,
   bootState,
   versusState,
+  menuState,
+  homeBooting = false,
+  startRequest = null,
+  startPulse = 0,
+  lastScene = -1,
+  menuInput = [],
   view = "home",
   paused = true,
   next = 0;
@@ -33,12 +39,10 @@ let lastRoom = "",
   lastUI = 0,
   lastDeviceCheck = 0;
 let toastTimer,
-  hintTimer,
   lastPointer = performance.now(),
   menuEdges = {},
   lastMenuMove = 0;
 let shareUrl = null,
-  lastState = "offline",
   polling = false;
 controls.blocked = true;
 window.smash = {
@@ -91,7 +95,7 @@ const attempt =
   };
 function blockInput() {
   controls.blocked =
-    view !== "game" ||
+    !["game", "native"].includes(view) ||
     !!document.querySelector("dialog[open]") ||
     (paused && net.state === "offline") ||
     !["offline", "playing"].includes(net.state);
@@ -100,16 +104,23 @@ function blockInput() {
 function setView(name) {
   const changed = view !== name;
   view = name;
-  for (const screen of ["home", "browse", "lobby"])
+  for (const screen of ["home", "browse"])
     $(screen + "-screen").hidden = screen !== name;
-  $("shell").hidden = name === "game";
-  $("game-view").hidden = name !== "game";
+  $("shell").hidden = ["game", "native"].includes(name);
+  $("game-view").hidden = !["game", "native"].includes(name);
+  $("native-menu").hidden = name !== "native";
+  $("game-hud").hidden = name === "native";
+  $("game-notice").hidden = name === "native";
+  document.body.dataset.view = name;
   blockInput();
   if (changed) {
     window.scrollTo(0, 0);
     lastPointer = performance.now();
   }
-  if (name === "browse") refreshRooms();
+  if (name === "browse") {
+    paused = true;
+    refreshRooms();
+  }
 }
 function busy(title, detail) {
   $("busy-title").textContent = title;
@@ -120,7 +131,8 @@ function dialog(id) {
   const d = $(id);
   if (d.open) return;
   d.resumeOnClose =
-    view === "game" && (net.running || (net.state === "offline" && !paused));
+    ["game", "native"].includes(view) &&
+    (net.running || (net.state === "offline" && !paused));
   if (d.resumeOnClose) pause();
   if (id === "controls-dialog") {
     refreshDevices();
@@ -145,7 +157,7 @@ for (const d of document.querySelectorAll("dialog"))
     if (d.id === "rom-dialog" && !rom) pendingAction = null;
     const resume = d.resumeOnClose;
     d.resumeOnClose = false;
-    if (resume && view === "game") unpause();
+    if (resume && ["game", "native"].includes(view)) unpause();
     blockInput();
   });
 document
@@ -168,12 +180,22 @@ document.querySelectorAll("[data-fullscreen]").forEach(
 );
 document
   .querySelectorAll("[data-home]")
-  .forEach((b) => (b.onclick = () => setView("home")));
+  .forEach((b) => (b.onclick = attempt(showMainMenu)));
 $("brand-home").onclick = () => {
-  if (!net.room) setView("home");
+  if (!net.room) attempt(showMainMenu)();
   else toast("Leave your room to return to the main menu.");
 };
-$("multiplayer").onclick = () => setView("browse");
+$("multiplayer").onclick = attempt(() =>
+  withCartridge(async () => {
+    await powerOn();
+    setView("browse");
+  }),
+);
+$("power-on").onclick = attempt(() => withCartridge(showMainMenu));
+$("native-online").onclick = () => setView("browse");
+$("native-single").onclick = () => chooseNative(0);
+$("native-options").onclick = () => chooseNative(2);
+$("native-data").onclick = () => chooseNative(3);
 $("help-open").onclick = () => dialog("help-dialog");
 $("diagnostics-open").onclick = () => dialog("diagnostics-dialog");
 function romReady() {
@@ -213,7 +235,7 @@ async function loadFile(file) {
   const action = pendingAction;
   pendingAction = null;
   if (action) await action();
-  else toast("Cartridge ready. Choose Multiplayer or Local play.");
+  else await showMainMenu();
 }
 function withCartridge(action) {
   if (rom || engine.loaded) return action();
@@ -241,6 +263,84 @@ async function powerOn() {
     $("busy").hidden = true;
   }
 }
+async function runSequence(sequence, valid = () => true) {
+  let budget = performance.now();
+  for (const [frames, input] of sequence)
+    for (let i = 0; i < frames; i++) {
+      if (!valid()) throw Error("Menu preparation cancelled.");
+      engine.frame([input]);
+      if (performance.now() - budget > 12) {
+        await new Promise(requestAnimationFrame);
+        budget = performance.now();
+      }
+    }
+}
+async function prepareMain() {
+  if (menuState) {
+    engine.restore(menuState);
+    return;
+  }
+  engine.restore(bootState);
+  await runSequence([
+    [360, neutral],
+    [10, { buttons: BITS.start, x: 0, y: 0 }],
+    [210, neutral],
+    [10, { buttons: BITS.start, x: 0, y: 0 }],
+    [180, neutral],
+  ]);
+  if (engine.inspect().scene !== 7)
+    throw Error("Could not open the Smash menu. Reload to retry.");
+  menuState = engine.snapshot();
+}
+async function showMainMenu() {
+  if (!rom && !engine.loaded) {
+    setView("home");
+    return;
+  }
+  if (homeBooting) return;
+  homeBooting = true;
+  preparing = true;
+  paused = true;
+  busy("SUPER SMASH BROS.", "Opening your game’s main menu…");
+  const volume = engine.volume;
+  engine.setVolume(0);
+  try {
+    await powerOn();
+    setView("native");
+    busy("SUPER SMASH BROS.", "Opening your game’s main menu…");
+    await prepareMain();
+    menuInput = [];
+    engine.frame([neutral]);
+    lastScene = 7;
+    paused = false;
+    next = performance.now();
+    setView("native");
+    $("canvas").focus();
+  } finally {
+    engine.flushAudio();
+    engine.setVolume(volume);
+    preparing = false;
+    homeBooting = false;
+    $("busy").hidden = true;
+  }
+}
+function chooseNative(option) {
+  if (!menuState || preparing) return;
+  engine.restore(menuState);
+  menuInput = [];
+  for (let i = 0; i < option; i++) {
+    menuInput.push(
+      ...Array.from({ length: 3 }, () => ({ buttons: 0, x: 0, y: -85 })),
+      ...Array(18).fill(neutral),
+    );
+  }
+  menuInput.push(
+    ...Array(3).fill({ buttons: BITS.a, x: 0, y: 0 }),
+    ...Array(20).fill(neutral),
+  );
+  paused = false;
+  $("canvas").focus();
+}
 async function prepareVersus() {
   preparing = true;
   const match = net.room?.match;
@@ -249,39 +349,25 @@ async function prepareVersus() {
   try {
     if (versusState) {
       engine.restore(versusState);
+      engine.frame([neutral]);
       return;
     }
-    engine.restore(bootState);
-    // Deterministic menu navigation from the verified US boot state. Only the
-    // host runs this; peers receive the resulting state from their own game.
-    const sequence = [
-      [360, neutral],
-      [10, { buttons: BITS.start, x: 0, y: 0 }],
-      [210, neutral],
-      [10, { buttons: BITS.start, x: 0, y: 0 }],
-      [180, neutral],
-      [10, { buttons: 0, x: 0, y: -85 }],
-      [60, neutral],
-      [10, { buttons: BITS.a, x: 0, y: 0 }],
-      [180, neutral],
-      [10, { buttons: BITS.a, x: 0, y: 0 }],
-      [180, neutral],
-    ];
-    let budget = performance.now();
-    for (const [frames, input] of sequence)
-      for (let i = 0; i < frames; i++) {
-        engine.frame([input]);
-        if (performance.now() - budget > 12) {
-          await new Promise(requestAnimationFrame);
-          if (
-            !net.room ||
-            net.room.match !== match ||
-            net.room.phase === "lobby"
-          )
-            throw Error("Game preparation cancelled.");
-          budget = performance.now();
-        }
-      }
+    await prepareMain();
+    await runSequence(
+      [
+        [10, { buttons: 0, x: 0, y: -85 }],
+        [60, neutral],
+        [10, { buttons: BITS.a, x: 0, y: 0 }],
+        [180, neutral],
+        [10, { buttons: BITS.a, x: 0, y: 0 }],
+        [180, neutral],
+      ],
+      () => net.room?.match === match,
+    );
+    if (engine.inspect().scene !== 16)
+      throw Error(
+        "Could not open character selection. Return to the room to retry.",
+      );
     versusState = engine.snapshot();
   } finally {
     engine.flushAudio();
@@ -295,8 +381,7 @@ net.prepare = () => {
   preparation = preparation
     .catch(() => {})
     .then(() => {
-      if (net.room?.match === match && net.room.phase !== "lobby")
-        return prepareVersus();
+      if (net.room?.match === match) return prepareVersus();
     });
   return preparation;
 };
@@ -314,18 +399,65 @@ $("forget-rom").onclick = attempt(async () => {
   toast("Saved cartridge removed. Reload the page to choose a different file.");
   $("forget-rom").hidden = true;
 });
-$("local-play").onclick = attempt(() =>
-  withCartridge(async () => {
-    await powerOn();
-    net.leave();
-    engine.restore(bootState);
-    paused = false;
-    next = performance.now();
-    setView("game");
-    renderGame();
-    $("canvas").focus();
-  }),
-);
+$("local-play").onclick = attempt(() => withCartridge(showMainMenu));
+net.removePlayers = (slots) => {
+  if (engine.inspect().scene !== 16) return;
+  // Recall only the departing tokens, then park those hands below the
+  // portraits so an empty port cannot prevent the remaining players starting.
+  for (let f = 0; f < 80; f++)
+    engine.frame(
+      [0, 1, 2, 3].map((slot) =>
+        !slots.includes(slot)
+          ? neutral
+          : f < 3
+            ? { buttons: BITS.b, x: 0, y: 0 }
+            : f > 35
+              ? { buttons: 0, x: 0, y: -85 }
+              : neutral,
+      ),
+    );
+  engine.flushAudio();
+};
+function requestMatch() {
+  const r = net.room;
+  if (!r || !net.isHost || !r.selecting || !net.running || startRequest) return;
+  const info = engine.inspect();
+  if (r.members.length < 2)
+    return toast(
+      "Invite a friend. You can choose your fighter while you wait.",
+    );
+  if (
+    !net.allConnected ||
+    info.scene !== 16 ||
+    !r.members.every((p) => info.players[p.slot]?.selected) ||
+    info.players.some((p) => p.holding)
+  )
+    return toast("Everyone needs to place their token on a fighter first.");
+  if (
+    info.teams &&
+    new Set(info.players.filter((p) => p.selected).map((p) => p.team)).size < 2
+  )
+    return toast("Choose at least two different teams.");
+  startRequest = {
+    revision: r.revision,
+    match: r.match,
+    time: performance.now(),
+  };
+  net.send({ type: "seal", revision: r.revision, match: r.match });
+}
+net.filterInput = (input) => {
+  const r = net.room;
+  if (r?.selecting) {
+    if (input.buttons & BITS.start) requestMatch();
+    return { ...input, buttons: input.buttons & ~BITS.start };
+  }
+  if (startPulse > 0) {
+    startPulse--;
+    return { ...input, buttons: input.buttons | BITS.start };
+  }
+  return input;
+};
+$("start-game").onclick = requestMatch;
 function playerName() {
   return $("player-name").value.trim() || "Player";
 }
@@ -404,13 +536,12 @@ async function refreshRooms() {
           count.textContent = `${r.count} / ${r.capacity}`;
           const state = document.createElement("span");
           state.className = "room-state";
-          row.disabled = r.phase !== "lobby" || r.count >= r.capacity;
-          state.textContent =
-            r.phase !== "lobby"
-              ? "In game"
-              : r.count >= r.capacity
-                ? "Full"
-                : "Join room  →";
+          row.disabled = !r.selecting || r.count >= r.capacity;
+          state.textContent = !r.selecting
+            ? "Match in progress"
+            : r.count >= r.capacity
+              ? "Full"
+              : "Choose a fighter  →";
           row.append(desc, count, state);
           row.onclick = attempt(() =>
             withCartridge(() => joinRoom({ roomId: r.id })),
@@ -454,8 +585,12 @@ async function copyInvite() {
     $("invite-link").select();
   }
 }
-$("copy-invite").onclick = attempt(copyInvite);
+document
+  .querySelectorAll("[data-invite]")
+  .forEach((b) => (b.onclick = attempt(copyInvite)));
 function leaveRoom() {
+  startRequest = null;
+  startPulse = 0;
   closeDialogs();
   net.leave();
   paused = true;
@@ -465,108 +600,72 @@ function leaveRoom() {
   lastRoomList = "";
   refreshRooms();
 }
-$("leave-room").onclick = leaveRoom;
 $("game-leave").onclick = leaveRoom;
-$("ready-button").onclick = () => {
-  controls.keys.clear();
-  net.send({ type: "ready", ready: !net.me?.ready });
-};
-$("start-game").onclick = () => net.send({ type: "launch" });
 function returnLobby() {
+  startRequest = null;
+  startPulse = 0;
   closeDialogs();
   net.send({ type: "lobby" });
 }
 $("game-back-lobby").onclick = returnLobby;
 $("back-lobby").onclick = returnLobby;
 $("game-rejoin").onclick = attempt(() => joinRoom(net.lastOptions));
-function renderLobby() {
+function renderCharacterRoom() {
   const r = net.room;
-  if (!r) return;
-  const signature = JSON.stringify(r) + net.id;
-  if (signature === lastRoom) return;
-  lastRoom = signature;
-  $("lobby-title").textContent = r.name;
-  $("lobby-eyebrow").textContent =
-    `${r.listed ? "OPEN" : "INVITE-ONLY"} LOBBY · ${r.members.length} / ${r.capacity} PLAYERS`;
-  $("lobby-subtitle").textContent =
-    `You’re Player ${net.player + 1}. Pick a port below, then ready up.`;
-  $("player-slots").replaceChildren(
-    ...[0, 1, 2, 3].map((slot) => {
-      const p = r.members.find((p) => p.slot === slot),
-        available = slot < r.capacity;
-      const card = document.createElement(p ? "div" : "button");
-      card.className = `player-slot p${slot + 1}${!p ? " empty" : ""}${!available ? " unavailable" : ""}`;
-      card.dataset.slot = slot;
-      const port = document.createElement("span");
-      port.className = "port";
-      port.textContent = `PLAYER ${slot + 1}`;
-      const icon = document.createElement("span");
-      icon.className = "port-icon";
-      icon.setAttribute("aria-hidden", "true");
-      for (let n = 0; n < 3; n++) icon.append(document.createElement("i"));
-      const title = document.createElement("h3");
-      title.textContent = p?.name || (available ? "Open port" : "Closed port");
-      const device = document.createElement("p");
-      device.className = "slot-device";
-      device.textContent = p
-        ? p.controller
-        : available
-          ? "Waiting for a player"
-          : `${r.capacity}-player room`;
-      const status = document.createElement("span");
-      status.className = `slot-status${p?.ready ? " ready" : ""}`;
-      status.textContent = p
-        ? !p.connected
-          ? "○ Disconnected"
-          : p.ready
-            ? "● Ready to play"
-            : "● Connected · Not ready"
-        : available
-          ? "Take this port →"
-          : "Unavailable";
-      const tags = document.createElement("span");
-      tags.className = "seat-tags";
-      if (p?.id === net.id) {
-        const tag = document.createElement("span");
-        tag.className = "seat-tag you";
-        tag.textContent = "YOU";
-        tags.append(tag);
-      }
-      if (p?.id === r.hostId) {
-        const tag = document.createElement("span");
-        tag.className = "seat-tag";
-        tag.textContent = "HOST";
-        tags.append(tag);
-      }
-      card.append(port, icon, title, device, status, tags);
-      if (!p) {
-        card.disabled = !available;
-        card.onclick = () => net.send({ type: "seat", slot });
-      }
-      return card;
-    }),
-  );
-  const ready = r.members.filter((p) => p.ready && p.connected).length;
-  $("lobby-status").textContent =
+  const showing = r && r.selecting && view === "game";
+  $("character-room").hidden = !showing;
+  if (!showing) return;
+  $("room-title").textContent = r.name;
+  const info = engine.info || { players: [] };
+  $("room-waiting").textContent =
     r.members.length < 2
-      ? "Invite a friend to get started."
-      : ready === r.members.length
-        ? net.isHost
-          ? "Everyone’s ready. Let’s choose fighters."
-          : "Everyone’s ready. Waiting for the host."
-        : `${ready} of ${r.members.length} players ready`;
-  $("ready-button").textContent = net.me?.ready
-    ? "✓ Ready · Cancel"
-    : "I’m ready";
-  $("ready-button").classList.toggle("primary", !net.me?.ready);
+      ? "Choose your fighter while you wait for friends"
+      : `${r.members.length} / ${r.capacity} players · ${net.isHost ? "Start when everyone has chosen" : "The host starts the match"}`;
+  const signature = JSON.stringify([
+    r,
+    info.players.map((p) => [p.selected, p.fighter]),
+    net.id,
+  ]);
+  if (signature !== lastRoom) {
+    lastRoom = signature;
+    $("player-slots").replaceChildren(
+      ...[0, 1, 2, 3].map((slot) => {
+        const p = r.members.find((p) => p.slot === slot),
+          choice = info.players[slot];
+        const card = document.createElement("div");
+        card.className = `native-port p${slot + 1}${p ? " connected" : " empty"}`;
+        card.dataset.slot = slot;
+        const name = document.createElement("strong");
+        name.textContent = p
+          ? `${p.name}${p.id === net.id ? " · YOU" : ""}`
+          : slot < r.capacity
+            ? "Waiting for player"
+            : "Closed port";
+        const state = document.createElement("span");
+        state.textContent = p
+          ? !p.connected
+            ? "Disconnected"
+            : choice?.selected
+              ? "✓ Fighter selected"
+              : `P${slot + 1} · Choose a fighter`
+          : `P${slot + 1} · ${slot < r.capacity ? "Open" : "—"}`;
+        card.append(name, state);
+        return card;
+      }),
+    );
+  }
   $("start-game").hidden = !net.isHost;
-  $("start-game").disabled = r.members.length < 2 || ready !== r.members.length;
-  $("lobby-controller").textContent = controllerName();
+  $("start-game").disabled =
+    !net.running ||
+    r.members.length < 2 ||
+    !net.allConnected ||
+    !r.members.every((p) => info.players[p.slot]?.selected) ||
+    info.players.some((p) => p.holding);
 }
 function renderGame() {
   const online = net.state !== "offline",
     state = online ? net.state : paused ? "paused" : "playing";
-  const notice = state !== "playing";
+  const notice = view !== "native" && state !== "playing";
   $("game-notice").hidden = !notice || !!document.querySelector("dialog[open]");
   $("game-notice-label").textContent =
     state === "error"
@@ -584,7 +683,7 @@ function renderGame() {
     }[state] || "Getting ready…";
   $("game-notice-detail").textContent =
     state === "preparing"
-      ? "Skipping the title menus. You’ll choose your fighters together."
+      ? "Your room is open. Pick your fighter while friends join."
       : state === "syncing"
         ? "Making sure everyone starts at the same moment."
         : state === "paused"
@@ -607,17 +706,14 @@ function renderGame() {
       return badge;
     }),
   );
+  renderCharacterRoom();
   blockInput();
 }
 net.addEventListener("change", () => {
   $("busy").hidden = net.state !== "connecting";
   if (net.state === "connecting")
     busy("Joining the lobby…", "Connecting your controller port.");
-  else if (net.state === "lobby") {
-    if (view !== "lobby") closeDialogs();
-    setView("lobby");
-    renderLobby();
-  } else if (
+  else if (
     ["preparing", "syncing", "playing", "paused", "waiting"].includes(
       net.state,
     ) ||
@@ -629,24 +725,17 @@ net.addEventListener("change", () => {
     toast(net.message);
     setView("browse");
   }
-  if (
-    net.state === "playing" &&
-    ["preparing", "syncing"].includes(lastState) &&
-    net.frame < 2
-  ) {
-    if (!hintTimer) {
-      $("fighter-hint").hidden = false;
-      hintTimer = setTimeout(() => {
-        $("fighter-hint").hidden = true;
-      }, 12000);
+  if (startRequest && net.room) {
+    if (
+      net.room.match !== startRequest.match ||
+      net.room.revision !== startRequest.revision
+    )
+      startRequest = null;
+    else if (!net.room.selecting) {
+      startPulse = 6;
+      startRequest = null;
     }
   }
-  if (net.state === "lobby") {
-    clearTimeout(hintTimer);
-    hintTimer = null;
-    $("fighter-hint").hidden = true;
-  }
-  lastState = net.state;
 });
 net.addEventListener("notice", (e) => toast(e.detail));
 function pause() {
@@ -682,7 +771,7 @@ $("quit-game").onclick = () => {
   closeDialogs();
   paused = true;
   if (online) leaveRoom();
-  else setView("home");
+  else attempt(showMainMenu)();
 };
 $("canvas").onclick = attempt(() => engine.audioStart());
 $("volume").oninput = () => engine.setVolume(Number($("volume").value) / 100);
@@ -722,7 +811,6 @@ function refreshDevices() {
     ...devices.map((p) => new Option(p.id, String(p.index))),
   );
   $("device").value = controls.selected;
-  $("lobby-controller").textContent = controllerName();
   $("footer-input").textContent =
     controls.selected === "keyboard"
       ? "Keyboard ready · Or pair a controller and press a button"
@@ -777,7 +865,6 @@ controls.addEventListener("devices", refreshDevices);
 $("device").onchange = () => {
   controls.select($("device").value);
   localStorage.setItem("smash.inputChoice", controls.id());
-  $("lobby-controller").textContent = controllerName();
   $("footer-input").textContent = controllerName();
   if (net.room) net.send({ type: "profile", controller: controllerName() });
   wizardIndex = -1;
@@ -928,7 +1015,7 @@ $("reset").onclick = () => {
 };
 function diagnostics() {
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nRelay: available for every player\nLatency: ${net.rtt || "—"} ms\nInput buffer: ${net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 2.0.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nRelay: available for every player\nLatency: ${net.rtt || "—"} ms\nInput buffer: ${net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.0.0`;
 }
 function menuController(time) {
   const pad = controls.pad();
@@ -947,7 +1034,7 @@ function menuController(time) {
     (buttons & (BITS.l | BITS.r | BITS.start)) ===
     (BITS.l | BITS.r | BITS.start);
   if (
-    view === "game" &&
+    ["game", "native"].includes(view) &&
     chord &&
     !menuEdges.chord &&
     !document.querySelector("dialog[open]")
@@ -956,7 +1043,10 @@ function menuController(time) {
     renderGame();
   }
   active.chord = chord;
-  if (view !== "game" || document.querySelector("dialog[open]")) {
+  if (
+    !["game", "native"].includes(view) ||
+    document.querySelector("dialog[open]")
+  ) {
     if (!$("controls-dialog").open) {
       const scope =
         [...document.querySelectorAll("dialog[open]")].at(-1) ||
@@ -983,7 +1073,7 @@ function menuController(time) {
       if (active.b && !menuEdges.b) {
         const top = [...document.querySelectorAll("dialog[open]")].at(-1);
         if (top) top.close();
-        else if (view === "browse") setView("home");
+        else if (view === "browse") attempt(showMainMenu)();
       }
     }
   }
@@ -997,11 +1087,11 @@ window.addEventListener("keydown", (e) => {
     document.querySelector("dialog[open]")
   )
     return;
-  if (view === "game") {
+  if (["game", "native"].includes(view)) {
     e.preventDefault();
     dialog("menu-dialog");
     renderGame();
-  } else if (view === "browse") setView("home");
+  } else if (view === "browse") attempt(showMainMenu)();
 });
 document.addEventListener("pointermove", () => {
   lastPointer = performance.now();
@@ -1018,10 +1108,12 @@ document.addEventListener("drop", (e) => {
 function tick(time) {
   requestAnimationFrame(tick);
   try {
-    if (engine.loaded && !preparing && view === "game") {
+    if (engine.loaded && !preparing && ["game", "native"].includes(view)) {
       if (net.state !== "offline") net.tick(time);
       else if (!paused && time + 1 >= next) {
-        const inputs = [controls.sample()];
+        const inputs = [
+          menuInput.length ? menuInput.shift() : controls.sample(),
+        ];
         for (const pad of controls
           .devices()
           .filter((p) => String(p.index) !== controls.selected)
@@ -1029,6 +1121,58 @@ function tick(time) {
           inputs.push(controls.sampleOther(pad));
         engine.frame(inputs);
         next = Math.max(next + 1000 / engine.fps, time - 1000 / engine.fps);
+      }
+    }
+    if (engine.loaded && !preparing && time - (engine.lastInspect || 0) > 200) {
+      engine.lastInspect = time;
+      if (["native", "game"].includes(view)) {
+        const info = engine.inspect();
+        if (net.state === "offline" && view === "native" && info.scene !== 7) {
+          if (info.scene === 9) {
+            paused = true;
+            setView("browse");
+          } else if (info.scene === 1 && menuState) {
+            engine.restore(menuState);
+          } else if (![1, 28].includes(info.scene)) {
+            setView("game");
+            renderGame();
+          }
+        } else if (
+          net.state === "offline" &&
+          view === "game" &&
+          info.scene === 7 &&
+          !paused
+        )
+          setView("native");
+        if (net.isHost && net.running) {
+          if ([7, 9].includes(info.scene)) net.send({ type: "lobby" });
+          else if (
+            info.scene === 16 &&
+            !net.room.selecting &&
+            lastScene !== 16
+          ) {
+            net.send({
+              type: "open",
+              match: net.room.match,
+              revision: net.room.revision,
+            });
+          }
+          if (info.scene === 16 && !net.room.selecting && !startPulse) {
+            if (!engine.sealedAt) engine.sealedAt = engine.frames;
+            if (engine.frames - engine.sealedAt > 180) {
+              net.send({
+                type: "open",
+                match: net.room.match,
+                revision: net.room.revision,
+              });
+              engine.sealedAt = 0;
+            }
+          } else engine.sealedAt = 0;
+          if (startRequest && time - startRequest.time > 3000)
+            startRequest = null;
+        }
+        lastScene = info.scene;
+        renderCharacterRoom();
       }
     }
     if ($("controls-dialog").open) liveControls();
@@ -1078,11 +1222,14 @@ fetch("/api/status")
     shareUrl = s.shareUrl;
   })
   .catch(() => {});
-const token = inviteToken();
-if (token) {
+function followInvitation() {
+  const token = inviteToken();
+  if (!token || token === net.token) return;
+  if (net.room)
+    return toast("Leave your current room before opening another invitation.");
   setView("browse");
   $("invite-input").value = location.href;
-  savedCartridge.then(() => {
-    openJoin();
-  });
+  savedCartridge.then(openJoin);
 }
+window.addEventListener("hashchange", followInvitation);
+followInvitation();

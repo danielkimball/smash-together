@@ -42,14 +42,14 @@ try {
   for (const p of [a, b]) p.on("pageerror", (e) => errors.push(e.message));
   await a.goto(url);
   await a.locator("#multiplayer").click();
+  await a.locator("#rom-file").setInputFiles(rom);
+  await a.waitForFunction(() => smash.view === "browse");
   await a.locator("#player-name").fill("Dan");
   await a.locator("#create-open").click();
   await a.locator("#room-name").fill("Invite flow check");
   await a.locator("#visibility").selectOption("private");
   await a.locator("#create-room").click();
-  await a.locator("#rom-dialog").waitFor({ state: "visible" });
-  await a.locator("#rom-file").setInputFiles(rom);
-  await wait(a, "lobby");
+  await wait(a, "playing");
   const token = await a.evaluate(() => smash.net.token);
   assert.ok(
     !(await (await fetch(url + "/api/rooms")).text()).includes(
@@ -71,7 +71,7 @@ try {
   const link = await a.evaluate(() => qaInvite);
   assert.equal(link, `${shareUrl}/#room=${token}`);
   record(
-    "Create room prompts for local ROM and copies the public invite from localhost",
+    "Multiplayer prompts for local ROM and copies the public invite from localhost",
   );
   await a.evaluate(() =>
     Object.defineProperty(navigator, "clipboard", {
@@ -88,7 +88,7 @@ try {
   assert.equal(await a.locator("#invite-link").inputValue(), link);
   assert.equal(await a.locator("#invite-link").getAttribute("readonly"), "");
   await a.locator("#invite-dialog button.primary").click();
-  assert.equal(await a.evaluate(() => smash.net.state), "lobby");
+  await wait(a, "playing");
   record(
     "Clipboard denial offers a selected read-only invite without leaving the room",
   );
@@ -98,27 +98,25 @@ try {
   await b.locator("#join-room").click();
   await b.locator("#rom-dialog").waitFor({ state: "visible" });
   await b.locator("#rom-file").setInputFiles(rom);
-  await wait(b, "lobby");
+  await wait(b, "playing");
   await a.waitForFunction(() => smash.net.room.members.length === 2);
   assert.equal(await b.evaluate(() => smash.net.token), token);
   assert.equal(await b.evaluate(() => smash.net.me.name), "Brother");
   record(
-    "A fresh invited browser names itself, loads its ROM, and reaches the correct waiting lobby",
+    "A fresh invited browser names itself, loads its ROM, and reaches the live character-selection room",
   );
-  for (const p of [a, b]) await p.locator("#ready-button").click();
-  await a.locator("#start-game").click();
-  await wait(a, "preparing");
-  await a.locator("#game-back-lobby").click();
-  for (const p of [a, b]) await wait(p, "lobby");
-  for (const p of [a, b]) await p.locator("#ready-button").click();
-  await a.locator("#start-game").click();
-  for (const p of [a, b]) await wait(p, "playing");
-  assert.equal(
-    await a.evaluate(() => smash.engine.snapshot()[448 + (0xa4ad0 ^ 3)]),
-    16,
+  await a.waitForFunction(() => smash.net.running && smash.net.frame > 60);
+  await a.evaluate(() => document.getElementById("game-menu").click());
+  await a.locator("#back-lobby").click();
+  await a.waitForFunction(
+    () => smash.net.running && smash.net.room.match === 2,
   );
+  await b.waitForFunction(
+    () => smash.net.running && smash.net.room.match === 2,
+  );
+  assert.equal(await a.evaluate(() => smash.engine.inspect().scene), 16);
   record(
-    "Cancel startup back to lobby, then start again at multiplayer character selection",
+    "Rematch returns everyone directly to an open character-selection room",
   );
   await a.evaluate(() => {
     window.qaPad = {
@@ -145,6 +143,9 @@ try {
   record("Mapped controller chord opens the overlay and pauses all players");
   assert.deepEqual(errors, []);
   record("No uncaught browser errors");
+} catch (e) {
+  process.exitCode = 1;
+  console.error(e);
 } finally {
   await mkdir("artifacts", { recursive: true });
   await writeFile(
@@ -155,5 +156,9 @@ try {
       2,
     ) + "\n",
   );
-  await browser.close();
+  await Promise.race([
+    browser.close(),
+    new Promise((r) => setTimeout(r, 3000)),
+  ]);
+  process.exit(process.exitCode || 0);
 }

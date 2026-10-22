@@ -74,7 +74,7 @@ export class Netplay extends EventTarget {
   }
   get allConnected() {
     return (
-      this.room?.members.length >= 2 &&
+      this.room?.members.length >= 1 &&
       this.room.members.every((p) => p.connected)
     );
   }
@@ -101,7 +101,12 @@ export class Netplay extends EventTarget {
       this.socket.send(JSON.stringify(message));
   }
   sendGame(payload, direct = true, to) {
-    const data = { ...payload, epoch: this.epoch, match: this.room?.match };
+    const data = {
+      ...payload,
+      epoch: this.epoch,
+      match: this.room?.match,
+      revision: this.room?.revision,
+    };
     if (direct) {
       for (const p of this.connected) {
         if (p.id === this.id || (to && to !== p.id)) continue;
@@ -130,11 +135,12 @@ export class Netplay extends EventTarget {
       this.send({
         ...options,
         type: options.token || options.roomId ? "join" : "create",
+        protocol: 3,
         ticket: options.token
           ? sessionStorage.getItem("smash.ticket." + options.token)
           : undefined,
         rom: this.engine.romHash,
-        build: this.engine.build + "-smash-lobbies-v2",
+        build: this.engine.build + "-smash-native-v3",
       });
     ws.onmessage = (e) => {
       if (ws !== this.socket) return;
@@ -208,7 +214,8 @@ export class Netplay extends EventTarget {
     };
   }
   updateRoom(room) {
-    const oldMatch = this.room?.match;
+    const old = this.room,
+      oldMatch = old?.match;
     this.room = room;
     this.player = this.me?.slot ?? 0;
     this.delay = room.delay;
@@ -221,21 +228,33 @@ export class Netplay extends EventTarget {
     }
     for (const p of this.connected)
       if (p.id !== this.id) this.setupRTC(p.id).catch(() => {});
-    if (room.phase === "lobby") {
+    const changed =
+      old && (old.revision !== room.revision || oldMatch !== room.match);
+    if (changed) {
       this.running = false;
       this.syncing = false;
-      this.preparing = false;
       clearTimeout(this.syncTimeout);
       this.message = "";
-      this.state = "lobby";
-      if (oldMatch !== room.match) this.epoch = 0;
-    } else if (!this.allConnected) {
+      this.state = "syncing";
+      this.epoch++;
+    }
+    if (!this.allConnected) {
       this.running = false;
       this.syncing = false;
       clearTimeout(this.syncTimeout);
       this.message =
         "A controller disconnected. Waiting for that player to rejoin.";
       this.state = "waiting";
+    } else if (oldMatch !== room.match) {
+      this.state = "preparing";
+    } else if (changed && this.isHost && !this.preparing) {
+      const removed = old.members
+        .filter((p) => !room.members.some((m) => m.slot === p.slot))
+        .map((p) => p.slot);
+      // Preserve every other fighter. A departed player's B tap returns only
+      // their token to its hand before the new roster receives this state.
+      if (removed.length) this.removePlayers?.(removed);
+      this.synchronize().catch((e) => this.error(e.message));
     } else if (this.state === "connecting") this.state = "syncing";
     this.emit();
   }
@@ -243,11 +262,13 @@ export class Netplay extends EventTarget {
     clearTimeout(this.syncTimeout);
     const s = this.socket;
     this.socket = null;
+    if (s?.readyState === 1) s.send(JSON.stringify({ type: "leave" }));
     s?.close();
     this.closeRTC();
     Object.assign(this, {
       running: false,
       syncing: false,
+      preparing: false,
       token: "",
       id: "",
       room: null,
@@ -342,13 +363,7 @@ export class Netplay extends EventTarget {
     }
   }
   async synchronize() {
-    if (
-      !this.isHost ||
-      this.syncing ||
-      this.preparing ||
-      !this.allConnected ||
-      this.room.phase === "lobby"
-    )
+    if (!this.isHost || this.syncing || this.preparing || !this.allConnected)
       return;
     this.syncing = true;
     this.running = false;
@@ -359,7 +374,8 @@ export class Netplay extends EventTarget {
     this.sendGame({ type: "sync" }, false);
     const socket = this.socket,
       epoch = this.epoch,
-      match = this.room.match;
+      match = this.room.match,
+      revision = this.room.revision;
     const raw = this.engine.snapshot();
     // Both sides restore so the core's transient interpreter state is identical.
     this.engine.restore(raw);
@@ -369,6 +385,7 @@ export class Netplay extends EventTarget {
       this.socket !== socket ||
       this.epoch !== epoch ||
       this.room?.match !== match ||
+      this.room?.revision !== revision ||
       !this.allConnected
     )
       return;
@@ -376,6 +393,7 @@ export class Netplay extends EventTarget {
       JSON.stringify({
         epoch,
         match,
+        revision,
         hash: this.expectedHash,
         delay: this.delay,
         rawSize: raw.length,
@@ -388,6 +406,11 @@ export class Netplay extends EventTarget {
     if (socket.readyState !== 1)
       throw Error("The connection closed during synchronization.");
     socket.send(packet);
+    if (this.connected.length === 1) {
+      this.sendGame({ type: "start" }, false);
+      this.start();
+      return;
+    }
     clearTimeout(this.syncTimeout);
     this.syncTimeout = setTimeout(() => {
       if (this.syncing)
@@ -395,7 +418,7 @@ export class Netplay extends EventTarget {
     }, 45000);
   }
   async receiveState(buffer) {
-    if (this.isHost || !this.room || this.room.phase === "lobby") return;
+    if (this.isHost || !this.room) return;
     const socket = this.socket;
     if (buffer.byteLength < 4) throw Error("Invalid sync packet.");
     const size = new DataView(buffer).getUint32(0);
@@ -404,7 +427,8 @@ export class Netplay extends EventTarget {
     const meta = JSON.parse(
       new TextDecoder().decode(buffer.slice(4, 4 + size)),
     );
-    if (meta.match !== this.room.match) return;
+    if (meta.match !== this.room.match || meta.revision !== this.room.revision)
+      return;
     if (
       !Number.isSafeInteger(meta.epoch) ||
       meta.epoch < this.epoch ||
@@ -425,7 +449,8 @@ export class Netplay extends EventTarget {
     if (
       this.socket !== socket ||
       this.epoch !== meta.epoch ||
-      this.room?.match !== meta.match
+      this.room?.match !== meta.match ||
+      this.room?.revision !== meta.revision
     )
       return;
     this.engine.restore(bytes);
@@ -456,7 +481,7 @@ export class Netplay extends EventTarget {
       !m ||
       !Number.isSafeInteger(m.epoch) ||
       m.match !== this.room.match ||
-      this.room.phase === "lobby"
+      m.revision !== this.room.revision
     )
       return;
     const host = from === this.room.hostId;
@@ -567,7 +592,9 @@ export class Netplay extends EventTarget {
     const target = this.frame + this.delay,
       inputs = this.inputs.get(target) || this.emptyInputs();
     if (!inputs[this.player]) {
-      inputs[this.player] = this.controls.sample();
+      inputs[this.player] = this.filterInput
+        ? this.filterInput(this.controls.sample())
+        : this.controls.sample();
       this.inputs.set(target, inputs);
       this.sentInputs.set(target, inputs[this.player]);
       this.sendGame({
@@ -612,7 +639,7 @@ export class Netplay extends EventTarget {
     this.status("paused");
   }
   resume() {
-    if (!this.allConnected || this.room?.phase === "lobby") return;
+    if (!this.allConnected) return;
     this.message = "";
     if (this.isHost) this.synchronize().catch((e) => this.error(e.message));
     else this.sendGame({ type: "resync" }, false, this.room.hostId);

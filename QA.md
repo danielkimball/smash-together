@@ -1,46 +1,41 @@
-# Release verification · v2.0.0 · 2026-10-21
+# Release verification · v3.0.0 · 2026-10-21
 
-The checks use Dan’s locally supplied original US ROM. No ROM, save, screenshot, or extracted game data is committed or served. Evidence remains in ignored `artifacts/`.
+Checks use the user's locally supplied original US ROM. No ROM, save, screenshot or extracted game data is committed or served. Evidence stays in ignored `artifacts/`.
 
-## Environment and scope
+## Environment
 
-- Intel MacBook Pro, macOS 15.6.1, Node 20.11.0, installed Chrome driven through Playwright.
-- Four isolated browser contexts represent four computers. All emulators execute on this laptop; this does not reproduce geographically separated networks.
-- Desktop 1440 × 900 and phone 390 × 844 layouts checked. Fullscreen API toggle and a viewport-sized game canvas verified. The game preserves its 4:3 ratio.
+Intel MacBook Pro, macOS 15.6.1, Node 20.11.0 and installed Chrome through Playwright. Isolated browser contexts represent separate foreground computers. Desktop 1440 × 900 and phone 390 × 844 layouts checked. The entire menu and battle occupy the viewport at the original 4:3 ratio; character selection leaves room for connection indicators.
 
-## Release result
+## Local result
 
-Four local browser contexts passed 18 checks. The deployed app then passed **19 browser checks** with the host on localhost and three guests on the public HTTPS tunnel (2026-10-22 01:03–01:05 UTC). The measured two-player fight averaged **59 FPS**, with zero unexpected repairs; the intentional memory corruption triggered one successful repair. No uncaught browser errors occurred. The public run also verified a guest reconnect during initial game preparation.
+The full four-browser check passed with **zero uncaught browser errors**. It entered an actual four-human battle (Mario, DK, Link and Samus), returned to open character selection, and ran a two-human rematch. Two-player fighting averaged **59 FPS**, with zero unexpected state repairs. One deliberate memory corruption was detected and repaired.
 
-A further **six focused invitation checks** passed against the deployed site: first-time ROM setup, public invitation copying from localhost, manual-copy fallback when clipboard access is denied, a fresh guest entering their name and joining, cancelling/restarting preparation, and opening the shared pause menu with a mapped controller chord. No uncaught browser errors occurred. Evidence: `artifacts/invite-check.json`.
+The focused selection check also passed: leaving recalls and parks only the departing player's token, a replacement receives the freed port and selects a fighter, clicking Single Player enters native 1P Mode, and leaving returns to the live native Mode Select screen.
 
-## Checks
+Evidence: `artifacts/e2e-native-local-four.json`, `artifacts/selection-check.json`, native menu/character-selection/battle screenshots.
 
-- Ten Node tests pass: ROM byte order, Xbox preset, custom N64 buttons/axes, calibration, static-file confinement, no upload routes, same-origin upgrades, public/private listing, capacity, matching ROM/build, port conflicts, host-only lifecycle, readiness, relay isolation and reconnect tickets.
-- Browser flow covers the room browser, four live controller cards, choosing an empty port, readiness, automatic character selection, four-player inputs, returning to the lobby, and a two-player rematch.
-- Read-only checks against the verified US ROM’s scene state distinguish character selection (16) from a VS battle (22). The actual battle reports four human players, then two for the rematch. These assertions prevent advancing menus from being mistaken for gameplay.
-- Screenshots visually confirm Mario, Donkey Kong, Link and Samus in Hyrule Castle, and a subsequent Mario/DK match. Desktop, mobile, controller setup and lobby layouts were reviewed.
-- Multiplayer recovery covers loss of a direct channel with a dropped input, relay fallback, deliberate memory corruption and automatic repair, menu/controller pause and resume, a guest reconnecting to their original port, and the host closing the room.
-- Local save/load/export/import, cached ROM reload, and saved per-device mappings pass. Gamepad API inputs are simulated; actual hardware pairing still needs the users’ devices.
-- Syntax, asset links, pinned engine checksums, source archive contents and served-file confinement are checked before release.
+## Covered behavior
 
-`artifacts/e2e-report.json` records the latest full browser run, counts, timings and errors. Separate `e2e-local-four.json` and `e2e-public-four.json` retain local and public-route results when both are run.
+- Thirteen Node tests cover controllers and ROM byte order; HTTP confinement and no upload route; public/private listing, capacity, version/ROM agreement, host authority, reserved reconnect tickets, explicit departure, room isolation, and rejecting obsolete roster input/snapshots over both relay and direct connections.
+- Actual Smash Mode Select art/music with native controller/keyboard navigation. Selecting VS Mode opens the room browser. Accessible mouse targets also open native 1P/options/data or online play.
+- A solo host selects a native fighter while the room remains open. A fresh invited guest and two public-room guests receive distinct controller ports, the host's existing fighter choice and matching game states.
+- Guest reconnect preserves all selected fighters. Only the host starts, after connected members have chosen. Roster sealing precedes the native Start input. The room directory shows the battle as closed to new arrivals.
+- Real native scene assertions distinguish Mode Select (7), 1P Mode (8), character selection (16), and an actual VS battle (22). Battle state confirms four then two human fighters. No menu-only progression is counted as gameplay.
+- Controller mapping supports custom button and signed-axis bindings, live preview, shared pause and saved profiles. Inputs use a simulated Gamepad API; physical pairing requires the users' hardware.
+- Direct-to-relay transport switch with a dropped input, hash mismatch repair, shared pause/resume, guest reconnect, host departure, local save/load/export/import and cache persistence.
+- Syntax, linked assets, pinned engine provenance, source archive and game-data exclusion checks are required before release.
 
-## Fixes verified during this rework
+## Implementation safeguards
 
-- Wait through the Nintendo/HAL boot screen before the first Start input, so startup reliably reaches VS character selection.
-- Keep sender identity and controller slot assignment on the server; host authority does not depend on being player 1.
-- Restore every browser at the same snapshot boundary and wait for every connected player’s ready hash.
-- Use full-mesh direct input channels with per-peer relay fallback and bounded repeated input history.
-- Reserve disconnected players’ ports during a match; require their per-tab ticket to reclaim them. Return to lobby frees abandoned ports.
-- Cancel obsolete preparation/synchronization when leaving or changing rounds. Defer synchronization while the initial character screen is being prepared.
-- Preserve normal keyboard focus in menus and suppress the L + R + Start overlay chord from game inputs.
+The browser reads the verified US scene and selection state through the pinned core's official serializer. It never modifies ROM bytes or writes game memory. Menu preparation uses native controller inputs. Native graphics stay active underneath the loading overlay, preventing the hidden canvas from losing its WebGL context during preparation.
+
+Roster revisions invalidate asynchronous snapshots and old inputs when people arrive or leave. Match generations cancel obsolete menu preparation. Every browser restores a host snapshot before resuming. A host can run alone; all connected members must acknowledge the snapshot when peers are present. A network loss reserves a port, whereas explicit departure during selection recalls its token using native input and parks its hand outside the portraits.
 
 ## Practical limits
 
-- Delayed lockstep, no rollback. Latency and the slowest player’s computer affect responsiveness.
-- The core exposes all four native controllers; unused character-selection hands may remain visible. The lobby/overlay accurately represent connected players. Untouched, unselected ports do not block a match.
-- Chrome tested. Physical Xbox/N64 controllers, Safari, Firefox and mobile gameplay are not certified. There are no touchscreen game controls.
-- Browser storage is per origin. A new tunnel hostname requires loading the ROM again; localhost keeps stable host storage. Export local saves before moving origins.
-- The hosting computer must remain awake. Cloudflare Quick Tunnels are free temporary addresses, change on restart, and have no uptime guarantee.
-- The legacy emulator emits nonfatal WebGL warnings; uncaught application errors are not accepted.
+- Delayed lockstep, no rollback. Hardware speed and real inter-city latency affect responsiveness. Multi-browser tests on one laptop do not certify geographically separated networks.
+- The pinned core exposes all four native controllers; unused hands can appear before anyone joins. Room indicators show actual connected players. New arrivals take the next free port automatically.
+- Chrome tested. Physical Xbox/N64 devices, other browsers and mobile gameplay are not certified. There are no touch game controls.
+- The legacy renderer emits nonfatal WebGL uniform warnings. Visual checks require a live WebGL context; blank rendering is not accepted as a passing screenshot.
+- Browser storage is per origin. Keep the host on localhost and export local saves before changing origins. New tunnel addresses require each guest to load their ROM again.
+- The laptop must stay awake. Free Cloudflare Quick Tunnel addresses change on restart. Moving hosting to an awake Mac mini allows the laptop to be off.

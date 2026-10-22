@@ -19,6 +19,73 @@
         tabindex="0"
         aria-label="Super Smash Bros. game"
       ></canvas>
+      <div id="native-menu" hidden>
+        <nav class="native-hitbox" aria-label="Smash main menu">
+          <button
+            id="native-single"
+            class="native-choice native-1p"
+            aria-label="Single player — 1P Mode"
+          >
+            <span>Single player</span>
+          </button>
+          <button
+            id="native-online"
+            class="native-choice native-vs"
+            aria-label="Multiplayer — VS Mode"
+          >
+            <span>Multiplayer</span>
+          </button>
+          <button
+            id="native-options"
+            class="native-choice native-options"
+            aria-label="Game options"
+          >
+            <span>Game options</span>
+          </button>
+          <button
+            id="native-data"
+            class="native-choice native-data"
+            aria-label="Game data"
+          >
+            <span>Game data</span>
+          </button>
+        </nav>
+        <div class="native-tools">
+          <button data-controls>Controllers</button
+          ><button data-fullscreen>Fullscreen</button>
+        </div>
+        <p class="native-legend">
+          <b>↑ ↓</b> Choose &nbsp; <b>A / J</b> Select &nbsp;
+          <b>1P Mode</b> Single player &nbsp; <b>VS Mode</b> Multiplayer
+        </p>
+      </div>
+      <section
+        id="character-room"
+        class="character-room"
+        hidden
+        aria-label="Live character-selection room"
+      >
+        <div class="room-ribbon">
+          <div>
+            <strong id="room-title">VS ROOM</strong
+            ><span id="room-waiting"
+              >Choose your fighter while friends join</span
+            >
+          </div>
+          <button id="copy-invite" data-invite>Invite friends</button>
+        </div>
+        <div class="room-bottom">
+          <div id="player-slots" class="native-ports" aria-live="polite"></div>
+          <div class="room-commands">
+            <span
+              >Move your colored hand · <b>A / J</b> Choose ·
+              <b>B / K</b> Change</span
+            ><button id="start-game" disabled>
+              START MATCH <kbd>Start / Enter</kbd>
+            </button>
+          </div>
+        </div>
+      </section>
       <div class="game-hud" id="game-hud">
         <button id="game-menu" class="glass">
           ☰ <span>Menu</span> <kbd>Esc</kbd>
@@ -38,7 +105,7 @@
           <div class="actions">
             <button id="game-resume" class="primary" hidden>Resume game</button
             ><button id="game-rejoin" hidden>Reconnect</button
-            ><button id="game-back-lobby" hidden>Return to lobby</button
+            ><button id="game-back-lobby" hidden>Character selection</button
             ><button id="game-leave" class="quiet">Leave game</button>
           </div>
         </div>
@@ -63,41 +130,20 @@
       </header>
       <main>
         <section id="home-screen" class="screen home-screen">
-          <div class="home-copy">
-            <p class="eyebrow">YOUR FRIENDS. YOUR CARTRIDGE.</p>
-            <h1>ONE MORE<br /><span>MATCH.</span></h1>
-            <p class="intro">
-              The original Smash 64. A shared couch,<br class="desktop" />
-              wherever you are.
-            </p>
-            <nav class="main-menu" aria-label="Main menu">
-              <button id="multiplayer" class="menu-choice primary">
-                <span
-                  ><strong>Multiplayer</strong
-                  ><small>Find a room. Bring your friends.</small></span
-                ><span aria-hidden="true">↗</span>
-              </button>
-              <button id="local-play" class="menu-choice">
-                <span
-                  ><strong>Local play</strong
-                  ><small>One computer. Up to four controllers.</small></span
-                ><span aria-hidden="true">→</span>
-              </button>
-              <div class="menu-secondary">
-                <button data-controls class="quiet">Controller setup</button
-                ><button id="help-open" class="quiet">How to play</button>
-              </div>
+          <div class="cartridge-intro">
+            <p class="console-eyebrow">SMASH TOGETHER · NINTENDO 64</p>
+            <h1 class="smash-title">
+              <span>SUPER</span>SMASH<small>BROS.</small>
+            </h1>
+            <button id="power-on" class="power-on">
+              PRESS START <span>Open your game</span>
+            </button>
+            <p>Bring your cartridge. Step into the original game.</p>
+            <nav class="boot-shortcuts" aria-label="Quick start">
+              <button id="multiplayer">Multiplayer</button
+              ><button id="local-play">Single player</button
+              ><button id="help-open">How to play</button>
             </nav>
-          </div>
-          <div class="home-art" aria-hidden="true">
-            <div class="arena-ring ring-one"></div>
-            <div class="arena-ring ring-two"></div>
-            <span class="art-type">READY<br />TO<br /><i>RUMBLE.</i></span>
-            <div class="art-ports">
-              <span class="p1">01</span><span class="p2">02</span
-              ><span class="p3">03</span><span class="p4">04</span>
-            </div>
-            <span class="art-caption">FOUR PORTS. ONE ARENA.</span>
           </div>
         </section>
         <section id="browse-screen" class="screen" hidden>
@@ -105,8 +151,10 @@
           <div class="section-heading">
             <div>
               <p class="eyebrow">MULTIPLAYER</p>
-              <h1>Find your people.</h1>
-              <p>Join an open room or start one for your crew.</p>
+              <h1>VS MODE</h1>
+              <p>
+                Join a room. Choose your fighter. Wait for your challengers.
+              </p>
             </div>
             <button id="create-open" class="primary">＋ Create a room</button>
           </div>
@@ -138,49 +186,6 @@
           </div>
           <p id="browser-status" class="subtext">
             Rooms on this server · No account needed
-          </p>
-        </section>
-        <section id="lobby-screen" class="screen" hidden>
-          <button id="leave-room" class="back quiet">← Leave room</button>
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow" id="lobby-eyebrow">MULTIPLAYER LOBBY</p>
-              <h1 id="lobby-title">Your room</h1>
-              <p id="lobby-subtitle">Pick a controller port, then ready up.</p>
-            </div>
-            <button id="copy-invite">↗ Copy invite</button>
-          </div>
-          <div class="lobby-progress">
-            <span class="current"><b>1</b> Get together</span><i></i
-            ><span><b>2</b> Choose fighters</span><i></i
-            ><span><b>3</b> Smash</span>
-          </div>
-          <div id="player-slots" class="player-slots" aria-live="polite"></div>
-          <div class="lobby-bottom">
-            <div class="your-controller">
-              <span class="controller-icon" aria-hidden="true">✣</span>
-              <div>
-                <span class="eyebrow">YOUR CONTROLLER</span
-                ><strong id="lobby-controller">Keyboard</strong
-                ><small id="lobby-controller-help"
-                  >Pair a controller, then press a button to connect.</small
-                >
-              </div>
-              <button data-controls>Change / test</button>
-            </div>
-            <div class="ready-area">
-              <p id="lobby-status">Waiting for players…</p>
-              <div class="actions">
-                <button id="ready-button" class="primary">I'm ready</button
-                ><button id="start-game" class="start-button" disabled>
-                  Choose fighters →
-                </button>
-              </div>
-            </div>
-          </div>
-          <p class="lobby-footnote">
-            Everyone uses their own ROM. Once you’re ready, you’ll choose your
-            fighter together in the game.
           </p>
         </section>
       </main>
@@ -235,7 +240,7 @@
         <div class="dialog-heading">
           <div>
             <p class="eyebrow">HOST A MATCH</p>
-            <h2>Make some room.</h2>
+            <h2>CREATE ROOM</h2>
           </div>
           <button
             type="button"
@@ -324,8 +329,8 @@
         </button>
       </div>
       <p>
-        Copy this link and send it to your friends. They’ll join your waiting
-        lobby.
+        Copy this link and send it to your friends. They’ll appear beside you in
+        character selection.
       </p>
       <label for="invite-link">YOUR ROOM INVITATION</label
       ><input id="invite-link" readonly />
@@ -354,7 +359,7 @@
           ><button id="export-save">Export save</button
           ><button id="import-save">Import save</button>
         </div>
-        <button id="back-lobby">Return everyone to lobby</button
+        <button id="back-lobby">Return to character selection</button
         ><button id="reset">Restart local game</button
         ><button id="quit-game" class="quiet">Leave game</button>
       </div>
@@ -428,23 +433,23 @@
       </div>
       <ol class="help-steps">
         <li>
-          <strong>Choose Multiplayer.</strong> Join a room, create one, or open
-          your friend’s invitation.
+          <strong>Choose VS Mode / Multiplayer.</strong> Join a room, create
+          one, or open your friend’s invitation.
         </li>
         <li>
           <strong>Load your own ROM.</strong> We check the original US release
           and keep it in your browser.
         </li>
         <li>
-          <strong>Pick your port and ready up.</strong> Friends appear in the
-          lobby as they join. Use an Xbox controller, an N64 controller or
-          adapter, or the keyboard.
+          <strong>Choose your fighter while you wait.</strong> Your room opens
+          straight into the original character screen. Move your colored hand
+          with the stick or WASD and press A / J to choose. Friends receive the
+          next controller port when they join; your selection stays in place.
         </li>
         <li>
-          <strong>Choose your fighter.</strong> The host starts when everyone is
-          ready. You go straight to the game’s character selection. Move your
-          colored hand to a fighter and press A. Press Start when everyone has
-          chosen.
+          <strong>Start the match.</strong> When everyone has chosen, the host
+          presses Start / Enter or Start Match. The room closes to new arrivals
+          during the fight and opens again in character selection.
         </li>
       </ol>
       <p>
