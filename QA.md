@@ -1,3 +1,9 @@
+# Windows background launcher - 2026-10-22
+
+- Host and minute-by-minute update tasks now invoke a locally compiled Windows GUI executable; it creates PowerShell with `CreateNoWindow`, redirected streams, and no interactive shell. Hosting desktop shortcuts use the same launcher. Binaries and launcher logs remain private in `.local`.
+- Compilation and all three PowerShell syntax checks passed. The new launcher completed `host start` with exit code 0 while preserving the running host PID. Existing task actions were replaced without stopping the server. All 33 Node tests still pass; gameplay code is unchanged.
+- This verifies launcher configuration and execution, not a physical reboot or a recording of the Windows desktop.
+
 # Windows testing update - v3.5.0 - 2026-10-22
 
 - 33 Node tests pass: authoritative frame deadlines, host-authorized Start pulses, late-input isolation, immutable agreed frames, peer-packet isolation, continued battle after guest disconnect, testing auto-load opt-in, existing ownership, room, controller and origin checks.

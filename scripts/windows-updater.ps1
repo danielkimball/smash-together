@@ -20,7 +20,8 @@ switch ($Command) {
   }
   'install' {
     $TaskUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $Action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Runner`" run" -WorkingDirectory $ProjectRoot
+    . (Join-Path $PSScriptRoot 'windows-launcher.ps1')
+    $Action = New-ScheduledTaskAction -Execute (Get-SmashBackgroundLauncher) -Argument 'update run' -WorkingDirectory $ProjectRoot
     $Login = New-ScheduledTaskTrigger -AtLogOn -User $TaskUser
     $Repeat = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
     $Principal = New-ScheduledTaskPrincipal -UserId $TaskUser -LogonType Interactive -RunLevel Limited

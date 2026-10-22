@@ -90,6 +90,8 @@ The current user's login task checks `origin/main` every minute. It prepares a s
 
 Use **Desktop > Smash Portal > Start Hosting / Stop Hosting / Restart Hosting / Play Smash**. Full restart closes rooms and may take a few minutes to restore the free public connection. Logs: `.local/host.log` and `.local/updates.log`. Remove the updater with `scripts/windows-updater.ps1 uninstall`; host `uninstall` is separate.
 
+Windows tasks and hosting shortcuts use a small GUI-subsystem launcher compiled locally from `scripts/windows-runner.cs`. It starts PowerShell with no console window, preserves task exit codes and keeps errors in `.local/launcher-*.log`. This avoids the brief console flash caused by scheduling PowerShell directly with `-WindowStyle Hidden`. Install scripts build the launcher using Windows' existing .NET Framework; no additional download is needed. Generated executables stay in `.local`, outside Git and Pages.
+
 Keep this PC plugged in, connected to the internet and signed in. **Windows+L** is safe. In **Settings > System > Power & battery (or Power) > Screen, sleep & hibernate timeouts**, set plugged-in sleep to **Never**. The screen may turn off. Ryker's plugged-in sleep and hibernate timeouts were already Never. Do not choose Sleep/Hibernate or shut down; after reboot, sign in once to start these tasks. Running before login would require a separately configured service and is not claimed here.
 
 ## Automatic failover design and implementation order

@@ -43,8 +43,8 @@ function Start-Host {
   if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Start-ScheduledTask -TaskName $TaskName
   } else {
-    $Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$Runner`" run"
-    Start-Process -FilePath 'powershell.exe' -ArgumentList $Arguments -WorkingDirectory $ProjectRoot -WindowStyle Hidden | Out-Null
+    . (Join-Path $PSScriptRoot 'windows-launcher.ps1')
+    Start-Process -FilePath (Get-SmashBackgroundLauncher) -ArgumentList 'host run' -WorkingDirectory $ProjectRoot -WindowStyle Hidden | Out-Null
   }
   Write-Output 'Starting Smash Portal. Check status and .local/host.log.'
 }
@@ -70,11 +70,13 @@ public static class SmashPortalPower {
   }
   'install' {
     $TaskUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $Action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Runner`" run" -WorkingDirectory $ProjectRoot
+    . (Join-Path $PSScriptRoot 'windows-launcher.ps1')
+    $Action = New-ScheduledTaskAction -Execute (Get-SmashBackgroundLauncher) -Argument 'host run' -WorkingDirectory $ProjectRoot
     $Trigger = New-ScheduledTaskTrigger -AtLogOn -User $TaskUser
     $Principal = New-ScheduledTaskPrincipal -UserId $TaskUser -LogonType Interactive -RunLevel Limited
     $Settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Description 'Smash Portal room host and free Cloudflare connection' -Force | Out-Null
+    Update-SmashHostingShortcuts
     Start-Host
   }
   'start' { Start-Host }
