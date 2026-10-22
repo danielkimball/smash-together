@@ -3,10 +3,21 @@ import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { publishLink } from "./publish-link.mjs";
 export const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const run = promisify(execFile);
+export async function writeFriendsShortcut(url) {
+  if (process.platform !== "darwin") return;
+  if (!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(url)) return;
+  const desktop = path.join(os.homedir(), "Desktop/Smash Together");
+  await mkdir(desktop, { recursive: true });
+  await writeFile(
+    path.join(desktop, "Friends Link.webloc"),
+    `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>URL</key><string>${url}</string></dict></plist>\n`,
+  );
+}
 const version = "2026.10.3";
 const releases = {
   "darwin-x64": [
@@ -79,6 +90,9 @@ export async function share(port = 8787) {
         }) + "\n",
       ).then(() => {
         console.log(`SHARE_URL=${match[0]}`);
+        writeFriendsShortcut(match[0]).catch((error) =>
+          console.error("Friends shortcut:", error.message),
+        );
         const publish = () =>
           publishLink(match[0]).catch((error) => {
             console.error("Stable link update:", error.message);

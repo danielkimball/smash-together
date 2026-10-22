@@ -85,7 +85,7 @@ async function until(c, type, predicate = () => true) {
 }
 async function create(a, options = {}) {
   const h = await client(a.ws);
-  h.send({ type: "create", protocol: 3, rom, build, name: "Dan", ...options });
+  h.send({ type: "create", protocol: 4, rom, build, name: "Dan", ...options });
   const joined = await until(h, "joined");
   const { room } = await until(h, "room");
   return { h, token: joined.token, id: joined.id, room };
@@ -94,7 +94,7 @@ async function join(a, token, options = {}) {
   const g = await client(a.ws);
   g.send({
     type: "join",
-    protocol: 3,
+    protocol: 4,
     rom,
     build,
     token,
@@ -322,13 +322,13 @@ test("testing cartridge is opt-in, password-gated, rate-limited and absent from 
   });
   const status = await fetch(enabled.http + "/api/status");
   const config = await status.json();
-  assert.equal(config.publicUrl, "https://example.github.io/smash/");
+  assert.equal(config.publicUrl, config.shareUrl);
   assert.equal(config.testingAvailable, true);
   assert.ok(!JSON.stringify(config).includes("private"));
   assert.ok(!JSON.stringify(config).includes("password"));
   assert.match(
     (await fetch(enabled.http)).headers.get("content-security-policy"),
-    /frame-ancestors https:\/\/example.github.io/,
+    /frame-ancestors 'none'/,
   );
   assert.equal(
     (await fetch(enabled.http + "/api/testing/cartridge")).status,

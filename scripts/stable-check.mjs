@@ -17,19 +17,21 @@ try {
     viewport: { width: 1440, height: 900 },
   });
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(publicUrl);
-  const game = await (await page.waitForSelector("#game")).contentFrame();
-  await game.locator("#power-on").waitFor({ state: "visible", timeout: 60000 });
-  await page.locator("#connection").waitFor({ state: "hidden" });
-  assert.equal(new URL(page.url()).origin, new URL(publicUrl).origin);
-  assert.ok(game.url().startsWith(shareUrl));
-  assert.deepEqual(
-    await page.locator("#game").evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      return [r.width, r.height];
-    }),
-    [1440, 900],
+  assert.equal(
+    publicUrl,
+    shareUrl,
+    "Invitations use the direct Cloudflare URL",
   );
+  await page.goto(process.env.SMASH_LEGACY_URL || publicUrl);
+  await page.waitForURL(shareUrl + "/", { timeout: 90000 });
+  const game = page;
+  await game.locator("#power-on").waitFor({ state: "visible", timeout: 60000 });
+  assert.equal(
+    page.frames().length,
+    1,
+    "The game is not embedded in an iframe",
+  );
+  assert.equal(new URL(page.url()).origin, new URL(shareUrl).origin);
   assert.equal(await game.evaluate(() => document.fullscreenEnabled), true);
   assert.equal(
     await game.evaluate(() =>
@@ -48,13 +50,13 @@ try {
       .textContent.includes("not correct"),
   );
   assert.equal(await game.evaluate(() => smash.engine.loaded), false);
-  await page.screenshot({ path: "artifacts/stable-testing-entry.png" });
+  await page.screenshot({ path: "artifacts/direct-testing-entry.png" });
   assert.deepEqual(errors, []);
   console.log(
-    "PASS stable address embeds the full-window game, delegates fullscreen/gamepad access and rejects an incorrect testing password",
+    "PASS direct Cloudflare game has no iframe, allows fullscreen/gamepad access and rejects an incorrect testing password",
   );
   await writeFile(
-    "artifacts/stable-check.json",
+    "artifacts/direct-check.json",
     JSON.stringify(
       {
         passed: true,

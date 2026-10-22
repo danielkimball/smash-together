@@ -188,6 +188,14 @@ export class Controls extends EventTarget {
   sample() {
     if (this.blocked || this.capture) return { buttons: 0, x: 0, y: 0 };
     const input = evaluate(this.profile, this.pad(), this.keys);
+    const touch = this.touch?.sample();
+    if (touch) {
+      input.buttons |= touch.buttons;
+      if (touch.analog) {
+        input.x = touch.x;
+        input.y = touch.y;
+      }
+    }
     if (
       (input.buttons & (BITS.l | BITS.r | BITS.start)) ===
       (BITS.l | BITS.r | BITS.start)

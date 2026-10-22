@@ -1,3 +1,4 @@
+import { Rounds } from "./rounds.js";
 const neutral = () => ({ buttons: 0, x: 0, y: 0 });
 const bytesOf = async (stream) =>
   new Uint8Array(await new Response(stream).arrayBuffer());
@@ -62,6 +63,7 @@ export class Netplay extends EventTarget {
     this.hashes = new Map();
     this.remoteHashes = new Map();
     this.sentInputs = new Map();
+    this.rounds = new Rounds();
   }
   get isHost() {
     return this.id && this.id === this.room?.hostId;
@@ -135,12 +137,12 @@ export class Netplay extends EventTarget {
       this.send({
         ...options,
         type: options.token || options.roomId ? "join" : "create",
-        protocol: 3,
+        protocol: 4,
         ticket: options.token
           ? sessionStorage.getItem("smash.ticket." + options.token)
           : undefined,
         rom: this.engine.romHash,
-        build: this.engine.build + "-smash-native-v3",
+        build: this.engine.build + "-smash-native-v4",
       });
     ws.onmessage = (e) => {
       if (ws !== this.socket) return;
@@ -259,6 +261,7 @@ export class Netplay extends EventTarget {
     this.emit();
   }
   leave() {
+    this.rounds.restore();
     clearTimeout(this.syncTimeout);
     const s = this.socket;
     this.socket = null;
@@ -397,6 +400,7 @@ export class Netplay extends EventTarget {
         hash: this.expectedHash,
         delay: this.delay,
         rawSize: raw.length,
+        rounds: this.rounds.snapshot(),
       }),
     );
     const packet = new Uint8Array(4 + meta.length + packed.length);
@@ -454,6 +458,7 @@ export class Netplay extends EventTarget {
     )
       return;
     this.engine.restore(bytes);
+    this.rounds.restore(meta.rounds);
     if (this.engine.hash() !== meta.hash)
       throw Error("Game state did not restore correctly. Reload and rejoin.");
     this.sendGame({ type: "ready", hash: meta.hash }, false, this.room.hostId);
@@ -611,7 +616,15 @@ export class Netplay extends EventTarget {
       this.next = time;
       return false;
     }
-    this.engine.frame(current);
+    // Fixed simulation-frame cadence on every peer, never a wall-clock UI
+    // poll. Stage select ignores its first ten native ticks, so six-frame
+    // sampling installs the input gate before any stage input is accepted.
+    // Battles/results need only two polls per second; this keeps snapshot
+    // copying off most gameplay frames on phones. Reuse inspection for UI.
+    const inspectEvery = [22, 24].includes(this.rounds.scene) ? 30 : 6;
+    if (this.frame % inspectEvery === 0)
+      this.rounds.observe(this.engine.inspect(), this.room);
+    this.engine.frame(this.rounds.filter(current, this.room));
     this.inputs.delete(this.frame);
     this.frame++;
     this.next = Math.max(

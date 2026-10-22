@@ -130,13 +130,19 @@ export class Engine {
       throw Error("Could not restore the game state.");
     this.flushAudio();
   }
-  enableRoomItems() {
-    // Enable only the native Item Switch menu for this room's session. This
-    // changes one backup-data flag in a browser-local snapshot, never the ROM
-    // or the player's stored single-player save. LBBackupData.unlock_mask:
-    // 12 * sizeof(LBBackupVSRecord=0x5c) + 7, ItemSwitch enum bit 6.
+  unlockAll() {
+    // Native LBBackupData: all twelve playable fighters (FTKind 0..11),
+    // Mushroom Kingdom, Sound Test and Item Switch. Modify the session's
+    // save data through the official serializer; the cartridge is unchanged.
     const state = this.snapshot();
-    state[448 + ((0xa44e0 + 0x457) ^ 3)] |= 1 << 6;
+    state[448 + ((0xa44e0 + 0x457) ^ 3)] |= 0x7f;
+    state[448 + ((0xa44e0 + 0x458) ^ 3)] |= 0x0f;
+    state[448 + ((0xa44e0 + 0x459) ^ 3)] = 0xff;
+    this.restore(state);
+  }
+  enableStageSelect() {
+    const state = this.snapshot();
+    state[448 + ((0xa4d08 + 10) ^ 3)] = 1;
     this.restore(state);
   }
   inspect() {
@@ -169,6 +175,30 @@ export class Engine {
     this.info = {
       scene,
       players,
+      selectionTicks: scene === 16 ? word(0x8013bdcc) : 0,
+      unlocks: {
+        features: byte(0x800a4937),
+        fighters: (byte(0x800a4938) << 8) | byte(0x800a4939),
+      },
+      stage:
+        scene === 21
+          ? { slot: word(0x80134bd8), unlocked: byte(0x80134c1c) }
+          : null,
+      results:
+        scene === 24
+          ? {
+              ticks: word(0x80139b78),
+              kind: word(0x80139c10),
+              teams: !!word(0x80139c14),
+              players: [0, 1, 2, 3].map((slot) => ({
+                slot,
+                present: !!word(0x80139bd0 + slot * 4),
+                place: word(0x80139bb0 + slot * 4),
+                points: word(0x80139ba0 + slot * 4),
+                kos: word(0x80139b80 + slot * 4),
+              })),
+            }
+          : null,
       teams: scene === 16 && !!word(0x8013bda8),
       rules: {
         mode: byte(rules + 3) & 2 ? "stock" : "time",

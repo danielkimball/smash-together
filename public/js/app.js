@@ -8,6 +8,7 @@ import {
   evaluate,
 } from "./controls.js";
 import { Netplay, compress, decompress } from "./netplay.js";
+import { TouchControls } from "./touch.js";
 import * as storage from "./storage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -47,6 +48,16 @@ let shareUrl = null,
   publicUrl = null,
   polling = false;
 controls.blocked = true;
+controls.touch = new TouchControls($("touch-controls"), controls, {
+  menu: () => {
+    dialog("menu-dialog");
+    renderGame();
+  },
+  wake: () => engine.audioStart().catch(() => {}),
+});
+$("touch-mode").value = controls.touch.mode || "auto";
+$("touch-mode").onchange = (event) =>
+  controls.touch.setMode(event.target.value);
 window.smash = {
   engine,
   controls,
@@ -101,7 +112,10 @@ function blockInput() {
     !!document.querySelector("dialog[open]") ||
     (paused && net.state === "offline") ||
     !["offline", "playing"].includes(net.state);
-  if (controls.blocked) controls.keys.clear();
+  if (controls.blocked) {
+    controls.keys.clear();
+    controls.touch.reset();
+  }
 }
 function setView(name) {
   const changed = view !== name;
@@ -333,6 +347,7 @@ async function prepareMain() {
   ]);
   if (engine.inspect().scene !== 7)
     throw Error("Could not open the Smash menu. Reload to retry.");
+  engine.unlockAll();
   menuState = engine.snapshot();
 }
 async function showMainMenu() {
@@ -395,7 +410,7 @@ async function setupRoom(options) {
   busy("Set the rules", "Opening Smash’s multiplayer settings…");
   try {
     await prepareMain();
-    engine.enableRoomItems();
+    engine.unlockAll();
     await runSequence([
       [10, { buttons: 0, x: 0, y: -85 }],
       [60, neutral],
@@ -515,6 +530,9 @@ function requestMatch() {
   const r = net.room;
   if (!r || !net.isHost || !r.selecting || !net.running || startRequest) return;
   const info = engine.inspect();
+  // Native character selection ignores Start for its first second. In
+  // rematches tokens are already selected, so wait for that transition too.
+  if (info.scene === 16 && info.selectionTicks <= 60) return;
   if (r.members.length < 2)
     return toast(
       "Invite a friend. You can choose your fighter while you wait.",
@@ -555,6 +573,8 @@ function playerName() {
   return $("player-name").value.trim() || "Player";
 }
 function controllerName() {
+  if (controls.touch.enabled && controls.selected === "keyboard")
+    return "Touch controller";
   return controls.selected === "keyboard"
     ? "Keyboard"
     : controls.pad()?.id || "Controller disconnected";
@@ -725,6 +745,24 @@ $("back-lobby").onclick = returnLobby;
 $("game-rejoin").onclick = attempt(() => joinRoom(net.lastOptions));
 function renderCharacterRoom() {
   const r = net.room;
+  const chooser = net.rounds.chooser(r);
+  const stage = r && net.rounds.scene === 21 && view === "game";
+  const winner = r?.members.find((p) => p.id === net.rounds.winnerId);
+  const results =
+    r &&
+    net.rounds.scene === 24 &&
+    net.rounds.resultsSeen &&
+    engine.info?.results?.kind !== 4 &&
+    winner;
+  $("stage-choice").hidden = !stage && !results;
+  if (stage || results) {
+    const yours = chooser?.id === net.id;
+    $("stage-choice").textContent = results
+      ? `${chooser?.name || "Host"} won · picks next stage · Start to continue`
+      : yours
+        ? `${winner ? "Winner’s pick" : "Host’s pick"} · Choose a stage · A to start`
+        : `${chooser?.name || "Host"} is choosing the stage…`;
+  }
   const showing = r && r.selecting && view === "game";
   $("character-room").hidden = !showing;
   if (!showing) return;
@@ -771,6 +809,8 @@ function renderCharacterRoom() {
   $("start-game").hidden = !net.isHost;
   $("start-game").disabled =
     !net.running ||
+    info.scene !== 16 ||
+    info.selectionTicks <= 60 ||
     r.members.length < 2 ||
     !net.allConnected ||
     !r.members.every((p) => info.players[p.slot]?.selected) ||
@@ -1138,7 +1178,7 @@ $("reset").onclick = () => {
 };
 function diagnostics() {
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nRelay: available for every player\nLatency: ${net.rtt || "—"} ms\nInput buffer: ${net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.1.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nRelay: available for every player\nLatency: ${net.rtt || "—"} ms\nInput buffer: ${net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.2.0`;
 }
 function menuController(time) {
   const pad = controls.pad();
@@ -1249,14 +1289,15 @@ function tick(time) {
     if (engine.loaded && !preparing && time - (engine.lastInspect || 0) > 200) {
       engine.lastInspect = time;
       if (["native", "game"].includes(view)) {
-        const info = engine.inspect();
+        const info =
+          net.running && engine.info ? engine.info : engine.inspect();
         if (roomSetup) {
           $("setup-help").textContent =
             info.scene === 11
               ? "Set item frequency and turn individual items on or off. B returns to VS Options."
               : info.scene === 10
-                ? "Set handicap, team attack, stage select and damage. Open ITEM SWITCH for item settings. B goes back."
-                : "Choose Time or Stock, then set minutes or lives. Time supports ∞. VS OPTIONS includes items. Choose VS START when ready.";
+                ? "Set handicap, team attack and damage. Open ITEM SWITCH for items. Stage Select stays on so the winner chooses. B goes back."
+                : "Choose Time or Stock, then minutes or lives (∞ is available). VS OPTIONS includes items. VS START continues. Winner picks the next stage.";
           if (info.scene === 16) {
             const options = roomSetup;
             roomSetup = null;
@@ -1266,6 +1307,7 @@ function tick(time) {
             attempt(async () => {
               try {
                 await runSequence([[90, neutral]]);
+                engine.enableStageSelect();
                 versusState = engine.snapshot();
               } finally {
                 preparing = false;

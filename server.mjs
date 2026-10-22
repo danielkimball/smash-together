@@ -30,9 +30,6 @@ export function createApp({
   config = {},
 } = {}) {
   const rooms = new Map();
-  const frameOrigin = config.publicUrl
-    ? new URL(config.publicUrl).origin
-    : null;
   const attempts = new Map();
   let testingBytes;
   const server = http.createServer(async (req, res) => {
@@ -44,7 +41,7 @@ export function createApp({
     );
     res.setHeader(
       "Content-Security-Policy",
-      `default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors ${frameOrigin || "'none'"}`,
+      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     );
     try {
       if (
@@ -121,9 +118,9 @@ export function createApp({
         return res.end(
           JSON.stringify({
             ok: true,
-            version: "3.1.0",
+            version: "3.2.0",
             shareUrl,
-            publicUrl: config.publicUrl || shareUrl,
+            publicUrl: shareUrl,
             testingAvailable: !!config.testing?.romPath,
           }),
         );
@@ -274,7 +271,7 @@ export function createApp({
       if (m.type === "ping") return send(socket, { type: "pong", id: m.id });
       if (m.type === "create" || m.type === "join") {
         if (meta) return fail("Already in a room");
-        if (m.protocol !== 3)
+        if (m.protocol !== 4)
           return fail(
             "This page has been updated. Reload to use the new Smash rooms.",
           );

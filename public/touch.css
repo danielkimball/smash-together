@@ -1,0 +1,622 @@
+.stage-choice {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 62px;
+  transform: translateX(-50%);
+  max-width: 90%;
+  width: max-content;
+  padding: 8px 16px;
+  border: 1px solid #ffe49b66;
+  border-radius: 8px;
+  background: #11182be8;
+  color: #ffe49b;
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+#touch-controls {
+  position: absolute;
+  z-index: 4;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  pointer-events: none;
+}
+#touch-controls button,
+.touch-stick {
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+}
+#touch-controls button {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  font-weight: 800;
+  line-height: 1;
+  font-family: Arial, sans-serif;
+  transition: none;
+  box-shadow:
+    inset 0 2px 3px #fff8,
+    0 3px 4px #0008;
+  border: 3px solid #161019;
+  color: #0009;
+}
+#touch-controls button[aria-pressed="true"] {
+  filter: brightness(1.45);
+  box-shadow:
+    inset 0 3px 10px #0008,
+    0 0 0 2px #fffc;
+  transform: scale(0.95);
+}
+.touch-stick {
+  position: absolute;
+  aspect-ratio: 1;
+}
+.stick-gate {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(
+    29% 0,
+    71% 0,
+    100% 29%,
+    100% 71%,
+    71% 100%,
+    29% 100%,
+    0 71%,
+    0 29%
+  );
+  background: radial-gradient(#171717 25%, #444 66%, #181818 69%);
+}
+.stick-thumb {
+  position: absolute;
+  inset: 19%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    #444 0 6%,
+    #c5c5c5 8% 14%,
+    #ececec 15% 18%,
+    #bbb 19% 29%,
+    #eee 30% 33%,
+    #c6c6c6 34% 44%,
+    #eee 45% 48%,
+    #cacaca 49% 61%,
+    #eee 63% 67%,
+    #bcbcbc 69%
+  );
+  box-shadow:
+    0 5px 8px #0009,
+    inset 0 3px 6px white;
+}
+.touch-stick.pressed .stick-thumb {
+  filter: brightness(1.15);
+}
+.touch-dpad {
+  position: absolute;
+  aspect-ratio: 1;
+}
+.dpad-cross {
+  position: absolute;
+  inset: 0;
+  background: #171717;
+  clip-path: polygon(
+    33% 0,
+    67% 0,
+    67% 33%,
+    100% 33%,
+    100% 67%,
+    67% 67%,
+    67% 100%,
+    33% 100%,
+    33% 67%,
+    0 67%,
+    0 33%,
+    33% 33%
+  );
+}
+.dpad-cross:after {
+  content: "";
+  position: absolute;
+  inset: 38%;
+  border-radius: 50%;
+  background: #0c0c0c;
+  box-shadow: inset 0 2px 3px #000;
+}
+#touch-controls .touch-dpad button {
+  width: 34%;
+  height: 34%;
+  background: linear-gradient(#555, #252525);
+  border: 2px solid #161616;
+  border-radius: 9px;
+  box-shadow: inset 0 2px 3px #777;
+  font-size: clamp(27px, 8vw, 48px);
+  color: #111;
+}
+[data-touch="du"],
+[data-touch="cu"] {
+  top: 0;
+  left: 33%;
+}
+[data-touch="dl"],
+[data-touch="cl"] {
+  top: 33%;
+  left: 0;
+}
+[data-touch="dr"],
+[data-touch="cr"] {
+  top: 33%;
+  right: 0;
+}
+[data-touch="dd"],
+[data-touch="cd"] {
+  bottom: 0;
+  left: 33%;
+}
+.touch-face {
+  position: absolute;
+}
+#touch-controls .touch-face button {
+  width: 47%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  font-size: clamp(24px, 8vw, 50px);
+}
+.touch-a {
+  background: radial-gradient(at 40% 20%, #2885eb, #0045ac 70%, #001b69);
+  right: 0;
+  bottom: 0;
+}
+.touch-b {
+  background: radial-gradient(at 40% 20%, #23db61, #00a237 70%, #00561d);
+  left: 0;
+  top: 35%;
+}
+.touch-z {
+  background: radial-gradient(at 40% 20%, #982ded, #6906be 70%, #310263);
+  right: 12%;
+  top: 0;
+}
+.touch-c {
+  position: absolute;
+  aspect-ratio: 1;
+}
+#touch-controls .touch-c button {
+  width: 35%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(at 40% 20%, #ffed70, #fcd52d 70%, #e2a900);
+  color: #b98f0a;
+  font-size: clamp(26px, 8vw, 46px);
+}
+#touch-controls .touch-shoulder {
+  height: 9%;
+  width: 29%;
+  top: 0;
+  background: linear-gradient(#555, #252525);
+  font-size: clamp(24px, 7vw, 42px);
+  border-radius: 0 0 28px 0;
+}
+#touch-controls .touch-l {
+  left: 0;
+}
+#touch-controls .touch-r {
+  right: 0;
+  border-radius: 0 0 0 28px;
+}
+#touch-controls .touch-menu,
+#touch-controls .touch-start {
+  left: 44%;
+  width: 12%;
+  aspect-ratio: 1;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.touch-menu i,
+.touch-start i {
+  display: block;
+  width: 80%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px solid #141414;
+  background: linear-gradient(#fafafa, #aaa);
+  box-shadow:
+    inset 0 2px 2px #fff,
+    0 3px 4px #0007;
+}
+.touch-start i {
+  background: linear-gradient(#ff6464, #ef100a 70%);
+}
+.touch-menu span,
+.touch-start span {
+  position: absolute;
+  top: 106%;
+  font-size: 10px;
+  color: #311259;
+}
+.touch-brand {
+  position: absolute;
+  top: 2%;
+  left: 29%;
+  width: 42%;
+  color: white;
+  text-align: center;
+  letter-spacing: 0.22em;
+  font-size: 13px;
+}
+body[data-touch="on"][data-view="game"],
+body[data-touch="on"][data-view="native"] {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+body[data-touch="on"] #game-view {
+  --screen-top: env(safe-area-inset-top, 0px);
+  --screen-width: min(100vw, calc(var(--screen-height) * 1.333333));
+  --screen-height: min(75vw, 43dvh);
+}
+body[data-touch="on"] #canvas,
+body[data-touch="on"]:has(#character-room:not([hidden])) #canvas {
+  position: absolute;
+  left: 50%;
+  top: var(--screen-top) !important;
+  width: var(--screen-width) !important;
+  height: var(--screen-height) !important;
+  transform: translateX(-50%);
+}
+body[data-touch="on"] .native-hitbox {
+  width: var(--screen-width);
+  height: var(--screen-height);
+  top: var(--screen-top);
+  transform: translateX(-50%);
+}
+body[data-touch="on"] .native-tools,
+body[data-touch="on"] .native-legend,
+body[data-touch="on"] .game-hud,
+body[data-touch="on"] .fighter-hint {
+  display: none;
+}
+body[data-touch="on"] #game-view.idle {
+  cursor: auto;
+}
+body[data-touch="on"] .game-notice {
+  padding: 15px;
+}
+body[data-touch="on"] .room-ribbon {
+  top: env(safe-area-inset-top, 0px);
+  padding: 4px 8px;
+  height: 49px;
+  gap: 6px;
+}
+body[data-touch="on"] .room-ribbon strong {
+  font-size: 13px;
+}
+body[data-touch="on"] .room-ribbon span {
+  font-size: 9px;
+}
+body[data-touch="on"] .room-ribbon button {
+  padding: 6px;
+  font-size: 10px;
+}
+body[data-touch="on"] .room-bottom {
+  padding: 0 5px;
+}
+body[data-touch="on"] .native-ports {
+  gap: 3px;
+  padding-top: 3px;
+}
+body[data-touch="on"] .native-port {
+  padding: 3px 4px;
+  gap: 2px;
+  border-top-width: 2px;
+}
+body[data-touch="on"] .native-port strong {
+  font-size: 9px;
+}
+body[data-touch="on"] .native-port span {
+  font-size: 8px;
+}
+body[data-touch="on"] .room-commands {
+  padding: 3px 0;
+  gap: 5px;
+}
+body[data-touch="on"] .room-commands > span {
+  font-size: 9px;
+}
+body[data-touch="on"] .room-commands button {
+  padding: 6px 10px;
+  font-size: 10px;
+}
+body[data-touch="on"] .room-commands kbd {
+  display: none;
+}
+body[data-touch="on"] .setup-inputs,
+body[data-touch="on"] .setup-footer > span {
+  display: none;
+}
+body[data-touch="on"] .setup-heading {
+  padding: 4px 8px;
+  top: env(safe-area-inset-top, 0px);
+}
+body[data-touch="on"] .setup-heading strong {
+  font-size: 14px;
+}
+body[data-touch="on"] .setup-heading .eyebrow {
+  font-size: 7px;
+}
+body[data-touch="on"] .setup-heading button {
+  padding: 7px;
+  font-size: 11px;
+}
+body[data-touch="on"] .setup-footer {
+  padding: 5px 10px;
+  background: #101725e8;
+}
+body[data-touch="on"] .setup-footer p {
+  font-size: 10px;
+  margin: 0;
+  line-height: 1.3;
+}
+@media (orientation: portrait) {
+  body[data-touch="on"] #game-view {
+    --screen-top: max(
+      env(safe-area-inset-top, 0px),
+      calc((45dvh - var(--screen-height)) / 2)
+    );
+  }
+  body[data-touch="on"] #touch-controls {
+    inset: 48% 0 env(safe-area-inset-bottom, 0px);
+    background:
+      repeating-linear-gradient(0deg, #ffffff07 0 1px, transparent 1px 24px),
+      repeating-linear-gradient(90deg, #ffffff08 0 1px, transparent 1px 24px),
+      linear-gradient(110deg, #6500ce, #8135df);
+    border-top: 1px solid #8a44e5;
+  }
+  .touch-stick {
+    left: 6%;
+    top: 17%;
+    width: 34%;
+  }
+  .touch-dpad {
+    left: 5%;
+    bottom: 9%;
+    width: 36%;
+  }
+  .touch-face {
+    right: 5%;
+    top: 14%;
+    width: 42%;
+    aspect-ratio: 1.05;
+  }
+  .touch-c {
+    right: 7%;
+    bottom: 9%;
+    width: 38%;
+  }
+  #touch-controls .touch-menu {
+    top: 10%;
+  }
+  #touch-controls .touch-start {
+    top: 58%;
+  }
+  body[data-touch="on"]:has(#character-room:not([hidden])) #game-view {
+    --screen-top: calc(51px + env(safe-area-inset-top, 0px));
+    --screen-height: min(
+      75vw,
+      calc(48dvh - 121px - env(safe-area-inset-top, 0px))
+    );
+  }
+  body[data-touch="on"] .room-bottom {
+    bottom: 52%;
+  }
+  body[data-touch="on"]:has(#room-setup:not([hidden])) #game-view {
+    --screen-top: calc(43px + env(safe-area-inset-top, 0px));
+    --screen-height: min(
+      75vw,
+      calc(48dvh - 100px - env(safe-area-inset-top, 0px))
+    );
+  }
+  body[data-touch="on"] .setup-footer {
+    bottom: 52%;
+  }
+  body[data-touch="on"] .stage-choice {
+    top: auto;
+    bottom: 52%;
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+}
+@media (orientation: portrait) and (max-height: 740px) {
+  body[data-touch="on"] #touch-controls {
+    top: 40%;
+  }
+  body[data-touch="on"] #game-view {
+    --screen-height: min(75vw, 36dvh);
+    --screen-top: max(
+      env(safe-area-inset-top, 0px),
+      calc((39dvh - var(--screen-height)) / 2)
+    );
+  }
+  body[data-touch="on"]:has(#character-room:not([hidden])) #game-view {
+    --screen-height: min(
+      75vw,
+      calc(40dvh - 121px - env(safe-area-inset-top, 0px))
+    );
+  }
+  body[data-touch="on"]:has(#room-setup:not([hidden])) #game-view {
+    --screen-height: min(
+      75vw,
+      calc(40dvh - 100px - env(safe-area-inset-top, 0px))
+    );
+  }
+  body[data-touch="on"] .room-bottom,
+  body[data-touch="on"] .setup-footer,
+  body[data-touch="on"] .stage-choice {
+    bottom: 60%;
+  }
+}
+@media (orientation: landscape) {
+  body[data-touch="on"] #game-view {
+    --wing: 20vw;
+    --screen-width: min(
+      calc(100vw - 2 * var(--wing)),
+      calc((100dvh - 16px) * 1.333333)
+    );
+    --screen-height: min(
+      calc((100vw - 2 * var(--wing)) * 0.75),
+      calc(100dvh - 16px)
+    );
+    --screen-top: calc((100dvh - var(--screen-height)) / 2);
+  }
+  body[data-touch="on"] #touch-controls {
+    inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+  .touch-brand {
+    display: none;
+  }
+  .touch-stick {
+    left: 4%;
+    top: 24%;
+    width: 17%;
+    max-width: 34dvh;
+  }
+  .touch-dpad {
+    left: 4%;
+    bottom: 4%;
+    width: 17%;
+    max-width: 34dvh;
+  }
+  .touch-face {
+    right: 3%;
+    top: 23%;
+    width: 17%;
+    height: 35%;
+  }
+  .touch-c {
+    right: 4%;
+    bottom: 4%;
+    width: 17%;
+    max-width: 34dvh;
+  }
+  #touch-controls .touch-shoulder {
+    width: 13%;
+    height: 11%;
+    top: 4%;
+    border-radius: 50px;
+  }
+  #touch-controls .touch-l {
+    left: 2%;
+  }
+  #touch-controls .touch-r {
+    right: 2%;
+  }
+  #touch-controls button {
+    box-shadow: none;
+    border-color: #777;
+    color: #ccc;
+  }
+  #touch-controls .touch-dpad button {
+    box-shadow: none;
+    background: #303030;
+    color: #aaa;
+    font-size: 6dvh;
+  }
+  #touch-controls .touch-face button {
+    font-size: 5.5dvh;
+  }
+  #touch-controls .touch-c button {
+    font-size: 5dvh;
+    background: #b1940a;
+    color: #ddd;
+    border-color: #414141;
+  }
+  #touch-controls .touch-z {
+    background: #430885;
+    border-color: #333;
+  }
+  #touch-controls .touch-b {
+    background: #00692b;
+    border-color: #333;
+  }
+  #touch-controls .touch-a {
+    background: #0d3981;
+    border-color: #333;
+  }
+  #touch-controls .touch-menu,
+  #touch-controls .touch-start {
+    width: 10%;
+    height: 7%;
+    left: 45%;
+    aspect-ratio: auto;
+    background: #555b;
+    border: 2px solid #ccc9;
+    border-radius: 40px;
+  }
+  #touch-controls .touch-menu {
+    top: 4%;
+  }
+  #touch-controls .touch-start {
+    bottom: 4%;
+  }
+  .touch-menu i,
+  .touch-start i {
+    display: none;
+  }
+  .touch-menu span,
+  .touch-start span {
+    position: static;
+    color: #ddd;
+    font-size: clamp(10px, 3dvh, 16px);
+  }
+  body[data-touch="on"] .character-room,
+  body[data-touch="on"] .room-setup {
+    left: 21%;
+    right: 21%;
+  }
+  body[data-touch="on"] .room-ribbon {
+    top: 0;
+    height: 39px;
+    background: #131e34f2;
+    padding: 3px;
+  }
+  body[data-touch="on"] .room-ribbon span {
+    display: none;
+  }
+  body[data-touch="on"] .room-bottom {
+    bottom: 0;
+  }
+  body[data-touch="on"]:has(#character-room:not([hidden])) #game-view {
+    --screen-top: 40px;
+    --screen-height: calc(100dvh - 105px);
+  }
+  body[data-touch="on"]:has(#character-room:not([hidden])) .touch-menu {
+    top: 42px !important;
+  }
+  body[data-touch="on"]:has(#character-room:not([hidden])) .touch-start {
+    bottom: 67px !important;
+  }
+  body[data-touch="on"] .setup-heading .eyebrow {
+    display: none;
+  }
+  body[data-touch="on"]:has(#room-setup:not([hidden])) #game-view {
+    --screen-top: 38px;
+    --screen-height: calc(100dvh - 90px);
+  }
+  body[data-touch="on"]:has(#room-setup:not([hidden])) .touch-menu {
+    top: 39px !important;
+  }
+  body[data-touch="on"]:has(#room-setup:not([hidden])) .touch-start {
+    bottom: 42px !important;
+  }
+  body[data-touch="on"] .stage-choice {
+    top: 13%;
+    max-width: 55%;
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+}

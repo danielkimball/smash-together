@@ -2,11 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#101319" />
     <title>Smash Together · Smash 64 Online</title>
     <link rel="icon" href="/mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/touch.css" />
     <script type="module" src="/js/app.js"></script>
   </head>
   <body>
@@ -156,6 +161,63 @@
         Move your colored hand to a fighter · A to choose · Start when everyone
         has chosen
       </p>
+      <p id="stage-choice" class="stage-choice" aria-live="polite" hidden></p>
+      <section id="touch-controls" aria-label="Touch N64 controller" hidden>
+        <span class="touch-brand" aria-hidden="true">SMASH <b>64</b></span>
+        <button
+          class="touch-shoulder touch-l"
+          data-touch="l"
+          aria-label="L shoulder"
+        >
+          L
+        </button>
+        <button
+          class="touch-shoulder touch-r"
+          data-touch="r"
+          aria-label="R shield"
+        >
+          R
+        </button>
+        <div
+          class="touch-stick"
+          role="group"
+          aria-label="Analog stick, drag to move"
+        >
+          <span class="stick-gate"></span><span class="stick-thumb"></span>
+        </div>
+        <div class="touch-dpad" role="group" aria-label="Directional pad">
+          <span class="dpad-cross"></span>
+          <button data-touch="du" aria-label="D-pad up">⌃</button>
+          <button data-touch="dl" aria-label="D-pad left">‹</button>
+          <button data-touch="dr" aria-label="D-pad right">›</button>
+          <button data-touch="dd" aria-label="D-pad down">⌄</button>
+        </div>
+        <div class="touch-face">
+          <button class="touch-z" data-touch="z" aria-label="Z grab">Z</button>
+          <button class="touch-b" data-touch="b" aria-label="B special or back">
+            B
+          </button>
+          <button
+            class="touch-a"
+            data-touch="a"
+            aria-label="A attack or select"
+          >
+            A
+          </button>
+        </div>
+        <div class="touch-c" role="group" aria-label="C buttons, jump">
+          <button data-touch="cu" aria-label="C up">▴</button>
+          <button data-touch="cl" aria-label="C left">◂</button>
+          <button data-touch="cr" aria-label="C right">▸</button>
+          <button data-touch="cd" aria-label="C down">▾</button>
+        </div>
+        <button class="touch-menu" aria-label="Open game menu">
+          <i></i><span>MENU</span>
+        </button>
+        <button class="touch-start" data-touch="start" aria-label="Start">
+          <i></i><span>START</span>
+        </button>
+      </section>
     </section>
     <div id="shell" class="shell">
       <header class="topbar">
@@ -486,10 +548,16 @@
         </button>
       </div>
       <p class="dialog-description">
-        Pair Bluetooth controllers in your computer’s settings, or connect by
-        USB. Then press a button. Xbox controllers have a preset; use guided
-        setup for N64 controllers and adapters.
+        Pair Bluetooth controllers in your device’s settings, or connect by USB.
+        Then press a button. Xbox controllers have a preset; use guided setup
+        for N64 controllers and adapters.
       </p>
+      <label for="touch-mode">PHONE TOUCH CONTROLS</label>
+      <select id="touch-mode">
+        <option value="auto">Automatic on touch screens</option>
+        <option value="on">Show touch controls</option>
+        <option value="off">Hide · use a paired controller</option>
+      </select>
       <label for="device">INPUT DEVICE</label
       ><select id="device">
         <option value="keyboard">Keyboard</option>

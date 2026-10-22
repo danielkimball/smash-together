@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import os from "node:os";
-import { root } from "./share.mjs";
+import { root, writeFriendsShortcut } from "./share.mjs";
 const run = promisify(execFile),
   label = "io.labetesoftware.smash64",
   domain = `gui/${process.getuid()}`;
@@ -58,12 +58,14 @@ if (command === "install") {
     );
   await writeFile(
     path.join(desktop, "READ ME.txt"),
-    `Smash Together\n\nDouble-click Play Smash.command to open your game.\nPair your Xbox or N64 controller, press a button, then choose Controller setup.\nPress Start to open the original Smash menu. Choose VS Mode / Multiplayer, then create a room.\nYour friends open the link in Chrome/Edge, load their own ROMs and join.\nSet Time/Stock, lives or minutes, and VS Options / Item Switch first. Choose VS START.\nThen choose your fighter while friends join. Invite friends copies your stable room link.\nEach friend joins the next controller port. When everyone has chosen, the host presses Start.\nRename beside the room title changes its name for everyone.\nFriends bookmark https://danielkimball.github.io/smash-together/\nThe small diamond in the bottom-right corner opens password testing access.\nUse Esc or L + R + Start for the overlay menu; Fullscreen hides browser chrome.\n\nKeep this laptop plugged in, its lid open, and both game tabs visible.\nThe service prevents idle sleep while running. Stop Sharing.command stops\nthe website, relay and sleep prevention. Start Sharing.command starts them.\nYour bookmark stays the same after restarts. Rooms reset, so copy a fresh room invite.\n\nFull instructions and Mac mini migration: ${path.join(root, "README.md")}\nSource code: ${root}\n`,
+    `Smash Together\n\nDouble-click Play Smash.command to open your game.\nPair your Xbox or N64 controller, press a button, then choose Controller setup.\nPress Start to open the original Smash menu. Choose VS Mode / Multiplayer, then create a room.\nYour friends open the link in Chrome/Edge, load their own ROMs and join.\nSet Time/Stock, lives or minutes, and VS Options / Item Switch first. Choose VS START.\nThen choose your fighter while friends join. Invite friends copies your direct Cloudflare room link.\nEach friend joins the next controller port. When everyone has chosen, the host presses Start.\nRename beside the room title changes its name for everyone.\nShare the current Friends Link.webloc or use Invite friends.\nAll 12 fighters and all 9 VS stages are unlocked. The winner picks the next stage.\nPhone touch controls appear automatically; rotate for landscape.\nThe small diamond in the bottom-right corner opens password testing access.\nUse Esc or L + R + Start for the overlay menu; Fullscreen hides browser chrome.\n\nKeep this laptop plugged in, its lid open, and both game tabs visible.\nThe service prevents idle sleep while running. Stop Sharing.command stops\nthe website, relay and sleep prevention. Start Sharing.command starts them.\nThe sharing address can change after a full restart. Friends Link.webloc updates automatically.\nRooms reset after a restart, so copy a fresh room invite.\n\nFull instructions and Mac mini migration: ${path.join(root, "README.md")}\nSource code: ${root}\n`,
   );
-  await writeFile(
-    path.join(desktop, "Friends Link.webloc"),
-    '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>URL</key><string>https://danielkimball.github.io/smash-together/</string></dict></plist>',
-  );
+  try {
+    const shared = JSON.parse(
+      await readFile(path.join(root, ".local/share.json"), "utf8"),
+    );
+    await writeFriendsShortcut(shared.url);
+  } catch {} // The sharing process writes the shortcut as soon as its URL arrives.
   console.log(
     "Installed. The game runs at login. Desktop shortcuts: " + desktop,
   );

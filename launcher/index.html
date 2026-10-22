@@ -18,14 +18,6 @@
         color: #eee;
         font-family: system-ui, sans-serif;
       }
-      iframe {
-        position: fixed;
-        inset: 0;
-        border: 0;
-        width: 100%;
-        height: 100%;
-        height: 100dvh;
-      }
       #connection {
         position: fixed;
         inset: 0;
@@ -62,31 +54,16 @@
     </style>
   </head>
   <body>
-    <iframe
-      id="game"
-      title="Smash Together game"
-      allow="fullscreen; autoplay; gamepad; clipboard-write"
-      allowfullscreen
-    ></iframe>
     <div id="connection">
       <h1>SMASH TOGETHER</h1>
       <p id="message">Connecting to the game…</p>
       <button id="retry" hidden>Try again</button>
     </div>
     <script type="module">
-      const frame = document.getElementById("game"),
-        panel = document.getElementById("connection"),
-        message = document.getElementById("message"),
+      const message = document.getElementById("message"),
         retry = document.getElementById("retry");
-      let server = "",
-        ready = false,
-        pending = false;
-      function roomHash() {
-        return /^#room=[a-f0-9]{36}$/.test(location.hash) ? location.hash : "";
-      }
       async function connect() {
-        if (pending) return;
-        pending = true;
+        retry.hidden = true;
         try {
           const response = await fetch("./server.json?t=" + Date.now(), {
             cache: "no-store",
@@ -96,58 +73,23 @@
             url = new URL(data.url);
           if (
             url.protocol !== "https:" ||
-            !url.hostname.endsWith(".trycloudflare.com") ||
+            !/^[a-z0-9-]+\.trycloudflare\.com$/.test(url.hostname) ||
             url.pathname !== "/"
           )
             throw Error("Invalid host");
-          if (server !== url.origin || (!ready && retry.hidden === false)) {
-            server = url.origin;
-            ready = false;
-            panel.hidden = false;
-            retry.hidden = true;
-            message.textContent = "Connecting to the game…";
-            frame.src = server + "/" + roomHash();
-            setTimeout(() => {
-              if (!ready) {
-                message.textContent =
-                  "The host may be restarting or asleep. Keep this address—it stays the same. The host laptop needs to be awake to play.";
-                retry.hidden = false;
-              }
-            }, 20000);
-          }
+          message.textContent = "Opening the game directly on Cloudflare…";
+          location.replace(
+            url.origin +
+              "/" +
+              (/^#room=[a-f0-9]{36}$/.test(location.hash) ? location.hash : ""),
+          );
         } catch {
-          if (!ready) {
-            message.textContent =
-              "The game host is currently unavailable. Try again shortly.";
-            retry.hidden = false;
-          }
-        } finally {
-          pending = false;
+          message.textContent =
+            "The host is unavailable. Ask your host for the current Cloudflare link.";
+          retry.hidden = false;
         }
       }
-      window.addEventListener("message", (event) => {
-        if (event.source !== frame.contentWindow || event.origin !== server)
-          return;
-        if (event.data?.type === "smash-ready") {
-          ready = true;
-          panel.hidden = true;
-        }
-        if (
-          event.data?.type === "smash-room" &&
-          /^[a-f0-9]{36}$/.test(event.data.token)
-        )
-          history.replaceState(null, "", "#room=" + event.data.token);
-        if (event.data?.type === "smash-room" && event.data.token === "")
-          history.replaceState(null, "", location.pathname);
-      });
-      window.addEventListener("hashchange", () => {
-        if (server) frame.src = server + "/" + roomHash();
-      });
-      retry.onclick = () => {
-        ready = false;
-        connect();
-      };
-      setInterval(connect, 15000);
+      retry.onclick = connect;
       connect();
     </script>
   </body>

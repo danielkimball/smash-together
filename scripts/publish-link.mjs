@@ -40,7 +40,7 @@ export async function publishLink(url) {
     await run(gh, ["api", "--method", "PUT", endpoint, "--input", temp], {
       timeout: 30000,
     });
-    console.log("Stable game address updated: " + config.publicUrl);
+    console.log("Legacy bookmark redirect updated: " + url);
   } finally {
     await rm(temp, { force: true });
   }
