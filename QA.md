@@ -1,3 +1,9 @@
+# Transport stabilization — v3.6.4 — 2026-10-23
+
+Restores the previously working HTTP/2 default after the actual primary used HTTP/2 fallback and a later restart failed to republish within the normal deployment window. The exact cause of the publication delay is unconfirmed without Windows host logs. QUIC remains an explicit configuration option; telemetry and all gameplay changes are retained. The v3.6.3 public latency failure below remains unresolved, not converted to a pass.
+
+All 57 Node tests pass on Node20.11.0. Syntax, linked assets, pinned-engine checksums and ROM-exclusion checks pass; corresponding source is rebuilt. No gameplay code changed from the tested v3.6.3 runtime.
+
 # Relay transport follow-up — v3.6.3 — 2026-10-23
 
 - The first deployed v3.6.2 two-browser check sustained ~59.9 FPS with zero repairs and ~49–50 ms median input completion, but **failed** the p95 backlog/input target (six queued frames and 214–220 ms). Simultaneous 179 ms delivery gaps and RTT spikes occurred with normal emulator costs and zero long tasks. See PERFORMANCE.md; do not describe this run as a full latency pass.

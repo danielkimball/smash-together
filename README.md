@@ -1,6 +1,10 @@
+# Transport stabilization — v3.6.4
+
+The primary host uses the previously working HTTP/2 default again. QUIC remains an explicit host option after connectivity verification. All gameplay performance improvements and Connection reports remain available. The audit found substantial local Wi-Fi jitter even with the game closed; an Ethernet comparison is still needed before calling online latency resolved. See [PERFORMANCE.md](PERFORMANCE.md).
+
 # Relay update — v3.6.3
 
-The host now prefers Cloudflare's QUIC transport with automatic TCP fallback, instead of forcing TCP for the shared tunnel. Reports expose the transport actually connected. This addresses another possible source of network stalls while keeping all v3.6.2 performance improvements below. Actual network latency still varies; use the Connection report after a spike.
+v3.6.3 tried Cloudflare's QUIC transport with automatic TCP fallback. The actual primary used HTTP/2 fallback, so no QUIC benefit was established there; v3.6.4 restores the prior default. Reports expose the transport actually connected. Actual network latency still varies; use the Connection report after a spike.
 
 # Performance update — v3.6.2
 

@@ -1,3 +1,9 @@
+# Transport stabilization — v3.6.4
+
+The v3.6.3 primary host registered HTTP/2 fallback, so the QUIC preference produced no verified public benefit. A subsequent documentation-only restart did not republish a healthy endpoint within the normal four-minute deployment window. The Windows tunnel logs are not accessible from this checkout, so the cause of that publication delay is unconfirmed. **v3.6.4 restores the previously working HTTP/2 default** while retaining negotiated-transport telemetry, all renderer/input/startup fixes and optional explicit `tunnelProtocol: "auto"` or `"quic"` configuration. Do not enable QUIC on the primary as a presumed latency fix without verifying connectivity and actual gameplay results there.
+
+The remaining measured network jitter and failed public latency target below are still unresolved. This transport stabilization is not a claim that the network hitches disappeared.
+
 # Public-path follow-up — v3.6.3
 
 The deployed v3.6.2 test held ~59.9 FPS with zero repairs and ~49–50 ms median button-to-emulator completion, but failed the strict tail-latency/backlog target: p95 was 214–220 ms, and render backlog p95 six frames. Both clients saw the same 179 ms frame-delivery gap, RTT temporarily rose to 160 ms, emulator work stayed ~7.5–7.6 ms, and no browser long tasks were recorded. That points to shared delivery-path jitter rather than a sustained rendering bottleneck; it does not by itself identify the ISP, Wi-Fi or Cloudflare as the source.

@@ -4,5 +4,5 @@
   "publishLink": false,
   "hostId": "choose-your-host-id",
   "autoUpdate": false,
-  "tunnelProtocol": "auto"
+  "tunnelProtocol": "http2"
 }

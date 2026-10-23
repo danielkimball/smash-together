@@ -75,7 +75,7 @@ export async function ensureTunnel() {
 }
 export async function share(port = 8787) {
   const bin = await ensureTunnel();
-  let transport = "auto";
+  let transport = "http2";
   try {
     const config = JSON.parse(
       await readFile(path.join(root, ".local/config.json"), "utf8"),
