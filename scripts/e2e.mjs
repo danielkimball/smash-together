@@ -463,7 +463,7 @@ try {
       send = n.sendGame.bind(n);
     let dropped = false;
     n.sendGame = (m, ...rest) => {
-      if (m.type === "input" && !dropped) {
+      if (["input", "input-state"].includes(m.type) && !dropped) {
         dropped = true;
         return;
       }

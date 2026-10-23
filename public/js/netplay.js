@@ -66,6 +66,11 @@ export class Netplay extends EventTarget {
     this.hashes = new Map();
     this.remoteHashes = new Map();
     this.sentInputs = new Map();
+    this.sentStates = new Map();
+    this.frameSequences = new Map();
+    this.inputSequence = 0;
+    this.lastAppliedSequence = -1;
+    this.inputLatencies = [];
     this.rounds = new Rounds();
     this.now = now;
     this.inputTiming = new InputTiming(now);
@@ -496,6 +501,8 @@ export class Netplay extends EventTarget {
     this.hashes.clear();
     this.remoteHashes.clear();
     this.sentInputs.clear();
+    this.sentStates.clear();
+    this.frameSequences.clear();
     this.status("offline");
   }
   closeRTC() {
@@ -783,6 +790,11 @@ export class Netplay extends EventTarget {
     this.hashes.clear();
     this.remoteHashes.clear();
     this.sentInputs.clear();
+    this.sentStates.clear();
+    this.frameSequences.clear();
+    this.lastPublishedInput = null;
+    this.lastControllerSampleTime = null;
+    this.lastAppliedSequence = -1;
     this.serverFrame = frame - 1;
     this.lastSample = frame + this.delay - 1;
     this.lateInputs = 0;
@@ -861,6 +873,8 @@ export class Netplay extends EventTarget {
       return;
     }
     this.inputs.set(m.frame, m.inputs);
+    if (Number.isSafeInteger(m.sequences?.[this.player]))
+      this.frameSequences.set(m.frame, m.sequences[this.player]);
     if (m.commands?.length) this.frameCommands.set(m.frame, m.commands);
     this.serverFrame = Math.max(this.serverFrame, m.frame);
     if (this.lastFrameAt)
@@ -874,12 +888,14 @@ export class Netplay extends EventTarget {
       const oldest = this.inputs.keys().next().value;
       this.inputs.delete(oldest);
       this.frameCommands.delete(oldest);
+      this.frameSequences.delete(oldest);
     }
     this.lastLate = m.late || [];
     this.lateInputs += this.lastLate.length;
     const ownLate = this.lastLate.includes(this.player);
     if (ownLate) this.ownLateInputs = (this.ownLateInputs || 0) + 1;
-    this.inputTiming.feedback(ownLate, this.sentInputs.get(m.frame));
+    if (this.room.inputMode !== "latest")
+      this.inputTiming.feedback(ownLate, this.sentInputs.get(m.frame));
     this.sentInputs.delete(m.frame);
   }
   receive(from, m) {
@@ -989,6 +1005,11 @@ export class Netplay extends EventTarget {
         continue;
       }
       if (own !== hash && this.isHost) {
+        this.recordPerformanceEvent("state-mismatch", {
+          frame,
+          slot: this.room.members.find((p) => p.id === id)?.slot ?? -1,
+          backlog: Math.max(0, this.serverFrame - this.frame + 1),
+        });
         this.repairs++;
         this.synchronize().catch((e) => this.error(e.message));
         return;
@@ -1013,25 +1034,50 @@ export class Netplay extends EventTarget {
     if (!this.running) return false;
     // Sample against the server's clock, independently of local rendering.
     // A slowed browser can catch up without moving everyone else's deadline.
-    this.personalDelay = this.inputTiming.lead(this.delay, this.relayRTT || 0);
+    const latest = this.room.inputMode === "latest";
+    this.personalDelay = latest
+      ? 0
+      : this.inputTiming.lead(this.delay, this.relayRTT || 0);
     this.jitterLead = this.personalDelay;
     const target = Math.max(0, this.serverFrame + 1) + this.personalDelay;
     if (
       this.player >= 0 &&
       (this.me?.ready || !this.room.selecting) &&
-      target > this.lastSample
+      (latest
+        ? this.lastControllerSampleTime !== time
+        : target > this.lastSample)
     ) {
+      this.lastControllerSampleTime = time;
       const input = this.filterInput
         ? this.filterInput(this.controls.sample())
         : this.controls.sample();
-      for (
-        let f = Math.max(this.lastSample + 1, this.serverFrame + 1);
-        f <= target;
-        f++
-      ) {
-        this.sendGame({ type: "input", frame: f, input }, false);
-        this.sentInputs.set(f, this.now());
-      }
+      if (latest) {
+        const previous = this.lastPublishedInput;
+        if (
+          (this.socket?.bufferedAmount || 0) < 8192 &&
+          (!previous ||
+            previous.buttons !== input.buttons ||
+            previous.x !== input.x ||
+            previous.y !== input.y ||
+            this.now() - this.lastPublishedAt >= 50)
+        ) {
+          const sequence = ++this.inputSequence;
+          this.lastPublishedAt = this.now();
+          this.lastPublishedInput = { ...input };
+          this.sentStates.set(sequence, this.lastPublishedAt);
+          if (this.sentStates.size > 256)
+            this.sentStates.delete(this.sentStates.keys().next().value);
+          this.sendGame({ type: "input-state", sequence, input }, false);
+        }
+      } else
+        for (
+          let f = Math.max(this.lastSample + 1, this.serverFrame + 1);
+          f <= target;
+          f++
+        ) {
+          this.sendGame({ type: "input", frame: f, input }, false);
+          this.sentInputs.set(f, this.now());
+        }
       this.lastSample = target;
       for (const f of this.sentInputs.keys())
         if (f < this.serverFrame - 120) this.sentInputs.delete(f);
@@ -1089,6 +1135,18 @@ export class Netplay extends EventTarget {
     this.frameCommands.delete(this.frame);
     const stepStarted = this.now();
     this.engine.frame(this.rounds.filter(inputs, this.room));
+    const sequence = this.frameSequences.get(this.frame);
+    if (sequence > this.lastAppliedSequence) {
+      const sent = this.sentStates.get(sequence);
+      if (sent !== undefined) {
+        this.inputLatencies.push(this.now() - sent);
+        if (this.inputLatencies.length > 256) this.inputLatencies.shift();
+      }
+      this.lastAppliedSequence = sequence;
+      for (const key of this.sentStates.keys())
+        if (key <= sequence) this.sentStates.delete(key);
+    }
+    this.frameSequences.delete(this.frame);
     const stepMs = this.now() - stepStarted;
     this.stepCost ||= { count: 0, total: 0, max: 0 };
     this.stepCost.count++;
@@ -1126,11 +1184,19 @@ export class Netplay extends EventTarget {
     if (this.performanceEvents.length > 100) this.performanceEvents.shift();
   }
   samplePerformance(fps, voiceActive = false, longTasks = 0) {
+    const latencies = this.inputLatencies.toSorted((a, b) => a - b);
     const sample = {
       fps,
       relayRTT: this.relayRTT || 0,
       typicalRTT: this.inputTiming.rtt,
-      inputBuffer: this.personalDelay || this.delay,
+      inputBuffer: this.personalDelay ?? this.delay,
+      inputAckSamples: latencies.length,
+      inputAckAvgMs: Math.round(
+        latencies.reduce((a, b) => a + b, 0) / (latencies.length || 1),
+      ),
+      inputAckP95Ms: Math.round(
+        latencies[Math.floor(latencies.length * 0.95)] || 0,
+      ),
       backlog: Math.max(0, (this.serverFrame || 0) - this.frame + 1),
       frameGapMs: Math.round(this.maxFrameGap || 0),
       stepAvgMs:
@@ -1152,6 +1218,7 @@ export class Netplay extends EventTarget {
     this.performanceSamples.push({ at: new Date().toISOString(), ...sample });
     if (this.performanceSamples.length > 120) this.performanceSamples.shift();
     this.maxFrameGap = 0;
+    this.inputLatencies = [];
     this.stepCost = { count: 0, total: 0, max: 0 };
     if (this.room) {
       this.send({ type: "performance", metrics: sample });

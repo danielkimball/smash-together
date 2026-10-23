@@ -878,3 +878,76 @@ test("eight-member room keeps 60 Hz deadlines with one missing controller and al
   );
   assert.ok(frames.every((f) => Math.abs(f.length - frames[0].length) <= 1));
 });
+
+test("latest inputs coexist with cached clients, release on disconnect and reset after authenticated rejoin", async (t) => {
+  const a = await setup(t),
+    { h, token } = await create(a),
+    g = await join(a, token);
+  const identity = await until(g, "joined");
+  const { room } = await until(g, "room");
+  assert.equal(room.inputMode, "latest");
+  h.send({ type: "seal", match: 1, revision: room.revision });
+  const game = (payload) => ({
+    type: "game",
+    payload: { match: 1, revision: room.revision, epoch: 1, ...payload },
+  });
+  h.send(game({ type: "start" }));
+  const first = await until(h, "frame");
+  const input = { buttons: 64, x: -80, y: 0 };
+  g.send(game({ type: "input-state", sequence: 1, input }));
+  g.send(
+    game({
+      type: "input-state",
+      sequence: 1,
+      input: { ...input, buttons: 128 },
+    }),
+  );
+  g.send(
+    game({
+      type: "input-state",
+      sequence: 2,
+      epoch: 99,
+      input: { ...input, buttons: 128 },
+    }),
+  );
+  h.send(
+    game({
+      type: "input",
+      frame: first.frame + 2,
+      input: { buttons: 128, x: 80, y: 0 },
+    }),
+  );
+  const hostFrame = await until(h, "frame", (m) => m.frame === first.frame + 2);
+  const guestFrame = await until(
+    g,
+    "frame",
+    (m) => m.frame === hostFrame.frame,
+  );
+  assert.deepEqual(hostFrame, guestFrame);
+  assert.equal(hostFrame.inputs[0].buttons, 128);
+  assert.deepEqual(hostFrame.inputs[1], input);
+  assert.equal(hostFrame.sequences[1], 1);
+  g.s.terminate();
+  await until(
+    h,
+    "room",
+    (m) => !m.room.members.find((p) => p.id === identity.id)?.connected,
+  );
+  const released = await until(h, "frame", (m) => m.frame > hostFrame.frame);
+  assert.equal(released.inputs[1].buttons, 0);
+  const returning = await join(a, token, { ticket: identity.ticket });
+  assert.equal((await until(returning, "joined")).id, identity.id);
+  await until(returning, "room");
+  returning.send(
+    game({
+      type: "input-state",
+      sequence: 0,
+      input: { ...input, buttons: 128 },
+    }),
+  );
+  assert.equal(
+    (await until(returning, "frame", (m) => m.inputs[1].buttons === 128))
+      .sequences[1],
+    0,
+  );
+});

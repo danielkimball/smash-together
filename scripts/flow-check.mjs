@@ -249,7 +249,7 @@ try {
     window.realSend = n.sendGame.bind(n);
     n.receiveFrame = (m) => heldFrames.push(m);
     n.sendGame = (m, ...args) => {
-      if (m.type !== "input") realSend(m, ...args);
+      if (!["input", "input-state"].includes(m.type)) realSend(m, ...args);
     };
   });
   await wait(2200);
@@ -280,6 +280,8 @@ try {
     typicalRTT: smash.net.inputTiming.rtt,
     configured: smash.net.delay,
   }));
+  if (await b.evaluate(() => smash.net.room.inputMode === "latest"))
+    assert.equal(guestTiming.buffer, 0);
   assert.ok(
     guestTiming.buffer <=
       Math.max(

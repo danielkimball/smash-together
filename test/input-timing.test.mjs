@@ -4,7 +4,12 @@ import { Netplay } from "../public/js/netplay.js";
 import { InputTiming } from "../public/js/input-timing.js";
 import { FrameClock } from "../scripts/frame-clock.mjs";
 
-export function simulate({ rtt = 100, stallAt = 10000, stallFor = 2000 } = {}) {
+export function simulate({
+  rtt = 100,
+  stallAt = 10000,
+  stallFor = 2000,
+  inputMode,
+} = {}) {
   let time = 0,
     queue = [],
     received = [],
@@ -34,6 +39,7 @@ export function simulate({ rtt = 100, stallAt = 10000, stallFor = 2000 } = {}) {
     room: {
       hostId: "host",
       timing: "deadline",
+      inputMode,
       selecting: false,
       match: 1,
       revision: 1,
@@ -64,7 +70,8 @@ export function simulate({ rtt = 100, stallAt = 10000, stallFor = 2000 } = {}) {
   });
   net.send = () => {};
   net.sendGame = (m) => {
-    if (m.type === "input") queue.push({ at: time + rtt / 2, dir: "up", m });
+    if (["input", "input-state"].includes(m.type))
+      queue.push({ at: time + rtt / 2, dir: "up", m });
   };
   const report = [];
   let nextClient = 0,
@@ -74,8 +81,11 @@ export function simulate({ rtt = 100, stallAt = 10000, stallFor = 2000 } = {}) {
     const ready = queue.filter((p) => p.at <= time);
     queue = queue.filter((p) => p.at > time);
     for (const p of ready)
-      if (p.dir === "up") clock.input(0, p.m.frame, p.m.input);
-      else received.push(p.m);
+      if (p.dir === "up") {
+        if (p.m.type === "input-state")
+          clock.inputState(0, p.m.sequence, p.m.input);
+        else clock.input(0, p.m.frame, p.m.input);
+      } else received.push(p.m);
     if (!stalled) {
       for (const m of received) net.receiveFrame(m);
       received = [];
@@ -99,6 +109,23 @@ export function simulate({ rtt = 100, stallAt = 10000, stallFor = 2000 } = {}) {
   }
   return { report, clock, net };
 }
+
+test("latest-state clients have no deliberate input buffer at every RTT and recover independently", () => {
+  for (const rtt of [20, 40, 100, 200]) {
+    const { report, clock, net } = simulate({ rtt, inputMode: "latest" });
+    assert.ok(report.every((p) => p.buffer === 0));
+    assert.ok(report.filter((p) => p.sec >= 13).every((p) => p.backlog <= 2));
+    assert.ok(clock.frame >= 1780);
+    assert.equal(clock.lateCounts[1], 0, "other player never waits");
+    assert.ok(net.inputLatencies.length > 100);
+    const sorted = net.inputLatencies.toSorted((a, b) => a - b);
+    assert.ok(
+      sorted[Math.floor(sorted.length * 0.95)] <= rtt + 36,
+      JSON.stringify({ rtt, p95: sorted[Math.floor(sorted.length * 0.95)] }),
+    );
+    assert.ok(net.sentStates.size <= 256);
+  }
+});
 
 test("short and long guest interruptions recover without permanent input lag or stopping other controllers", () => {
   for (const rtt of [20, 40, 100, 200])

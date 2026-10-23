@@ -1,3 +1,64 @@
+# Second latency audit — v3.6.2
+
+Audited 2026-10-23, starting at v3.6.1 (`8aa794e`). Dan's priority is responsive gameplay above optional features. The first audit fixed the runaway delay feedback loop, but did not remove the renderer bottleneck or the deliberate input/render queues. This audit reproduces and addresses those remaining causes. Voice was off in the comparative combat measurements.
+
+## Findings and fixes
+
+1. **Graphics uploads exhausted the browser's frame budget.** Engine configuration left slot 46 at zero, disabling the existing Glide renderer's vertex buffer objects. The Emscripten client-array compatibility path then uploads individual vertex attributes for draws. A combat CPU profile spent roughly 1.36 seconds in `bufferSubData`, 0.95 seconds in `vertexAttribPointer`, and 0.38 seconds in `bindBuffer` during a ten-second run. The rendering call tree dominated emulator work. Under heavier combat, the browser accumulated already-agreed frames; newer controls waited behind that backlog even with healthy server timing.
+
+   `Engine.load()` now enables the core's existing VBO option. The renderer uploads one interleaved buffer and reuses its attribute setup. No emulator JS/WASM or cartridge bytes changed. This lowers steady rendering work and, especially, expensive frame spikes. It also benefits offline play. Earlier failures attributed only to running multiple emulators on one Mac must be read with this newly identified software cost in mind.
+
+2. **Every new control was queued several frames into the future.** v3.6.1's bounded input lead prevented runaway buffering, but the minimum four frames still added about 67 ms before networking, rendering and game response. Raising the lead for higher RTT added more delay.
+
+   New clients publish current state on change, with a 50 ms heartbeat. The server advertises `inputMode: "latest"` and samples each controller at its next fixed 60 Hz tick. There is no deliberate future-frame input window or latency setting to tune. A delayed connection affects its own controller without moving anybody else's deadline. Brief jitter retains held state; more than 150 ms of silence releases that controller to neutral. Press/release arriving between two ticks retains a one-frame press, so short taps cannot disappear. Sequence checks reject duplicates/old states; disconnect and authenticated replacement clear the slot immediately. Existing epoch, roster, role and input validation still apply. Already-agreed frames never change. Cached clients using the previous frame-numbered input protocol continue to work until refreshed.
+
+3. **The renderer left two received frames waiting.** The app's catch-up loop stopped while it still had up to two complete server frames available. At a steady 60 Hz this maintained about 33 ms of avoidable display-side backlog. It now drains received frames within the existing bounded callback budget (up to six steps, 12 ms normally / 20 ms when behind). It never waits for missing controllers or predicts a different state locally.
+
+4. **Input timing now measures the whole acknowledged application path.** The clock includes the accepted sequence per controller in the agreed frame. Each client measures from publishing that sample until finishing the corresponding emulator step. Reports/logs add `inputAckSamples`, `inputAckAvgMs` and `inputAckP95Ms`. Samples/maps remain bounded and the server's numeric privacy allowlist remains enforced. No actual controller states, audio, ROM/state bytes, identities or tickets are logged. The panel correctly displays a zero intentional input buffer instead of falling back to the old setting.
+
+5. **Concurrent cartridge startup could advance a local menu inside a live room.** A broader join/pause test initially triggered an automatic state repair. Per-frame tracing found 556 local menu steps on a guest while multiplayer was already running; its game inputs otherwise matched the host. Automatic testing download and manual file selection could both pass the early `engine.loaded` check, then both finish. The second completion reopened the local main menu after the first had consumed the Join action. A shared `loading` boolean also let callers proceed before engine initialization finished.
+
+   Cartridge acceptance, host download and engine initialization now each have a shared completion promise. Duplicate completions join the existing operation, and a late automatic download recognizes an already loaded cartridge. Local menu preparation stops if multiplayer has started. The same broad two-player scenario then passed without unexpected repairs, including deliberate desync recovery later in the test. This is a reproduced startup bug; it does not establish the cause of Dan's separate white-screen screenshot. `load-race-check.mjs` explicitly overlaps automatic/manual loading and checks for stray local steps in a room. State-mismatch diagnostic events now record only numeric frame, slot and backlog.
+
+## Comparable local measurements
+
+Two isolated Chrome contexts on Dan's Intel Mac, the real pinned emulator and original US cartridge, private localhost room, same native fighters/stage and repeated attack/release input, voice off. Fresh browser runs compare successive changes. These are short diagnostic comparisons, not physical controller-to-photon or separate-house measurements. Timing here ends at entry to the emulator step.
+
+| Configuration | Combat FPS per client | Mean emulator step | Queued frames at end | Median injected-button → emulator |
+| --- | --- | --- | --- | --- |
+| v3.6.1 renderer and timing | 56.5–56.8 | ~11.4 ms (p95 ~25 ms) | 84–87 | 167–197 ms; p95 ~1.45–1.50 seconds |
+| VBO renderer only | ~60 | 7.3–7.7 ms | 2 | ~124 ms |
+| VBO + latest input | ~60 | ~7.2 ms | 3 | ~55 ms |
+| VBO + latest input + drain received frames | ~60 | ~7.2 ms | 1 | 22.5–24.6 ms; p95 34.6–43.5 ms |
+
+Ignored diagnostic artifacts: `renderer-baseline.json`, `renderer-vbo.json`, `renderer-latest.json`, `renderer-drained.json`, and `combat-baseline.cpuprofile`. The initial profiler run was more expensive and reached larger backlogs; do not use its numbers interchangeably with the unprofiled comparison.
+
+**Sustained check:** the new `scripts/performance-check.mjs` runs sixty seconds of real two-player combat and 120 button transitions per client. Both clients held 60 FPS, with no lost transitions, 64–65 matching state checks and zero repairs. Average emulator steps were 7.9–8.0 ms; backlog p95 was zero, maximum one/two frames. This check times through **completion** of the emulator step: median 32.5–32.6 ms, p95 43.3–43.6 ms, maximum 49.7–54.3 ms. The extra step cost explains the difference from the entry-timed diagnostic table. Screenshot visually checked; fighters, scenery and HUD render correctly.
+
+**Four-fighter rendering check:** one real browser plus three synthetic network controllers also held 60 FPS for sixty seconds with all four fighters active. Step time averaged 10.2 ms (p95 11.6 ms); backlog p95 zero, maximum two frames. `scripts/four-fighter-check.mjs` checks native four-player battle state and timing, not independent emulator agreement for the synthetic controllers. Running four complete emulators on this one Mac still overloaded shared hardware and failed; that stress-test limit is recorded in QA.md.
+
+Run on an isolated host with testing auto-load enabled:
+
+```sh
+SMASH_URL=http://127.0.0.1:8790 CHROME_PATH='/path/to/chrome' node scripts/performance-check.mjs
+```
+
+It creates its own private room, excludes real gamepads, closes its disposable browser contexts, and writes only ignored local artifacts. `SMASH_BENCHMARK_SECONDS` adjusts duration. The default local p95 input threshold is 100 ms; `SMASH_BENCHMARK_MAX_LATENCY` can explicitly set a different threshold for a remote test. Test environments must not join a person's room or use production controllers.
+
+A separate ten-second read of Ryker's public relay (v3.6.1 backend, before rollout) received 600 frames at 60.04 FPS. Server clock maximum lateness was 16 ms with zero hiccups. Delivery gap median was 14.9 ms, p95 32.5 ms and maximum 188.8 ms. The isolated spike shows why network delivery still matters; this short probe does not establish how often it happens during normal play. Its temporary private room was explicitly closed.
+
+## Remaining boundaries and audit notes
+
+- Voice and live spectator transfers stay on `/media`, separate from `/room`; the prior queue isolation and coalescing remain. They were not responsible for the reproduced voice-off graphics/input backlog. Keep optional voice available, with bounded disposable audio queues.
+- The pinned native core still hashes 8 MB of memory each step. Read-only inspection uses its full serializer: measured ~3.2 ms per inspection and ~14 ms for a copied full snapshot. Battle inspection is already limited to twice per second, and live snapshot transfers are serialized. Rebuilding the emulator solely to remove those costs was unnecessary to achieve the measured 60 FPS result; the binary provenance remains intact.
+- The latest-input design is still authoritative server sequencing, without rollback/local prediction. Physical input sampling, network transit, server tick alignment, native game response and display scanout still take time. Zero intentional buffer does not mean zero physical latency. Simulated RTTs of 20/40/100/200 ms verify that application acknowledgements stay within RTT plus two browser ticks and that an interrupted player cannot stop another controller.
+- A genuinely underpowered browser or a congested network can still fall behind. `inputAckP95Ms` plus backlog/step time/RTT distinguishes the source. Same-Mac tests cannot certify four independent devices, physical controllers, mobile microphones or two-house play. Refresh every tab after rollout.
+- Dan's earlier white rules-screen screenshot was not reproduced exactly; forced WebGL loss produced a different black canvas. Reduced graphics overhead is not proof that this separate screenshot trigger is fixed.
+
+See [QA.md](QA.md) for the final regression and deployment results. The previous audit below is historical; its four-frame minimum describes the compatibility path, not the updated client.
+
+---
+
 # Smash Portal latency audit — v3.6.1
 
 Audited 2026-10-22 (America/Denver), source v3.6.0 at `93e1db7`. Dan reported severe lag after the latest changes, including with voice disabled. His requirement is preserved: one slow connection must not stop the other players.

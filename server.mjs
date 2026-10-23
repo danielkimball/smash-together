@@ -342,6 +342,7 @@ export function createApp({
     capacity: r.capacity,
     delay: r.delay,
     timing: "deadline",
+    inputMode: "latest",
     mediaTransport: true,
     phase: r.phase,
     match: r.match,
@@ -400,8 +401,7 @@ export function createApp({
       room.clock.slots = active(room)
         .filter((p) => p.socket && (p.ready || !room.selecting))
         .map((p) => p.slot);
-      for (const row of room.clock.pending.values())
-        if (member.slot >= 0) delete row[member.slot];
+      if (member.slot >= 0) room.clock.release(member.slot);
     }
     if (room.selecting && member.slot >= 0) {
       // A shared snapshot clears only the departed token; keep other choices.
@@ -621,8 +621,7 @@ export function createApp({
           if (r.hostId === p.id) r.hostId = nextHost(r)?.id || p.id;
           p.mediaSocket?.close(1000, "Session replaced");
           p.mediaSocket = null;
-          for (const row of r.clock?.pending.values() || [])
-            if (p.slot >= 0) delete row[p.slot];
+          if (p.slot >= 0) r.clock?.release(p.slot);
           send(previous, {
             type: "closed",
             message: "This player rejoined in another page.",
@@ -957,6 +956,7 @@ export function createApp({
         if (
           ![
             "input",
+            "input-state",
             "hash",
             "start",
             "ready",
@@ -971,10 +971,13 @@ export function createApp({
         if (["start", "sync"].includes(g.type) && !isHost)
           return fail("Only the host can start or synchronize.");
         if (g.match !== room.match || g.revision !== room.revision) return;
-        if (g.type === "input") {
+        if (g.type === "input" || g.type === "input-state") {
           if (member.slot < 0 || (room.selecting && !member.ready)) return;
-          if (g.epoch === room.clockEpoch)
-            room.clock?.input(member.slot, g.frame, g.input);
+          if (g.epoch === room.clockEpoch) {
+            if (g.type === "input-state")
+              room.clock?.inputState(member.slot, g.sequence, g.input);
+            else room.clock?.input(member.slot, g.frame, g.input);
+          }
           return;
         }
         if (["pause", "resync"].includes(g.type) && member.slot < 0 && !isHost)

@@ -1,3 +1,7 @@
+# Performance update — v3.6.2
+
+Responsive play is the first priority. The renderer now uses its native vertex buffers, controllers reach the next available server tick with no deliberate future-frame buffer, and completed frames render without a two-frame queue. Voice remains available on its separate connection. Refresh every player's tab to load the update. See [the measured audit](PERFORMANCE.md) and [verification](QA.md).
+
 # Testing update - v3.6
 
 The permanent address stays on GitHub Pages; Cloudflare connects it to Ryker's PC behind the scenes. His testing host loads the game automatically after the title screen, without a ROM picker or password. New hosts still default to bring-your-own-ROM. No ROM is stored in Git or Pages.
@@ -103,7 +107,7 @@ For foreground development, run `npm ci`, `npm start` and, in a second terminal,
 
 ## How multiplayer works
 
-Each browser runs the same pinned N64Wasm emulator locally. The room checks ROM and engine identities. The host configures the native rules before the room opens and can then run alone in character selection. Every new match in that room restores its configured selection snapshot. When a friend joins, all clients pause briefly while the host sends a compressed snapshot of the current selection; **all** players restore it so the interpreter begins from the same boundary. The server fixes one four-controller input set at each frame deadline. Missing input is neutral for that player; late packets cannot rewrite past frames. New rooms default to the responsive four-frame buffer. The 4/6/9/12-frame setting is a minimum buffer; each client increases its own input lead for its server latency. A stalled client consumes the same buffered frames at a bounded catch-up rate. State hashes are compared every 60 frames; mismatches pause and restore the host's authoritative state automatically.
+Each browser runs the same pinned N64Wasm emulator locally. The room checks ROM and engine identities. The host configures the native rules before the room opens and can then run alone in character selection. Every new match in that room restores its configured selection snapshot. When a friend joins, all clients pause briefly while the host sends a compressed snapshot of the current selection; **all** players restore it so the interpreter begins from the same boundary. The server fixes one four-controller input set at each frame deadline. Current controller state is sampled at the next deadline, without waiting for other players or queuing it several frames ahead. Brief jitter retains a held input; a controller silent for more than 150 ms becomes neutral. Short button taps are retained between ticks. Agreed past frames never change. Cached older clients retain their previous buffered protocol until refreshed. A stalled client consumes the same buffered frames at a bounded catch-up rate. State hashes are compared every 60 frames; mismatches pause and restore the host's authoritative state automatically.
 
 This is **server sequencing, not rollback**. Slow hardware or a slow connection can still cause local stalls and audio underruns. WebSocket delivery carries agreed frames and snapshots; WebRTC uses a public Cloudflare STUN service for peer latency and state hashes. No paid TURN service is needed. Ordinary save states are roughly 16 MB before compression.
 
@@ -147,7 +151,7 @@ Before a cartridge is loaded, the original N64 / Master Hand opening plays as a 
 
 ## Diagnosing lag
 
-Open **Menu → Connection → Download performance report** after a lag spike. The app keeps about ten minutes of timing samples; the backend keeps rotating private performance logs. v3.6.1 fixes runaway input buffering after interruptions, separates live spectator transfers and voice from controller traffic, and lets a delayed guest recover without pausing everyone. Voice remains optional and supported. See [the latency audit](PERFORMANCE.md) and [hosting diagnostics](HOSTING.md#performance-monitoring-v361).
+Open **Menu → Connection → Download performance report** after a lag spike. The app keeps about ten minutes of timing samples; the backend keeps rotating private performance logs. v3.6.2 removes unnecessary graphics uploads, future input buffering and the extra render queue. The report includes measured input acknowledgement latency through the emulator, along with FPS, frame cost and network timing. Earlier fixes still separate live spectator transfers and voice from controller traffic, and let a delayed guest recover without pausing everyone. Voice remains optional and supported. See [the latency audit](PERFORMANCE.md) and [hosting diagnostics](HOSTING.md#performance-monitoring).
 
 A fast download connection alone does not guarantee responsive play: upload congestion, round-trip latency and the browser's ability to emulate at 60 FPS matter too. The connection report shows these separately. Refresh every player's tab after updating.
 

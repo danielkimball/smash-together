@@ -85,6 +85,9 @@ export class Engine {
     for (let i = 0; i < 15; i++) config[i] = "-1";
     for (let i = 15; i < 34; i++) config[i] = "Unassigned";
     config[39] = "1"; // game scheduler owns frame pacing
+    // Upload one interleaved vertex buffer per draw. Client-side arrays make
+    // Emscripten re-upload each attribute separately and exhaust the frame budget.
+    config[46] = "1";
     window.FS.writeFile("config.txt", config.join("\n") + "\n");
     window.FS.writeFile("cheat.txt", "");
     this.module.callMain(["custom.v64"]);

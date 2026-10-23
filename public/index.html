@@ -551,19 +551,7 @@
             </select>
           </div>
         </div>
-        <details>
-          <summary>Connection settings</summary>
-          <label for="delay">INPUT BUFFER</label
-          ><select id="delay">
-            <option value="4" selected>Responsive · 4 frames</option>
-            <option value="6">Balanced · 6 frames</option>
-            <option value="9">Long distance · 9 frames</option>
-            <option value="12">Extra steady · 12 frames</option>
-          </select>
-          <p class="subtext">
-            A higher buffer can smooth out a distant connection.
-          </p>
-        </details>
+        <input id="delay" type="hidden" value="4" />
         <button id="create-room" class="primary wide" type="submit">
           Next: game rules →
         </button>
