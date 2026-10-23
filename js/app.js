@@ -38,7 +38,9 @@ let rom = null,
   paused = true,
   next = 0;
 let pendingAction = null,
-  loading = false,
+  cartridgeLoadPromise = null,
+  cartridgeDownloadPromise = null,
+  engineBootPromise = null,
   preparing = false,
   lastDeviceList = "",
   wizardIndex = -1;
@@ -111,7 +113,7 @@ window.smash = {
     frames: engine.frames,
     rtt: net.rtt,
     relayRTT: net.relayRTT || 0,
-    inputBuffer: net.personalDelay || net.delay,
+    inputBuffer: net.personalDelay ?? net.delay,
     lateInputs: net.lateInputs || 0,
     fps: lastFPS,
     performance: net.performanceSamples.at(-1) || null,
@@ -319,7 +321,18 @@ function romReady() {
   $("rom-continue").hidden = false;
   $("forget-rom").hidden = false;
 }
-async function loadFile(file) {
+function loadFile(file) {
+  if (!file) return Promise.resolve();
+  // A file selection can overlap the host's automatic cartridge download.
+  // Only one completion may consume the pending Join/Create action. A second
+  // completion used to open a local menu inside an already synchronized room.
+  if (!cartridgeLoadPromise)
+    cartridgeLoadPromise = acceptCartridge(file).finally(() => {
+      cartridgeLoadPromise = null;
+    });
+  return cartridgeLoadPromise;
+}
+async function acceptCartridge(file) {
   if (!file) return;
   if (!isSecureContext)
     throw Error(
@@ -352,60 +365,68 @@ async function loadFile(file) {
 }
 async function withCartridge(action) {
   await savedCartridge;
+  if (cartridgeLoadPromise) return cartridgeLoadPromise;
   if (rom || engine.loaded) return action();
   pendingAction = action;
   if (view === "home") attract.holdTitle();
   const status = await hostStatus;
   if (status?.testingAutoLoad) {
-    if (loading) return;
-    loading = true;
-    busy("Loading game…", "Getting the testing game from the host.");
-    try {
-      const response = await serviceFetch("/api/testing/cartridge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-        signal: AbortSignal.timeout(180000),
+    if (!cartridgeDownloadPromise)
+      cartridgeDownloadPromise = (async () => {
+        busy("Loading game…", "Getting the testing game from the host.");
+        try {
+          const response = await serviceFetch("/api/testing/cartridge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+            signal: AbortSignal.timeout(180000),
+          });
+          if (!response.ok)
+            throw Error("The testing game could not load. Try again shortly.");
+          const bytes = await response.arrayBuffer();
+          // A manual file selection may have completed while downloading.
+          if (!engine.loaded)
+            await loadFile(new File([bytes], "Testing cartridge.z64"));
+          else if (cartridgeLoadPromise) await cartridgeLoadPromise;
+        } finally {
+          $("busy").hidden = true;
+        }
+      })().finally(() => {
+        cartridgeDownloadPromise = null;
       });
-      if (!response.ok)
-        throw Error("The testing game could not load. Try again shortly.");
-      const bytes = await response.arrayBuffer();
-      loading = false;
-      await loadFile(new File([bytes], "Testing cartridge.z64"));
-    } finally {
-      loading = false;
-      $("busy").hidden = true;
-    }
-    return;
+    return cartridgeDownloadPromise;
   }
   $("rom-error").hidden = true;
   dialog("rom-dialog");
 }
 async function powerOn() {
+  if (engineBootPromise) return engineBootPromise;
   if (engine.loaded) {
     await engine.audioStart();
     return;
   }
-  if (loading) return;
   if (!rom) throw Error("Choose your ROM first.");
-  loading = true;
-  busy("Powering on…", "Loading your cartridge in this browser.");
-  try {
-    await engine.load(rom);
-    engine.romHash = ROM_SHA1;
-    engine.frame([neutral]);
-    bootState = engine.snapshot();
-    await engine.audioStart();
-  } finally {
-    loading = false;
-    $("busy").hidden = true;
-  }
+  engineBootPromise = (async () => {
+    busy("Powering on…", "Loading your cartridge in this browser.");
+    try {
+      await engine.load(rom);
+      engine.romHash = ROM_SHA1;
+      engine.frame([neutral]);
+      bootState = engine.snapshot();
+      await engine.audioStart();
+    } finally {
+      $("busy").hidden = true;
+    }
+  })().finally(() => {
+    engineBootPromise = null;
+  });
+  return engineBootPromise;
 }
 async function runSequence(sequence, valid = () => true) {
   let budget = performance.now();
   for (const [frames, input] of sequence)
     for (let i = 0; i < frames; i++) {
-      if (!valid()) throw Error("Menu preparation cancelled.");
+      if (net.running || !valid()) throw Error("Menu preparation cancelled.");
       engine.frame([input]);
       if (performance.now() - budget > 12) {
         await new Promise(requestAnimationFrame);
@@ -1572,11 +1593,11 @@ $("reset").onclick = () => {
 function diagnostics() {
   const sample = net.performanceSamples.at(-1);
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: independent server deadlines\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay || net.delay} frames (${Math.round(((net.personalDelay || net.delay) * 1000) / 60)} ms)\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.6.1`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.6.2`;
 }
 $("performance-export").onclick = () => {
   const report = {
-    version: "3.6.1",
+    version: "3.6.2",
     exported: new Date().toISOString(),
     samples: net.performanceSamples,
     events: net.performanceEvents,
@@ -1819,7 +1840,7 @@ function tick(time) {
         for (let n = 0; n < 6; n++) {
           if (
             !net.tick(time) ||
-            net.serverFrame - net.frame < 2 ||
+            net.serverFrame < net.frame ||
             performance.now() - budget > catchupBudget
           )
             break;
