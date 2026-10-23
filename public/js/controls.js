@@ -124,6 +124,8 @@ export function bindingLabel(binding) {
   if (binding.kind === "key")
     return binding.code.replace("Key", "").replace("Digit", "");
   if (binding.kind === "button") return `Button ${binding.index + 1}`;
+  if (binding.kind === "hat")
+    return `Hat ${binding.index + 1} ${["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"][binding.direction]}`;
   return `Axis ${binding.index + 1} ${binding.sign > 0 ? "+" : "−"}`;
 }
 export function evaluate(profile, pad, keys = new Set()) {
@@ -133,6 +135,13 @@ export function evaluate(profile, pad, keys = new Set()) {
     if (bind.kind === "key") return keys.has(bind.code) ? 1 : 0;
     if (!pad) return 0;
     if (bind.kind === "button") return pad.buttons[bind.index]?.value || 0;
+    if (bind.kind === "hat") {
+      const value = pad.axes[bind.index];
+      if (!Number.isFinite(value) || Math.abs(value) > 1) return 0;
+      const direction = Math.round(((value + 1) * 7) / 2);
+      const distance = Math.abs(direction - bind.direction);
+      return Math.min(distance, 8 - distance) <= 1 ? 1 : 0;
+    }
     let value =
       ((pad.axes[bind.index] || 0) - (profile.center[bind.index] || 0)) *
       bind.sign;
@@ -226,12 +235,15 @@ export class Controls extends EventTarget {
     const legacyXbox =
       profileKind(id) === "n64-usb" &&
       saved &&
+      !saved.customized &&
       JSON.stringify(saved.map) === JSON.stringify(defaultProfile("xbox").map);
     return structuredClone(
       saved && !legacyXbox ? saved : defaultProfile(profileKind(id)),
     );
   }
   select(id) {
+    if (this.capture) this.cancelCapture();
+    this.captureSequence = null;
     this.selected = id;
     this.profile = this.loadProfile();
     this.keys.clear();
@@ -269,39 +281,107 @@ export class Controls extends EventTarget {
       pad,
     );
   }
-  beginCapture(action) {
+  beginCapture(action, { continueSequence = false } = {}) {
     this.keys.clear();
-    this.capture = { action, armed: false, started: performance.now() };
+    const pad = this.pad();
+    if (!continueSequence || !this.captureSequence)
+      this.captureSequence = {
+        // Standard sticks use their calibrated center. Unmapped auxiliary
+        // axes may rest at -1, +1, or an out-of-range HID hat null value.
+        neutral: pad
+          ? pad.axes.map(
+              (value, index) =>
+                this.profile.center[index] ??
+                (index < 2 || pad.mapping === "standard" ? 0 : value),
+            )
+          : [],
+        release: null,
+      };
+    this.capture = {
+      action,
+      armed: !pad || this.captureReleased(pad),
+      axesReady: this.captureSequence.neutral.map(
+        (value, index) => Math.abs(pad.axes[index] - value) < 0.25,
+      ),
+    };
   }
   cancelCapture() {
     this.capture = null;
-    this.dispatchEvent(new Event("mapped"));
+    this.captureSequence = null;
+    this.dispatchEvent(
+      new CustomEvent("mapped", { detail: { canceled: true } }),
+    );
   }
   finishCapture(binding) {
     if (!this.capture) return;
-    this.profile.map[this.capture.action] = binding;
+    const action = this.capture.action;
+    const sameInput = (other) =>
+      other &&
+      other.kind === binding.kind &&
+      (binding.kind === "key"
+        ? other.code === binding.code
+        : other.index === binding.index &&
+          (binding.kind === "button" ||
+            (binding.kind === "hat"
+              ? other.direction === binding.direction
+              : other.sign === binding.sign)));
+    const replaced = [];
+    for (const [name, other] of Object.entries(this.profile.map))
+      if (name !== action && sameInput(other)) {
+        this.profile.map[name] = null;
+        replaced.push(name);
+      }
+    this.profile.map[action] = binding;
+    this.profile.customized = true;
+    if (binding.kind === "axis")
+      this.profile.center[binding.index] =
+        this.captureSequence.neutral[binding.index];
+    this.captureSequence.release = binding;
     this.capture = null;
     this.persist();
-    this.dispatchEvent(new Event("mapped"));
+    this.dispatchEvent(
+      new CustomEvent("mapped", { detail: { action, binding, replaced } }),
+    );
+  }
+  captureReleased(pad) {
+    if (pad.buttons.some((button) => button.value > 0.35)) return false;
+    const release = this.captureSequence?.release;
+    return (
+      !release ||
+      !["axis", "hat"].includes(release.kind) ||
+      Math.abs(
+        pad.axes[release.index] - this.captureSequence.neutral[release.index],
+      ) < 0.25
+    );
   }
   pollCapture() {
-    if (!this.capture || performance.now() - this.capture.started < 250) return;
+    if (!this.capture) return;
     const pad = this.pad();
     if (!pad) return;
-    const active =
-      pad.buttons.some((b) => b.value > 0.55) ||
-      pad.axes.some(
-        (a, i) => Math.abs(a - (this.profile.center[i] || 0)) > 0.65,
-      );
+    const { neutral } = this.captureSequence;
+    for (let i = 0; i < pad.axes.length; i++)
+      if (Math.abs(pad.axes[i] - neutral[i]) < 0.25)
+        this.capture.axesReady[i] = true;
     if (!this.capture.armed) {
-      if (!active) this.capture.armed = true;
+      if (this.captureReleased(pad)) this.capture.armed = true;
       return;
     }
     for (let i = 0; i < pad.buttons.length; i++)
       if (pad.buttons[i].value > 0.55) return this.finishCapture(b(i));
     for (let i = 0; i < pad.axes.length; i++) {
-      const v = pad.axes[i] - (this.profile.center[i] || 0);
-      if (Math.abs(v) > 0.65) return this.finishCapture(axis(i, Math.sign(v)));
+      if (!this.capture.axesReady[i]) continue;
+      if (Math.abs(neutral[i]) > 1) {
+        if (!Number.isFinite(pad.axes[i]) || Math.abs(pad.axes[i]) > 1)
+          continue;
+        return this.finishCapture({
+          kind: "hat",
+          index: i,
+          direction: Math.round(((pad.axes[i] + 1) * 7) / 2),
+        });
+      }
+      const v = pad.axes[i] - neutral[i];
+      if (Math.abs(v) <= 0.65) continue;
+      return this.finishCapture(axis(i, Math.sign(v)));
     }
   }
   async calibrate() {

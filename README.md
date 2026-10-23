@@ -73,7 +73,7 @@ Only joined players send inputs. The emulator exposes four native controller por
 | C / jump            | Y, B, or right stick left/right | I, Space, 1, 3 |
 | D-pad / taunt       | D-pad                           | Arrow keys     |
 
-N64 adapters differ: the guided mapper accepts any exposed button or signed axis. The live preview shows raw inputs, stick position and mapped actions. Adjust deadzone, range or vertical inversion as needed. Controllers must appear in the browser Gamepad API; pairing alone does not guarantee a particular adapter works. Physical controller hardware must be checked on your devices. Local play can use the selected input plus up to three additional gamepads.
+N64 adapters differ: the guided mapper accepts exposed buttons, signed axes and Windows HID hat directions. The live preview shows raw inputs, stick position and mapped actions. Adjust deadzone, range or vertical inversion as needed. Controllers must appear in the browser Gamepad API; pairing alone does not guarantee a particular adapter works. Physical controller hardware must be checked on your devices. Local play can use the selected input plus up to three additional gamepads.
 
 The DragonRise **0079:0006** preset uses the displayed one-based numbers: A7, B9, Z8, R6, L5, Start10; C up1/down3/left4/right2; stick axes 1/2; D-pad up13/down14/left15/right16. On macOS, turn off the Game Controllers Home-button Launchpad shortcut if the adapter's B button also activates it. Web input mapping cannot suppress an operating-system shortcut.
 
@@ -165,4 +165,4 @@ A fast download connection alone does not guarantee responsive play: upload cong
 
 Room counts show connected people. Leaving passes hosting to the next connected fighter, then a spectator. Refresh/disconnection has a 30-second identity reservation; rejoining from the same tab reclaims it without creating a duplicate or taking hosting back. An expired reservation joins as a new member; battle arrivals spectate until the next lineup.
 
-In **Controller setup**, click any mapping and press the remaining buttons in sequence. Setup advances automatically, waits for release between gamepad presses, and saves each mapping. Escape stops the sequence.
+In **Controller setup**, let go of the sticks, click any mapping and press the remaining buttons in sequence. Setup advances automatically, waits for release between presses, and saves each mapping with a confirmation. Reassigning an input removes its previous action so, for example, A does not also trigger C-down. Unused Windows axes resting at an endpoint do not block setup. Escape stops the sequence; **Reset preset** restores the device defaults.

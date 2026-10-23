@@ -88,3 +88,10 @@ The v3.6.2 public test exposed simultaneous delivery/RTT spikes despite 60 FPS; 
 Ryker's verified v3.6.3 host actually registered HTTP/2 fallback. The public two-browser run held 60 FPS/no repairs but still failed the latency target (p95 165–176 ms). Both browsers shared Dan's Wi-Fi; even with the emulators closed, local-router ping reached 344 ms. Do not attribute every shared test stall to the backend or claim public zero-lag success. The next useful comparison is Ethernet plus Connection reports; server clock timing remained healthy.
 
 v3.6.4 restores the prior HTTP/2 default after no verified QUIC benefit and a prolonged publication delay on the next restart. Cause of the delay is unconfirmed without Windows host logs. Keep QUIC opt-in until actual primary connectivity/performance is established; retain all gameplay optimizations and negotiated-transport monitoring.
+
+
+## v3.6.5 Windows controller mapping
+
+Do not wait for every raw Gamepad axis to equal zero before accepting a button. Windows nonstandard adapters can expose unused axes resting at -1/+1 and HID hat null values outside [-1,1]. Capture uses a per-sequence neutral baseline, per-axis readiness and release of the preceding input; no fixed 250 ms dead time. Hat directions are distinct bindings and diagonals activate adjacent cardinal directions. Reassigning an exact physical input clears its previous action. Persist `customized` so the legacy N64 preset migration cannot overwrite deliberate remaps. Device changes/cancellation must stop auto-advance.
+
+`test/controller-capture.test.mjs` covers capture/evaluation/persistence, and `scripts/controller-check.mjs` exercises the actual dialog without a ROM or room. It overrides Gamepad API in a disposable browser and stubs host APIs to prevent automatic cartridge loading. These checks model Windows raw reports on macOS Chromium; the friend's physical Windows controller still requires confirmation. No gameplay timing, transport or core changes in this patch.
