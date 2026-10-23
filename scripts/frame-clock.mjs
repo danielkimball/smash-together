@@ -13,6 +13,9 @@ export class FrameClock {
     this.next = now() + 200;
     this.pulses = [];
     this.commands = [];
+    this.maxLatenessMs = 0;
+    this.hiccups = 0;
+    this.lateCounts = [0, 0, 0, 0];
   }
   pulse(slot, buttons, count = 6, offset = 2) {
     if (this.slots.includes(slot))
@@ -48,12 +51,17 @@ export class FrameClock {
   }
   tick() {
     const time = this.now();
+    this.maxLatenessMs = Math.max(this.maxLatenessMs, time - this.next);
     // Do not create a large burst after an OS scheduling hiccup.
-    if (time - this.next > 100) this.next = time;
+    if (time - this.next > 100) {
+      this.hiccups++;
+      this.next = time;
+    }
     for (let n = 0; n < 6 && time >= this.next; n++) {
       const row = this.pending.get(this.frame) || [];
       const late =
         this.frame < this.delay ? [] : this.slots.filter((slot) => !row[slot]);
+      for (const slot of late) this.lateCounts[slot]++;
       const inputs = Array.from(
         { length: 4 },
         (_, slot) => row[slot] || { buttons: 0, x: 0, y: 0 },

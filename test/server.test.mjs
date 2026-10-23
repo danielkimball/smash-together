@@ -354,6 +354,128 @@ test("cross-origin browser WebSocket upgrades are rejected", async (t) => {
   assert.match(error.message, /socket hang up|closed/i);
 });
 
+test("refresh hands off the host, counts only connected people, and reclaims the same public-room identity", async (t) => {
+  const a = await setup(t),
+    { h, token, id, room } = await create(a),
+    ticket = a.rooms.get(token).members.get(id).ticket,
+    g = await join(a, token),
+    guest = await until(g, "joined"),
+    f = await join(a, token);
+  await until(f, "joined");
+  await until(h, "room", (m) => m.room.members.length === 3);
+  const count = async () =>
+    (await (await fetch(a.http + "/api/rooms")).json()).rooms[0].count;
+  assert.equal(await count(), 3);
+  h.s.close();
+  await until(g, "room", (m) => m.room.hostId === guest.id);
+  assert.equal(await count(), 2);
+  const back = await join(a, undefined, { roomId: room.id, ticket });
+  assert.equal((await until(back, "joined")).id, id);
+  const restored = (await until(back, "room")).room;
+  assert.equal(restored.members.length, 3);
+  assert.equal(
+    restored.hostId,
+    guest.id,
+    "rejoining does not steal the baton back",
+  );
+  assert.equal(await count(), 3);
+  back.send({ type: "leave" });
+  await until(g, "room", (m) => !m.room.members.some((p) => p.id === id));
+  assert.equal(await count(), 2);
+  assert.equal(
+    a.rooms.get(token).members.has(id),
+    false,
+    "explicit departure has no ghost reservation",
+  );
+});
+
+test("a reload arriving before the old socket closes replaces only the ticket owner", async (t) => {
+  const a = await setup(t),
+    { h, token, id, room } = await create(a),
+    ticket = a.rooms.get(token).members.get(id).ticket,
+    g = await join(a, token),
+    guest = await until(g, "joined");
+  await until(g, "room");
+  const closed = once(h.s, "close");
+  const replacement = await join(a, undefined, { roomId: room.id, ticket });
+  assert.equal((await until(replacement, "joined")).id, id);
+  const updated = (await until(replacement, "room")).room;
+  assert.equal(updated.hostId, guest.id);
+  assert.equal(updated.members.length, 2);
+  await closed;
+  replacement.send({ type: "ping", id: 42 });
+  assert.equal((await until(replacement, "pong")).id, 42);
+  assert.equal(a.rooms.get(token).members.size, 2);
+  assert.ok(a.rooms.get(token).members.get(id).socket);
+});
+
+test("expired reconnect reservations disappear without stopping the battle clock", async (t) => {
+  const a = await setup(t, {}, { reconnectGraceMs: 80 }),
+    { h, token } = await create(a),
+    g = await join(a, token),
+    guest = await until(g, "joined");
+  await until(g, "room");
+  h.send({
+    type: "game",
+    payload: { type: "start", match: 1, revision: 2, epoch: 2 },
+  });
+  h.send({ type: "seal", match: 1, revision: 2 });
+  await until(h, "frame", (m) => m.frame > 3);
+  const clock = a.rooms.get(token).clock;
+  g.s.close();
+  const removed = (
+    await until(
+      h,
+      "room",
+      (m) => !m.room.members.some((p) => p.id === guest.id),
+    )
+  ).room;
+  assert.equal(removed.revision, 2);
+  assert.equal(removed.epoch, 2);
+  assert.equal(a.rooms.get(token).clock, clock);
+  assert.ok(
+    (await until(h, "frame", (m) => m.frame > 10)).inputs[1].buttons === 0,
+  );
+});
+
+test("disconnected reservations cannot block a live player from an eight-person room", async (t) => {
+  const a = await setup(t),
+    { h, token } = await create(a);
+  const guests = [];
+  for (let i = 0; i < 7; i++) {
+    const g = await join(a, token);
+    const member = await until(g, "joined");
+    await until(g, "room");
+    guests.push({ g, member });
+  }
+  guests[6].g.s.close();
+  await until(h, "room", (m) => m.room.members.some((p) => !p.connected));
+  const replacement = await join(a, token);
+  await until(replacement, "joined");
+  const joined = (await until(replacement, "room")).room;
+  assert.equal(joined.members.length, 8);
+  assert.equal(
+    joined.members.every((p) => p.connected),
+    true,
+  );
+  assert.equal(
+    joined.members.some((p) => p.id === guests[6].member.id),
+    false,
+  );
+});
+
+test("a silently lost connection is detected by heartbeat and passes host control", async (t) => {
+  const a = await setup(t, {}, { heartbeatInterval: 40 }),
+    { h, token, id } = await create(a),
+    g = await join(a, token),
+    guest = await until(g, "joined");
+  await until(g, "room");
+  h.s.pong = () => {}; // Simulate a client whose network has disappeared.
+  const changed = (await until(g, "room", (m) => m.room.hostId === guest.id))
+    .room;
+  assert.equal(changed.members.find((p) => p.id === id).connected, false);
+});
+
 test("voice requires opt-in, stays inside the room, and enforces host mutes", async (t) => {
   const a = await setup(t),
     { h, token, id } = await create(a);
@@ -561,4 +683,198 @@ test("stable frontend alone can read APIs, preflight testing access and open the
   await once(socket, "open");
   socket.close();
   await once(socket, "close");
+});
+
+test("media sessions authenticate, isolate voice and snapshots, and cannot pause gameplay", async (t) => {
+  const a = await setup(t);
+  const { h, token, id } = await create(a);
+  const g = await join(a, token);
+  const joined = await until(g, "joined");
+  const state = (await until(g, "room")).room;
+  const room = a.rooms.get(token);
+  const mediaURL = a.ws.replace("/room", "/media");
+  const invalid = await client(mediaURL);
+  const rejected = once(invalid.s, "close");
+  invalid.send({ type: "attach-media", token, id, ticket: joined.ticket });
+  assert.equal((await rejected)[0], 1008);
+  const hm = await client(mediaURL),
+    gm = await client(mediaURL);
+  hm.send({
+    type: "attach-media",
+    token,
+    id,
+    ticket: room.members.get(id).ticket,
+  });
+  gm.send({
+    type: "attach-media",
+    token,
+    id: joined.id,
+    ticket: joined.ticket,
+  });
+  await until(hm, "media-ready");
+  await until(gm, "media-ready");
+  const mainPackets = [],
+    mediaPackets = [];
+  g.s.on("message", (data, binary) =>
+    mainPackets.push(binary ? "binary" : JSON.parse(data).type),
+  );
+  gm.s.on("message", (data, binary) =>
+    mediaPackets.push(binary ? "binary" : JSON.parse(data).type),
+  );
+  h.send({ type: "voice-state", enabled: true });
+  g.send({ type: "voice-state", enabled: true });
+  await until(h, "room", (m) => m.room.members.every((p) => p.voice));
+  hm.send({ type: "voice", audio: Buffer.alloc(640, 127).toString("base64") });
+  await until(gm, "voice");
+  assert.ok(!mainPackets.includes("voice"));
+  const game = { epoch: 1, match: state.match, revision: state.revision };
+  h.send({ type: "game", payload: { ...game, type: "start" } });
+  await until(g, "frame");
+  const header = Buffer.from(
+    JSON.stringify({ ...game, to: joined.id, frame: 0 }),
+  );
+  const packet = Buffer.alloc(4 + header.length + 200000);
+  packet.writeUInt32BE(header.length);
+  header.copy(packet, 4);
+  hm.s.send(packet);
+  assert.ok(Buffer.isBuffer(await gm.next()));
+  assert.ok(!mainPackets.includes("binary"));
+  hm.send({ type: "game", payload: { ...game, type: "pause" } });
+  await until(g, "frame", (m) => m.frame >= 8);
+  assert.ok(room.clock, "media cannot send lifecycle commands");
+  const history = room.history;
+  room.history = [{ frame: 500 }];
+  hm.s.send(packet);
+  assert.equal((await until(h, "snapshot-request")).to, joined.id);
+  room.history = history;
+  gm.s.close();
+  await once(gm.s, "close");
+  assert.ok(
+    room.members.get(joined.id).socket,
+    "media disconnect does not disconnect controller",
+  );
+  await until(g, "frame", (m) => m.frame >= 12);
+  h.s.close();
+  await once(hm.s, "close");
+});
+
+test("performance reports are bounded, rate limited, private to the room host and omit sensitive payloads", async (t) => {
+  const logs = [];
+  const a = await setup(
+    t,
+    {},
+    { metricsInterval: 50, logPerformance: (x) => logs.push(x) },
+  );
+  const { h, token, id } = await create(a, { listed: false });
+  const g = await join(a, token);
+  const joined = await until(g, "joined");
+  await until(g, "room");
+  g.send({
+    type: "performance",
+    metrics: {
+      fps: 59,
+      relayRTT: 42,
+      backlog: 2,
+      token,
+      audio: "secret-audio",
+      name: "secret-name",
+      stepAvgMs: -10,
+      frameGapMs: Infinity,
+    },
+  });
+  await new Promise((r) => setTimeout(r, 80));
+  g.send({ type: "performance", metrics: { fps: 2 } });
+  h.send({ type: "performance-report" });
+  const report = await until(h, "performance-report");
+  const metrics = report.room.members.find((p) => p.slot === 1).metrics;
+  assert.deepEqual(metrics, { fps: 59, relayRTT: 42, backlog: 2 });
+  assert.ok(logs.length);
+  const output = JSON.stringify(logs);
+  for (const secret of [
+    token,
+    id,
+    joined.ticket,
+    "secret-audio",
+    "secret-name",
+  ])
+    assert.ok(!output.includes(secret));
+  const received = [];
+  g.s.on("message", (d) => received.push(JSON.parse(d).type));
+  g.send({ type: "performance-report" });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(!received.includes("performance-report"));
+  const status = await (await fetch(a.http + "/api/status")).json();
+  assert.ok(status.performance.eventLoopP99Ms >= 0);
+  assert.ok(!JSON.stringify(status).includes(token));
+});
+
+test("eight-member room keeps 60 Hz deadlines with one missing controller and all voices active", async (t) => {
+  const a = await setup(t),
+    { h, token, id } = await create(a);
+  const clients = [h],
+    ids = [id];
+  for (let i = 1; i < 8; i++) {
+    const c = await join(a, token),
+      j = await until(c, "joined");
+    await until(c, "room");
+    clients.push(c);
+    ids.push(j.id);
+  }
+  const room = a.rooms.get(token),
+    media = [];
+  for (let i = 0; i < 8; i++) {
+    const m = await client(a.ws.replace("/room", "/media"));
+    media.push(m);
+    m.send({
+      type: "attach-media",
+      token,
+      id: ids[i],
+      ticket: room.members.get(ids[i]).ticket,
+    });
+    await until(m, "media-ready");
+    clients[i].send({ type: "voice-state", enabled: true });
+  }
+  await until(h, "room", (m) => m.room.members.every((p) => p.voice));
+  const frames = Array.from({ length: 8 }, () => []),
+    start = performance.now();
+  const game = { epoch: 1, match: room.match, revision: room.revision };
+  for (const [slot, c] of clients.entries())
+    c.s.on("message", (d, binary) => {
+      if (binary) return;
+      const f = JSON.parse(d);
+      if (f.type !== "frame") return;
+      frames[slot].push(f);
+      // Player two has lost upstream connectivity. Everyone else submits normally.
+      if (slot < 4 && slot !== 1)
+        c.send({
+          type: "game",
+          payload: {
+            ...game,
+            type: "input",
+            frame: f.frame + 4,
+            input: { buttons: 128, x: 0, y: 0 },
+          },
+        });
+    });
+  const voiceTimer = setInterval(() => {
+    for (const m of media)
+      m.send({
+        type: "voice",
+        audio: Buffer.alloc(640, 127).toString("base64"),
+      });
+  }, 40);
+  t.after(() => clearInterval(voiceTimer));
+  h.send({ type: "game", payload: { ...game, type: "start" } });
+  await new Promise((r) => setTimeout(r, 900));
+  clearInterval(voiceTimer);
+  assert.ok(
+    frames[0].length >= 37,
+    `only ${frames[0].length} frames in ${performance.now() - start} ms`,
+  );
+  const steady = frames[0].filter((f) => f.frame >= 8);
+  assert.ok(steady.every((f) => f.late.includes(1)));
+  assert.ok(
+    steady.every((f) => ![0, 2, 3].some((slot) => f.late.includes(slot))),
+  );
+  assert.ok(frames.every((f) => Math.abs(f.length - frames[0].length) <= 1));
 });

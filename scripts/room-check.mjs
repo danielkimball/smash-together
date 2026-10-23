@@ -89,11 +89,22 @@ try {
   assert.ok(states[0].frame > before.frame + 120);
   assert.ok(Math.abs(states[0].frame - states[2].frame) < 120);
   assert.ok(states[2].matches > 0);
+  assert.ok(
+    await a.evaluate(() =>
+      smash.net.performanceEvents.some(
+        (e) =>
+          e.type === "snapshot-sent" &&
+          e.observation &&
+          e.transport === "media",
+      ),
+    ),
+  );
   record("Midmatch spectator catches up while fighters continue", { states });
   for (const p of [a, b, c]) {
     await p.locator("#game-hud [data-voice]").click();
     await p.locator("#voice-join").click();
     await p.waitForFunction(() => smash.voice.node && !smash.voice.joining);
+    await p.waitForFunction(() => smash.net.mediaReady);
     await p.locator('[data-close="voice-dialog"]').click();
   }
   await wait(2000);

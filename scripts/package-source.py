@@ -21,7 +21,7 @@ for directory in ['brand','fonts','media']:
 source=root/'public/source';source.mkdir(exist_ok=True)
 (source/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 archive=source/'smash-together-source.tar.gz'
-allowed=['.gitattributes','.prettierignore','.gitignore','.gitmodules','AGENTS.md','HOSTING.md','config.example.json','LICENSE','README.md','QA.md','package.json','package-lock.json','server.mjs','assets','public','scripts','test','launcher']
+allowed=['.gitattributes','.prettierignore','.gitignore','.gitmodules','AGENTS.md','HOSTING.md','config.example.json','LICENSE','README.md','QA.md','PERFORMANCE.md','package.json','package-lock.json','server.mjs','assets','public','scripts','test','launcher']
 forbidden={'.z64','.v64','.n64','.sav','.state','.smash64'}
 def addfile(out,file,arc):
  if file.suffix in forbidden:raise RuntimeError('Refusing game/save file: '+str(file))

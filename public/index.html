@@ -713,7 +713,8 @@
       <p class="dialog-description">
         Pair Bluetooth controllers in your device’s settings, or connect by USB.
         Then press a button. Xbox and DragonRise N64 USB controllers have
-        presets. Custom mappings are saved automatically for this controller.
+        presets. Select a mapping, then press each button in order. Setup
+        advances and saves automatically; release between presses. Escape stops.
       </p>
       <label for="touch-mode">PHONE TOUCH CONTROLS</label>
       <select id="touch-mode">
@@ -737,7 +738,12 @@
         On Mac, if B opens Launchpad: System Settings → Game Controllers → turn
         off “Press Home button to open Launchpad.”
       </p>
-      <p id="mapping-prompt" class="mapping-prompt" hidden></p>
+      <p
+        id="mapping-prompt"
+        class="mapping-prompt"
+        aria-live="polite"
+        hidden
+      ></p>
       <div class="controller-preview">
         <div class="stick-meter"><span id="stick-dot"></span></div>
         <div>
@@ -819,6 +825,7 @@
         </button>
       </div>
       <pre id="diagnostics"></pre>
+      <button id="performance-export">Download performance report</button>
       <p class="subtext">
         Late inputs affect that player's controls while the match keeps moving.
         Reconnecting or resuming may briefly synchronize the group.

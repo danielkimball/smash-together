@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { FrameClock } from "./scripts/frame-clock.mjs";
+import { monitorEventLoopDelay, performance } from "node:perf_hooks";
+import { cleanMetrics, performanceLogger } from "./scripts/performance-log.mjs";
 import {
   active,
   waiting,
@@ -45,8 +47,53 @@ export function createApp({
   port = 8787,
   config = {},
   maintenancePath = null,
+  logPerformance = () => {},
+  metricsInterval = 30000,
+  reconnectGraceMs = 30000,
+  heartbeatInterval = 5000,
 } = {}) {
   const rooms = new Map();
+  const loopDelay = monitorEventLoopDelay({ resolution: 20 });
+  loopDelay.enable();
+  let loopBaseline = performance.eventLoopUtilization();
+  let serverMetrics = {
+    eventLoopP99Ms: 0,
+    eventLoopMaxMs: 0,
+    eventLoopUtilization: 0,
+  };
+  const roomMetrics = (room) => ({
+    room: room.id,
+    frame: room.clock?.frame || 0,
+    clockMaxLatenessMs: Math.round(room.clock?.maxLatenessMs || 0),
+    clockHiccups: room.clock?.hiccups || 0,
+    missingInputs: room.clock?.lateCounts || [0, 0, 0, 0],
+    members: [...room.members.values()].map((p) => ({
+      slot: p.slot,
+      connected: !!p.socket,
+      reportAgeMs: p.performanceAt ? Date.now() - p.performanceAt : null,
+      metrics: p.performance || null,
+    })),
+  });
+  const metricsTimer = setInterval(() => {
+    const utilization = performance.eventLoopUtilization(loopBaseline);
+    loopBaseline = performance.eventLoopUtilization();
+    serverMetrics = {
+      eventLoopP99Ms: Math.round(loopDelay.percentile(99) / 1e6),
+      eventLoopMaxMs: Math.round(loopDelay.max / 1e6),
+      eventLoopUtilization: Math.round(utilization.utilization * 1000) / 1000,
+      rssMB: Math.round(process.memoryUsage().rss / 1048576),
+    };
+    loopDelay.reset();
+    if (rooms.size)
+      logPerformance({
+        type: "smash-performance",
+        at: new Date().toISOString(),
+        version: VERSION,
+        server: serverMetrics,
+        rooms: [...rooms.values()].map(roomMetrics),
+      });
+  }, metricsInterval);
+  metricsTimer.unref();
   const stopClock = (room) => {
     clearInterval(room.clockTimer);
     room.clock = null;
@@ -181,6 +228,7 @@ export function createApp({
             version: VERSION,
             hostId: config.hostId || null,
             activeRooms: rooms.size,
+            performance: serverMetrics,
             updating: !!updating(),
             shareUrl,
             publicUrl: frontend?.href || shareUrl,
@@ -200,7 +248,7 @@ export function createApp({
               .map((r) => ({
                 id: r.id,
                 name: r.name,
-                count: r.members.size,
+                count: [...r.members.values()].filter((p) => p.socket).length,
                 capacity: r.capacity,
                 phase: r.phase,
                 selecting: r.selecting,
@@ -279,10 +327,13 @@ export function createApp({
     perMessageDeflate: false,
   });
   server.on("upgrade", (req, socket, head) => {
-    let valid = req.url === "/room";
+    let valid = ["/room", "/media"].includes(req.url);
     valid &&= trustedOrigin(req);
-    if (!valid || wss.clients.size >= 64) return socket.destroy();
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws));
+    if (!valid || wss.clients.size >= 128) return socket.destroy();
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.mediaTransport = req.url === "/media";
+      wss.emit("connection", ws);
+    });
   });
   const publicRoom = (r) => ({
     id: r.id,
@@ -291,6 +342,7 @@ export function createApp({
     capacity: r.capacity,
     delay: r.delay,
     timing: "deadline",
+    mediaTransport: true,
     phase: r.phase,
     match: r.match,
     revision: r.revision,
@@ -323,6 +375,52 @@ export function createApp({
       if (p.id !== except) send(p.socket, message);
   };
   const update = (r) => broadcast(r, { type: "room", room: publicRoom(r) });
+  const removeMember = (room, member) => {
+    clearTimeout(member.reconnectTimer);
+    room.members.delete(member.id);
+    room.override = room.override?.filter((id) => id !== member.id);
+  };
+  const disconnect = (room, member, socket, voluntary = false) => {
+    if (member.socket !== socket) return;
+    member.mediaSocket?.close(1000, "Room connection closed");
+    member.mediaSocket = null;
+    member.socket = null;
+    member.voice = false;
+    member.disconnectedAt = Date.now();
+    if (voluntary) removeMember(room, member);
+    const successor = nextHost(room);
+    if (!successor) {
+      stopClock(room);
+      for (const p of room.members.values()) clearTimeout(p.reconnectTimer);
+      rooms.delete(room.token);
+      return;
+    }
+    if (room.hostId === member.id) room.hostId = successor.id;
+    if (room.clock) {
+      room.clock.slots = active(room)
+        .filter((p) => p.socket && (p.ready || !room.selecting))
+        .map((p) => p.slot);
+      for (const row of room.clock.pending.values())
+        if (member.slot >= 0) delete row[member.slot];
+    }
+    if (room.selecting && member.slot >= 0) {
+      // A shared snapshot clears only the departed token; keep other choices.
+      if (!voluntary) enqueue(room, member);
+      stopClock(room);
+      room.revision++;
+    }
+    if (!voluntary) {
+      member.reconnectTimer = setTimeout(() => {
+        if (member.socket || rooms.get(room.token) !== room) return;
+        removeMember(room, member);
+        // A disconnected fighter already has neutral inputs. Expiring its
+        // reservation must not pause or resynchronize the remaining players.
+        update(room);
+      }, reconnectGraceMs);
+      member.reconnectTimer.unref();
+    }
+    update(room);
+  };
   const clean = (value, fallback, max = 40) =>
     String(value || "")
       .replace(/[\x00-\x1f\x7f]/g, "")
@@ -349,7 +447,14 @@ export function createApp({
         room = meta && rooms.get(meta.token);
       const member = room?.members.get(meta.id);
       const isHost = room?.hostId === meta?.id;
+      if (meta && !socket.mediaTransport && member?.socket !== socket)
+        return socket.close(1008, "Session replaced or closed");
       if (binary) {
+        if (
+          socket.mediaTransport &&
+          (!member?.socket || member.mediaSocket !== socket)
+        )
+          return socket.close(1008, "Invalid media session");
         if (!room || !isHost) return fail("Only the host can synchronize.");
         if (data.length < 8) return;
         // A roster can change while a snapshot is compressing. Never forward
@@ -374,19 +479,25 @@ export function createApp({
             return;
           const history = room.history || [];
           if (header.frame < (history[0]?.frame ?? 0)) {
-            send(socket, { type: "snapshot-request", to: header.to });
+            send(member.socket, { type: "snapshot-request", to: header.to });
             return;
           }
-          target.socket.send(data, { binary: true });
+          const transfer =
+            target.mediaSocket?.readyState === 1
+              ? target.mediaSocket
+              : target.socket;
+          if (transfer.bufferedAmount > 1024 * 1024) return;
+          transfer.send(data, { binary: true });
           for (const frame of history)
-            if (frame.frame >= header.frame) send(target.socket, frame);
+            if (frame.frame >= header.frame) send(transfer, frame);
           return;
         }
         for (const p of room.members.values()) {
           if (p.id === meta.id || !p.socket) continue;
-          if (p.socket.bufferedAmount > 24 * 1024 * 1024)
-            p.socket.close(1008, "Connection too slow");
-          else p.socket.send(data, { binary: true });
+          const transfer = p.socket;
+          if (transfer.bufferedAmount > 24 * 1024 * 1024)
+            transfer.close(1008, "Connection too slow");
+          else transfer.send(data, { binary: true });
         }
         return;
       }
@@ -398,6 +509,22 @@ export function createApp({
         return fail("Invalid message");
       }
       if (!m || typeof m !== "object") return fail("Invalid message");
+      if (socket.mediaTransport) {
+        if (!meta && m.type === "attach-media") {
+          const r = TOKEN.test(m.token || "") && rooms.get(m.token);
+          const p = r?.members.get(m.id);
+          if (!p?.socket || !m.ticket || p.ticket !== m.ticket)
+            return socket.close(1008, "Invalid media session");
+          p.mediaSocket?.close(1000, "Replaced");
+          p.mediaSocket = socket;
+          socket.meta = { token: r.token, id: p.id };
+          clearTimeout(joinTimeout);
+          return send(socket, { type: "media-ready" });
+        }
+        if (!member || member.mediaSocket !== socket || !member.socket)
+          return socket.close(1008, "Invalid media session");
+        if (m.type !== "voice" && m.type !== "ping") return;
+      }
       if (m.type === "ping") return send(socket, { type: "pong", id: m.id });
       if (m.type === "create" || m.type === "join") {
         if (meta) return fail("Already in a room");
@@ -456,10 +583,16 @@ export function createApp({
               "Everyone needs the same ROM and game build. Reload the pages and try again.",
             );
           p = [...r.members.values()].find(
-            (p) => m.ticket && p.ticket === m.ticket && !p.socket,
+            (p) => m.ticket && p.ticket === m.ticket,
           );
-          if (!p && r.members.size >= r.capacity)
-            return fail("This room is full. Choose another room.");
+          if (!p && r.members.size >= r.capacity) {
+            const reserved = [...r.members.values()]
+              .filter((p) => !p.socket)
+              .sort((a, b) => a.disconnectedAt - b.disconnectedAt)[0];
+            if (!reserved)
+              return fail("This room is full. Choose another room.");
+            removeMember(r, reserved);
+          }
         }
         if (!p) {
           const used = new Set([...r.members.values()].map((p) => p.slot));
@@ -479,6 +612,23 @@ export function createApp({
           r.members.set(p.id, p);
         }
         if (!r.hostId) r.hostId = p.id;
+        clearTimeout(p.reconnectTimer);
+        if (p.socket) {
+          // A reload can rejoin before the old transport's close arrives.
+          // Only the saved secret ticket can replace that session.
+          const previous = p.socket;
+          p.socket = null;
+          if (r.hostId === p.id) r.hostId = nextHost(r)?.id || p.id;
+          p.mediaSocket?.close(1000, "Session replaced");
+          p.mediaSocket = null;
+          for (const row of r.clock?.pending.values() || [])
+            if (p.slot >= 0) delete row[p.slot];
+          send(previous, {
+            type: "closed",
+            message: "This player rejoined in another page.",
+          });
+          previous.close(1000, "Session replaced");
+        }
         if (r.selecting && p.slot < 0 && p.ready) {
           const occupied = new Set(active(r).map((member) => member.slot));
           p.slot = [0, 1, 2, 3].find((slot) => !occupied.has(slot)) ?? -1;
@@ -566,7 +716,7 @@ export function createApp({
         return;
       }
       if (m.type === "leave") {
-        socket.voluntary = true;
+        disconnect(room, member, socket, true);
         socket.close(1000);
         return;
       }
@@ -670,6 +820,20 @@ export function createApp({
         update(room);
         return;
       }
+      if (m.type === "performance") {
+        if (Date.now() - (member.performanceAt || 0) < 4000) return;
+        member.performance = cleanMetrics(m.metrics);
+        member.performanceAt = Date.now();
+        return;
+      }
+      if (m.type === "performance-report") {
+        if (!isHost) return;
+        return send(socket, {
+          type: "performance-report",
+          server: serverMetrics,
+          room: roomMetrics(room),
+        });
+      }
       if (m.type === "voice-moderate") {
         if (!isHost) return fail("Only the host can mute the room.");
         if (typeof m.spectators === "boolean")
@@ -695,8 +859,17 @@ export function createApp({
         }
         if (++member.voicePackets > 35) return;
         for (const p of room.members.values())
-          if (p.id !== member.id && p.voice && p.socket?.bufferedAmount < 65536)
-            send(p.socket, { type: "voice", from: member.id, audio: m.audio });
+          if (p.id !== member.id && p.voice && p.socket) {
+            const transport =
+              p.mediaSocket?.readyState === 1 ? p.mediaSocket : p.socket;
+            // Voice is disposable. Never build a queue of stale audio.
+            if (transport.bufferedAmount < 8192)
+              send(transport, {
+                type: "voice",
+                from: member.id,
+                audio: m.audio,
+              });
+          }
         return;
       }
       if (m.type === "rename") {
@@ -828,17 +1001,11 @@ export function createApp({
               };
               room.history.push(packet);
               if (room.history.length > 900) room.history.shift();
+              const wire = JSON.stringify(packet);
               for (const p of room.members.values()) {
                 if (p.socket?.bufferedAmount > 1024 * 1024) {
                   p.socket.close(1008, "Connection too slow");
-                } else
-                  send(p.socket, {
-                    type: "frame",
-                    ...frame,
-                    epoch: g.epoch,
-                    match: room.match,
-                    revision: room.revision,
-                  });
+                } else if (p.socket?.readyState === 1) p.socket.send(wire);
               }
             },
           });
@@ -860,34 +1027,12 @@ export function createApp({
       if (!meta) return;
       const room = rooms.get(meta.token),
         member = room?.members.get(meta.id);
-      if (!room || !member || member.socket !== socket) return;
-      member.socket = null;
-      member.voice = false;
-      if (socket.voluntary) {
-        room.members.delete(meta.id);
-        room.override = room.override?.filter((id) => id !== meta.id);
-      }
-      const successor = nextHost(room);
-      if (!successor) {
-        stopClock(room);
-        rooms.delete(room.token);
+      if (socket.mediaTransport) {
+        if (member?.mediaSocket === socket) member.mediaSocket = null;
         return;
       }
-      if (room.hostId === meta.id) room.hostId = successor.id;
-      if (room.clock) {
-        room.clock.slots = active(room)
-          .filter((p) => p.socket && (p.ready || !room.selecting))
-          .map((p) => p.slot);
-        for (const row of room.clock.pending.values())
-          if (member.slot >= 0) delete row[member.slot];
-      }
-      if (room.selecting && member.slot >= 0) {
-        // A shared snapshot clears only the departed token; keep other choices.
-        if (!socket.voluntary) enqueue(room, member);
-        stopClock(room);
-        room.revision++;
-      }
-      update(room);
+      if (!room || !member || member.socket !== socket) return;
+      disconnect(room, member, socket);
     });
   });
   const heartbeat = setInterval(() => {
@@ -898,7 +1043,7 @@ export function createApp({
         s.ping();
       }
     }
-  }, 15000);
+  }, heartbeatInterval);
   heartbeat.unref();
   const ready = new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -911,7 +1056,13 @@ export function createApp({
     ready,
     close: async () => {
       clearInterval(heartbeat);
-      for (const r of rooms.values()) stopClock(r);
+      clearInterval(metricsTimer);
+      loopDelay.disable();
+      for (const r of rooms.values()) {
+        stopClock(r);
+        for (const p of r.members.values()) clearTimeout(p.reconnectTimer);
+      }
+      rooms.clear();
       for (const s of wss.clients) s.terminate();
       await new Promise((r) => server.close(r));
       wss.close();
@@ -933,6 +1084,9 @@ if (
     port: Number(process.env.PORT || 8787),
     config,
     maintenancePath: path.join(ROOT, ".local/deploy-drain.json"),
+    logPerformance: performanceLogger(
+      path.join(ROOT, ".local/performance.jsonl"),
+    ),
   });
   app.ready
     .then((a) =>

@@ -55,6 +55,16 @@ let toastTimer,
 let shareUrl = null,
   publicUrl = null,
   polling = false;
+let lastPerformanceSample = 0,
+  longTasks = 0;
+if (
+  typeof PerformanceObserver !== "undefined" &&
+  PerformanceObserver.supportedEntryTypes?.includes("longtask")
+) {
+  new PerformanceObserver((list) => {
+    longTasks += list.getEntries().length;
+  }).observe({ type: "longtask", buffered: false });
+}
 const attract = new Attract({
   start: () => attempt(() => withCartridge(showMainMenu))(),
   hasDialog: () => !!document.querySelector("dialog[open]"),
@@ -104,6 +114,7 @@ window.smash = {
     inputBuffer: net.personalDelay || net.delay,
     lateInputs: net.lateInputs || 0,
     fps: lastFPS,
+    performance: net.performanceSamples.at(-1) || null,
     logs: engine.logs.slice(-15),
   }),
 };
@@ -980,7 +991,7 @@ function renderCharacterRoom() {
       ? "Spectating · Open Players to see the queue"
       : net.players.length < 2
         ? "Choose your fighter while you wait for friends"
-        : `${r.members.length} / ${r.capacity} players · ${net.isHost ? "Start when everyone has chosen" : "The host starts the match"}`;
+        : `${net.connected.length} / ${r.capacity} players · ${net.isHost ? "Start when everyone has chosen" : "The host starts the match"}`;
   const signature = JSON.stringify([
     r,
     info.players.map((p) => [p.selected, p.fighter]),
@@ -1063,7 +1074,7 @@ function renderGame() {
   $("local-save-actions").hidden = online;
   $("game-players").replaceChildren(
     ...(online
-      ? net.room?.members || []
+      ? net.connected
       : [{ slot: 0, name: "Local play", connected: true }]
     ).map((p) => {
       const badge = document.createElement("span");
@@ -1371,7 +1382,7 @@ function renderBindings() {
       button.dataset.action = action;
       button.setAttribute("aria-label", `Map ${label}`);
       button.onclick = () => {
-        wizardIndex = -1;
+        wizardIndex = ACTIONS.findIndex(([name]) => name === action);
         beginMapping(action, label);
       };
       row.append(text, button);
@@ -1392,6 +1403,9 @@ function beginMapping(action, label) {
   document
     .querySelectorAll("[data-action]")
     .forEach((b) => b.classList.toggle("active", b.dataset.action === action));
+  document
+    .querySelector(`[data-action="${action}"]`)
+    ?.scrollIntoView({ block: "nearest" });
 }
 controls.addEventListener("mapped", () => {
   renderBindings();
@@ -1418,6 +1432,8 @@ $("wizard").onclick = () => {
   beginMapping(...ACTIONS[0]);
 };
 $("preset").onclick = () => {
+  wizardIndex = -1;
+  controls.cancelCapture();
   controls.profile = defaultProfile(profileKind(controls.id()));
   controls.persist();
   renderBindings();
@@ -1554,9 +1570,27 @@ $("reset").onclick = () => {
   unpause();
 };
 function diagnostics() {
+  const sample = net.performanceSamples.at(-1);
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nDirect connections: ${net.directCount}\nGame inputs: server-agreed frames\nServer latency: ${net.relayRTT || "—"} ms\nYour input buffer: ${net.personalDelay || net.delay} frames\nNetwork frame: ${net.frame}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nController: ${controllerName()}\nRendering: ${lastFPS} fps\nVersion: 3.6.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: independent server deadlines\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay || net.delay} frames (${Math.round(((net.personalDelay || net.delay) * 1000) / 60)} ms)\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.6.1`;
 }
+$("performance-export").onclick = () => {
+  const report = {
+    version: "3.6.1",
+    exported: new Date().toISOString(),
+    samples: net.performanceSamples,
+    events: net.performanceEvents,
+    room: net.roomPerformance || null,
+  };
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "smash-performance.json";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
 function menuController(time) {
   const pad = controls.pad();
   const homeInput = view === "home" && !document.querySelector("dialog[open]");
@@ -1749,6 +1783,12 @@ document.addEventListener("pointermove", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && view === "game" && net.state === "offline") pause();
 });
+window.addEventListener("pagehide", () => {
+  // Refresh/navigation releases the transport promptly. Keep the session
+  // ticket so this tab can reclaim its short-lived reconnect reservation.
+  net.socket?.close(1000, "Page left");
+  net.mediaSocket?.close(1000, "Page left");
+});
 document.addEventListener("dragover", (e) => e.preventDefault());
 document.addEventListener("drop", (e) => {
   e.preventDefault();
@@ -1775,11 +1815,12 @@ function tick(time) {
     if (engine.loaded && !preparing && ["game", "native"].includes(view)) {
       if (net.state !== "offline") {
         const budget = performance.now();
+        const catchupBudget = net.serverFrame - net.frame > 3 ? 20 : 12;
         for (let n = 0; n < 6; n++) {
           if (
             !net.tick(time) ||
             net.serverFrame - net.frame < 2 ||
-            performance.now() - budget > 12
+            performance.now() - budget > catchupBudget
           )
             break;
         }
@@ -1899,6 +1940,11 @@ function tick(time) {
       );
       lastFrames = engine.frames;
       lastUI = time;
+      if (net.room && time - lastPerformanceSample >= 5000) {
+        lastPerformanceSample = time;
+        net.samplePerformance(lastFPS, !!roomUI.voice.stream, longTasks);
+        longTasks = 0;
+      }
       if ($("diagnostics-dialog").open) diagnostics();
       if (view === "game") {
         const isPlaying = net.running || (net.state === "offline" && !paused);

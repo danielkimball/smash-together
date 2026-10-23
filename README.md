@@ -143,3 +143,14 @@ The black / CRT white / red / idle blue / yellow / green palette is defined in `
 Before a cartridge is loaded, the original N64 / Master Hand opening plays as a recording of the host's copy with its original audio. If browser autoplay blocks sound, click or press a key at **Play intro with sound** to replay it audibly; controller navigation can still skip it silently. The following title is a silent, looping fire clip with no announcer or How to Play transition. Press again to open the ROM modal; fire keeps moving behind it. Invalid ROMs remain blocked. A verified or remembered cartridge opens the live native Mode Select. VS Mode opens the branded lobby while the actual menu soundtrack continues. 1P, Options and Data remain native. Videos and their network requests are released before gameplay.
 
 `SMASH_ROM='/absolute/path/your.z64' node scripts/capture-attract.mjs` reproduces the recordings using isolated Chrome and ffmpeg; temporary recordings and scene observations stay in ignored `artifacts/attract-capture`. No ROM or savestate is published. The capture is an audiovisual preview, not an emulated game available before ROM verification. `SMASH_ROM='/absolute/path/your.z64' SMASH_URL='http://localhost:8790' node scripts/portal-check.mjs` checks the entry flow, validation and responsive branding.
+
+
+## Diagnosing lag
+
+Open **Menu → Connection → Download performance report** after a lag spike. The app keeps about ten minutes of timing samples; the backend keeps rotating private performance logs. v3.6.1 fixes runaway input buffering after interruptions, separates live spectator transfers and voice from controller traffic, and lets a delayed guest recover without pausing everyone. Voice remains optional and supported. See [the latency audit](PERFORMANCE.md) and [hosting diagnostics](HOSTING.md#performance-monitoring-v361).
+
+A fast download connection alone does not guarantee responsive play: upload congestion, round-trip latency and the browser's ability to emulate at 60 FPS matter too. The connection report shows these separately. Refresh every player's tab after updating.
+
+Room counts show connected people. Leaving passes hosting to the next connected fighter, then a spectator. Refresh/disconnection has a 30-second identity reservation; rejoining from the same tab reclaims it without creating a duplicate or taking hosting back. An expired reservation joins as a new member; battle arrivals spectate until the next lineup.
+
+In **Controller setup**, click any mapping and press the remaining buttons in sequence. Setup advances automatically, waits for release between gamepad presses, and saves each mapping. Escape stops the sequence.

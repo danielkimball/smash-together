@@ -1,5 +1,6 @@
 import { Rounds } from "./rounds.js";
 import { socketURL } from "./service.js";
+import { InputTiming } from "./input-timing.js";
 const neutral = () => ({ buttons: 0, x: 0, y: 0 });
 const bytesOf = async (stream) =>
   new Uint8Array(await new Response(stream).arrayBuffer());
@@ -35,7 +36,7 @@ export async function decompress(bytes, limit = 18 * 1024 * 1024) {
   return out;
 }
 export class Netplay extends EventTarget {
-  constructor(engine, controls) {
+  constructor(engine, controls, { now = () => performance.now() } = {}) {
     super();
     Object.assign(this, {
       engine,
@@ -66,6 +67,11 @@ export class Netplay extends EventTarget {
     this.remoteHashes = new Map();
     this.sentInputs = new Map();
     this.rounds = new Rounds();
+    this.now = now;
+    this.inputTiming = new InputTiming(now);
+    this.performanceSamples = [];
+    this.performanceEvents = [];
+    this.observations = new Map();
   }
   get isHost() {
     return this.id && this.id === this.room?.hostId;
@@ -112,6 +118,111 @@ export class Netplay extends EventTarget {
     if (this.socket?.readyState === 1)
       this.socket.send(JSON.stringify(message));
   }
+  connectMedia() {
+    if (
+      this.mediaSocket ||
+      !this.room?.mediaTransport ||
+      this.socket?.readyState !== 1 ||
+      !this.ticket
+    )
+      return;
+    const generation = this.connectionGeneration;
+    const address = new URL(this.socket.url);
+    address.pathname = "/media";
+    const ws = new WebSocket(address);
+    this.mediaSocket = ws;
+    this.mediaReady = false;
+    ws.binaryType = "arraybuffer";
+    ws.onopen = () =>
+      ws.send(
+        JSON.stringify({
+          type: "attach-media",
+          token: this.token,
+          id: this.id,
+          ticket: this.ticket,
+        }),
+      );
+    ws.onmessage = (event) => {
+      if (ws !== this.mediaSocket || generation !== this.connectionGeneration)
+        return;
+      if (event.data instanceof ArrayBuffer) {
+        this.receiveState(event.data).catch((e) => this.error(e.message));
+        return;
+      }
+      let message;
+      try {
+        message = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (message.type === "media-ready") {
+        this.mediaReady = true;
+        this.recordPerformanceEvent("media-connected");
+      } else if (message.type === "voice")
+        this.dispatchEvent(new CustomEvent("voice", { detail: message }));
+      else if (message.type === "frame") this.receiveFrame(message);
+    };
+    ws.onerror = () => {};
+    ws.onclose = () => {
+      if (ws !== this.mediaSocket) return;
+      this.mediaSocket = null;
+      this.mediaReady = false;
+      this.recordPerformanceEvent("media-disconnected");
+      if (
+        generation === this.connectionGeneration &&
+        this.room &&
+        this.socket?.readyState === 1
+      )
+        this.mediaRetry = setTimeout(() => this.connectMedia(), 2000);
+    };
+  }
+  sendVoice(audio) {
+    const socket = this.room?.mediaTransport
+      ? this.mediaReady && this.mediaSocket
+      : this.socket;
+    if (socket?.readyState !== 1 || socket.bufferedAmount > 8192) {
+      this.voiceDropped = (this.voiceDropped || 0) + 1;
+      return;
+    }
+    socket.send(JSON.stringify({ type: "voice", audio }));
+    this.voiceSent = (this.voiceSent || 0) + 1;
+  }
+  async sendState(packet, observation = false) {
+    const generation = this.connectionGeneration;
+    // Live state transfers may briefly wait for the separate channel.
+    // The room/game socket stays available for controller deadlines throughout.
+    for (
+      let n = 0;
+      observation && this.room?.mediaTransport && !this.mediaReady && n < 100;
+      n++
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (generation !== this.connectionGeneration) return;
+    }
+    // Group sync deliberately pauses the room; retain its ordered lifecycle
+    // channel. Only live transfers need isolation from controller deadlines.
+    const socket =
+      observation && this.mediaReady ? this.mediaSocket : this.socket;
+    if (observation && this.room?.mediaTransport && !this.mediaReady)
+      throw Error(
+        "Spectator transfer is reconnecting. Please rejoin in a moment.",
+      );
+    if (socket?.readyState !== 1)
+      throw Error("The connection closed during synchronization.");
+    for (let n = 0; socket.bufferedAmount > 65536 && n < 200; n++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (generation !== this.connectionGeneration) return;
+      if (socket.readyState !== 1) throw Error("State transfer disconnected.");
+    }
+    if (socket.bufferedAmount > 65536)
+      throw Error("State transfer is congested. Please rejoin in a moment.");
+    socket.send(packet);
+    this.recordPerformanceEvent("snapshot-sent", {
+      bytes: packet.length,
+      observation,
+      transport: observation && this.mediaReady ? "media" : "game",
+    });
+  }
   sendGame(payload, direct = true, to) {
     const data = {
       ...payload,
@@ -157,7 +268,9 @@ export class Netplay extends EventTarget {
         protocol: 6,
         ticket: options.token
           ? sessionStorage.getItem("smash.ticket." + options.token)
-          : undefined,
+          : options.roomId
+            ? sessionStorage.getItem("smash.room-ticket." + options.roomId)
+            : undefined,
         rom: this.engine.romHash,
         build: this.engine.build + "-smash-native-v6",
       });
@@ -176,6 +289,7 @@ export class Netplay extends EventTarget {
       if (m.type === "joined") {
         this.id = m.id;
         this.token = m.token;
+        this.ticket = m.ticket;
         sessionStorage.setItem("smash.ticket." + m.token, m.ticket);
         this.lastOptions = { ...options, token: m.token };
       } else if (m.type === "room") this.updateRoom(m.room);
@@ -186,9 +300,12 @@ export class Netplay extends EventTarget {
       else if (m.type === "voice")
         this.dispatchEvent(new CustomEvent("voice", { detail: m }));
       else if (m.type === "frame") this.receiveFrame(m);
-      else if (m.type === "pong" && typeof m.id === "number")
-        this.relayRTT = Math.round(performance.now() - m.id);
-      else if (m.type === "launch") {
+      else if (m.type === "performance-report") this.roomPerformance = m;
+      else if (m.type === "pong" && typeof m.id === "number") {
+        this.relayRTT = Math.round(this.now() - m.id);
+        if (this.now() >= this.inputTiming.recoverUntil)
+          this.inputTiming.recordRTT(this.relayRTT);
+      } else if (m.type === "launch") {
         this.running = false;
         this.status("preparing");
         if (this.isHost) {
@@ -245,6 +362,9 @@ export class Netplay extends EventTarget {
     const old = this.room,
       oldMatch = old?.match;
     this.room = room;
+    if (this.ticket)
+      sessionStorage.setItem("smash.room-ticket." + room.id, this.ticket);
+    this.connectMedia();
     this.player = this.me?.slot ?? -1;
     this.delay = room.delay;
     for (const [id, p] of this.peers) {
@@ -333,6 +453,20 @@ export class Netplay extends EventTarget {
     this.restoring = false;
     this.pendingStart = false;
     this.lastEcho = 0;
+    this.restoredEpoch = null;
+    clearTimeout(this.mediaRetry);
+    const media = this.mediaSocket;
+    this.mediaSocket = null;
+    this.mediaReady = false;
+    media?.close();
+    this.relayRTT = 0;
+    this.inputTiming.samples = [];
+    this.inputTiming.reset();
+    this.observations.clear();
+    this.observationTail = null;
+    this.observationRequested = false;
+    this.lastObservationRequest = -Infinity;
+    this.roomPerformance = null;
     this.serverFrame = -1;
     this.dispatchEvent(new Event("leave"));
     clearTimeout(this.syncTimeout);
@@ -485,7 +619,13 @@ export class Netplay extends EventTarget {
     packet.set(packed, 4 + meta.length);
     if (socket.readyState !== 1)
       throw Error("The connection closed during synchronization.");
-    socket.send(packet);
+    await this.sendState(packet);
+    if (
+      this.socket !== socket ||
+      this.epoch !== epoch ||
+      this.room?.revision !== revision
+    )
+      return;
     if (this.participants.length === 1) {
       this.sendGame({ type: "start" }, false);
       this.start();
@@ -504,6 +644,29 @@ export class Netplay extends EventTarget {
       !this.connected.some((p) => p.id === to)
     )
       return;
+    // A mismatching spectator can request another repair every hash interval.
+    // One compression/transfer at a time per spectator avoids a snapshot storm.
+    if (this.observations.has(to)) return;
+    const generation = this.connectionGeneration;
+    const operation = Promise.resolve(this.observationTail)
+      .catch(() => {})
+      .then(() => {
+        if (
+          generation === this.connectionGeneration &&
+          this.isHost &&
+          this.running
+        )
+          return this.sendObservationState(to);
+      });
+    this.observationTail = operation;
+    this.observations.set(to, operation);
+    try {
+      await operation;
+    } finally {
+      if (this.observations.get(to) === operation) this.observations.delete(to);
+    }
+  }
+  async sendObservationState(to) {
     const generation = this.connectionGeneration,
       socket = this.socket;
     const raw = this.engine.snapshot();
@@ -531,7 +694,7 @@ export class Netplay extends EventTarget {
     new DataView(packet.buffer).setUint32(0, meta.length);
     packet.set(meta, 4);
     packet.set(packed, 4 + meta.length);
-    socket.send(packet);
+    await this.sendState(packet, true);
   }
   async receiveState(buffer) {
     if (!this.room) return;
@@ -543,8 +706,16 @@ export class Netplay extends EventTarget {
     const meta = JSON.parse(
       new TextDecoder().decode(buffer.slice(4, 4 + size)),
     );
-    if (meta.match !== this.room.match || meta.revision !== this.room.revision)
+    if (
+      meta.match !== this.room.match ||
+      meta.revision !== this.room.revision ||
+      (Number.isSafeInteger(meta.epoch) && meta.epoch < this.epoch)
+    )
       return;
+    if (meta.to && this.running && meta.frame < this.frame) {
+      this.observationRequested = false;
+      return; // Already caught up while this snapshot was travelling.
+    }
     if (
       !Number.isSafeInteger(meta.epoch) ||
       meta.epoch < this.epoch ||
@@ -557,6 +728,20 @@ export class Netplay extends EventTarget {
     this.running = false;
     this.restoring = true;
     this.pendingFrames = this.pendingFrames || new Map();
+    // Live frames can overtake the snapshot on the other connection. Preserve
+    // them, then merge the ordered replay following the media snapshot.
+    if (meta.to)
+      for (const [frame, inputs] of this.inputs) {
+        if (frame >= meta.frame)
+          this.pendingFrames.set(frame, {
+            frame,
+            inputs,
+            commands: this.frameCommands.get(frame),
+            epoch: meta.epoch,
+            match: meta.match,
+            revision: meta.revision,
+          });
+      }
     this.status("syncing");
     this.epoch = meta.epoch;
     this.delay = meta.delay;
@@ -572,6 +757,8 @@ export class Netplay extends EventTarget {
     )
       return;
     this.engine.restore(bytes);
+    this.observationRequested = false;
+    this.restoredEpoch = meta.epoch;
     this.rounds.restore(meta.rounds);
     if (this.engine.hash() !== meta.hash)
       throw Error("Game state did not restore correctly. Reload and rejoin.");
@@ -601,17 +788,23 @@ export class Netplay extends EventTarget {
     this.lateInputs = 0;
     this.lastLate = [];
     this.jitterLead = this.delay;
+    this.inputTiming.reset();
+    this.lastInputTick = this.now();
+    this.lastFrameAt = 0;
+    this.ownLateInputs = 0;
+    this.maxFrameGap = 0;
+    this.stepCost = { count: 0, total: 0, max: 0 };
     this.onTimeFrames = 0;
     this.lastRepeat = 0;
     this.running = true;
-    this.next = performance.now() + 200;
+    this.next = this.now() + 200;
     this.syncing = false;
     this.message = "";
     this.engine.flushAudio();
     this.status("playing");
     // Measure after native preparation, which can block the browser and would
     // otherwise be mistaken for network latency.
-    this.send({ type: "ping", id: performance.now() });
+    this.send({ type: "ping", id: this.now() });
     this.pendingFrames = new Map();
     for (const m of buffered.values()) this.receiveFrame(m);
   }
@@ -636,28 +829,58 @@ export class Netplay extends EventTarget {
       m.revision !== this.room?.revision ||
       !Number.isSafeInteger(m.frame) ||
       m.frame < this.frame ||
+      this.inputs.has(m.frame) ||
       !Array.isArray(m.inputs) ||
       m.inputs.length !== 4
     )
       return;
-    if (m.frame > this.frame + 600) {
+    const arrival = this.now();
+    // Recover only this browser after a long interruption. Replaying seconds
+    // of video/audio can cost more than restoring the existing host snapshot.
+    // Fighters keep submitting inputs and everyone else's timeline continues.
+    if (
+      !this.observationRequested &&
+      !this.isHost &&
+      !this.room.selecting &&
+      m.frame > this.frame + 90 &&
+      arrival - (this.lastObservationRequest ?? -Infinity) >= 5000
+    ) {
+      this.lastObservationRequest = arrival;
+      this.observationRequested = true;
+      this.recordPerformanceEvent("catch-up-request", {
+        backlog: m.frame - this.frame,
+      });
+      this.send({ type: "observe" });
+    }
+    if (
+      m.frame > this.frame + 600 &&
+      (!this.observationRequested ||
+        arrival - this.lastObservationRequest > 10000)
+    ) {
       this.error("Your connection fell too far behind. Reconnect to catch up.");
       return;
     }
     this.inputs.set(m.frame, m.inputs);
     if (m.commands?.length) this.frameCommands.set(m.frame, m.commands);
     this.serverFrame = Math.max(this.serverFrame, m.frame);
+    if (this.lastFrameAt)
+      this.maxFrameGap = Math.max(
+        this.maxFrameGap || 0,
+        arrival - this.lastFrameAt,
+      );
+    this.lastFrameAt = arrival;
+    // Bound memory even if the media channel is slow while recovering.
+    if (this.inputs.size > 900) {
+      const oldest = this.inputs.keys().next().value;
+      this.inputs.delete(oldest);
+      this.frameCommands.delete(oldest);
+    }
     this.lastLate = m.late || [];
     this.lateInputs += this.lastLate.length;
-    // Adapt only the affected controller to jitter (including slow local
-    // rendering). Healthy players keep their own smaller input buffer.
-    if (this.lastLate.includes(this.player)) {
-      this.jitterLead = Math.min(45, (this.jitterLead || this.delay) + 1);
-      this.onTimeFrames = 0;
-    } else if (++this.onTimeFrames >= 120) {
-      this.jitterLead = Math.max(this.delay, this.jitterLead - 1);
-      this.onTimeFrames = 0;
-    }
+    const ownLate = this.lastLate.includes(this.player);
+    if (ownLate) this.ownLateInputs = (this.ownLateInputs || 0) + 1;
+    this.inputTiming.feedback(ownLate, this.sentInputs.get(m.frame));
+    this.sentInputs.delete(m.frame);
   }
   receive(from, m) {
     const member = this.room?.members.find((p) => p.id === from && p.connected);
@@ -692,7 +915,8 @@ export class Netplay extends EventTarget {
         this.start();
       }
     } else if (m.type === "start" && host && !this.isHost) {
-      if (this.restoring) this.pendingStart = true;
+      if (this.restoring || this.restoredEpoch !== m.epoch)
+        this.pendingStart = true;
       else this.start(0, this.pendingFrames);
     } else if (m.type === "input" && this.room.timing !== "deadline") {
       if (
@@ -774,6 +998,13 @@ export class Netplay extends EventTarget {
     }
   }
   tick(time) {
+    if (this.running && time - (this.lastInputTick ?? time) > 250) {
+      this.inputTiming.interrupt();
+      this.recordPerformanceEvent("browser-interruption", {
+        ms: Math.round(time - this.lastInputTick),
+      });
+    }
+    this.lastInputTick = time;
     if (this.running && time - this.lastEcho > 2000) {
       this.lastEcho = time;
       this.sendGame({ type: "echo", sent: time });
@@ -782,11 +1013,8 @@ export class Netplay extends EventTarget {
     if (!this.running) return false;
     // Sample against the server's clock, independently of local rendering.
     // A slowed browser can catch up without moving everyone else's deadline.
-    this.personalDelay = Math.max(
-      this.delay,
-      this.jitterLead || 0,
-      Math.min(45, Math.ceil((this.relayRTT || 0) / (1000 / 60)) + 2),
-    );
+    this.personalDelay = this.inputTiming.lead(this.delay, this.relayRTT || 0);
+    this.jitterLead = this.personalDelay;
     const target = Math.max(0, this.serverFrame + 1) + this.personalDelay;
     if (
       this.player >= 0 &&
@@ -796,11 +1024,26 @@ export class Netplay extends EventTarget {
       const input = this.filterInput
         ? this.filterInput(this.controls.sample())
         : this.controls.sample();
-      for (let f = Math.max(this.lastSample + 1, target - 5); f <= target; f++)
+      for (
+        let f = Math.max(this.lastSample + 1, this.serverFrame + 1);
+        f <= target;
+        f++
+      ) {
         this.sendGame({ type: "input", frame: f, input }, false);
+        this.sentInputs.set(f, this.now());
+      }
       this.lastSample = target;
+      for (const f of this.sentInputs.keys())
+        if (f < this.serverFrame - 120) this.sentInputs.delete(f);
     }
-    if (time + 1 < this.next && this.serverFrame - this.frame < 3) return false;
+    // The 60 Hz server stream already paces the game. A second local deadline
+    // retained catch-up debt after a stall and left fresh frames unrendered.
+    if (
+      this.room.timing !== "deadline" &&
+      time + 1 < this.next &&
+      this.serverFrame - this.frame < 3
+    )
+      return false;
     const current = this.inputs.get(this.frame);
     if (!current?.every(Boolean)) {
       this.stalls++;
@@ -844,12 +1087,21 @@ export class Netplay extends EventTarget {
       } else this.engine.menuPointer(command);
     }
     this.frameCommands.delete(this.frame);
+    const stepStarted = this.now();
     this.engine.frame(this.rounds.filter(inputs, this.room));
+    const stepMs = this.now() - stepStarted;
+    this.stepCost ||= { count: 0, total: 0, max: 0 };
+    this.stepCost.count++;
+    this.stepCost.total += stepMs;
+    this.stepCost.max = Math.max(this.stepCost.max, stepMs);
     this.inputs.delete(this.frame);
     this.frame++;
-    this.next = Math.max(
-      this.next + 1000 / this.engine.fps,
-      time - 1000 / this.engine.fps,
+    this.next = Math.min(
+      Math.max(
+        this.next + 1000 / this.engine.fps,
+        time - 1000 / this.engine.fps,
+      ),
+      time + 1000 / this.engine.fps,
     );
     if (this.frame % 60 === 0) {
       const hash = this.engine.hash();
@@ -864,6 +1116,48 @@ export class Netplay extends EventTarget {
         for (const f of map.keys()) if (f < this.frame - 600) map.delete(f);
     }
     return true;
+  }
+  recordPerformanceEvent(type, detail = {}) {
+    this.performanceEvents.push({
+      at: new Date().toISOString(),
+      type,
+      ...detail,
+    });
+    if (this.performanceEvents.length > 100) this.performanceEvents.shift();
+  }
+  samplePerformance(fps, voiceActive = false, longTasks = 0) {
+    const sample = {
+      fps,
+      relayRTT: this.relayRTT || 0,
+      typicalRTT: this.inputTiming.rtt,
+      inputBuffer: this.personalDelay || this.delay,
+      backlog: Math.max(0, (this.serverFrame || 0) - this.frame + 1),
+      frameGapMs: Math.round(this.maxFrameGap || 0),
+      stepAvgMs:
+        Math.round(
+          ((this.stepCost?.total || 0) / (this.stepCost?.count || 1)) * 10,
+        ) / 10,
+      stepMaxMs: Math.round((this.stepCost?.max || 0) * 10) / 10,
+      ownLateInputs: this.ownLateInputs || 0,
+      repairs: this.repairs,
+      gameQueuedBytes: this.socket?.bufferedAmount || 0,
+      mediaQueuedBytes: this.mediaSocket?.bufferedAmount || 0,
+      mediaConnected: Number(!!this.mediaReady),
+      voiceActive: Number(voiceActive),
+      voiceSent: this.voiceSent || 0,
+      voiceDropped: this.voiceDropped || 0,
+      frame: this.frame,
+      longTasks,
+    };
+    this.performanceSamples.push({ at: new Date().toISOString(), ...sample });
+    if (this.performanceSamples.length > 120) this.performanceSamples.shift();
+    this.maxFrameGap = 0;
+    this.stepCost = { count: 0, total: 0, max: 0 };
+    if (this.room) {
+      this.send({ type: "performance", metrics: sample });
+      if (this.isHost) this.send({ type: "performance-report" });
+    }
+    return sample;
   }
   pause() {
     if (!this.running || (this.player < 0 && !this.isHost)) return;

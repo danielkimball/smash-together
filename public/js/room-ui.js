@@ -114,11 +114,13 @@ export class RoomUI {
     if (key === this.rosterKey) return;
     this.rosterKey = key;
     $("battle-mode").value = r.teams ? "teams" : "ffa";
-    const ordered = [...r.members].sort(
-      (a, b) =>
-        (a.slot < 0 ? 10 : a.slot) - (b.slot < 0 ? 10 : b.slot) ||
-        a.queue - b.queue,
-    );
+    const ordered = r.members
+      .filter((p) => p.connected)
+      .sort(
+        (a, b) =>
+          (a.slot < 0 ? 10 : a.slot) - (b.slot < 0 ? 10 : b.slot) ||
+          a.queue - b.queue,
+      );
     $("room-members").replaceChildren(
       ...ordered.map((p) => {
         const row = el("div", undefined, "member-row");
@@ -221,46 +223,48 @@ export class RoomUI {
     if (signature === this.voiceKey) return;
     this.voiceKey = signature;
     $("voice-members").replaceChildren(
-      ...(r?.members || []).map((p) => {
-        const row = el("div", undefined, "member-row");
-        row.dataset.speaking = p.id;
-        row.append(
-          el("strong", p.name),
-          el(
-            "small",
-            p.muted || (r.muteSpectators && p.slot < 0)
-              ? "Muted by host"
-              : p.voice
-                ? "In voice"
-                : "Voice off",
-          ),
-        );
-        if (p.id !== n.id) {
-          const label = el("label", "Volume "),
-            range = el("input");
-          range.type = "range";
-          range.min = 0;
-          range.max = 100;
-          range.value = (v.levels.get(p.id) ?? 1) * 100;
-          range.setAttribute("aria-label", `${p.name} voice volume`);
-          range.oninput = () => {
-            v.levels.set(p.id, Number(range.value) / 100);
-            v.settings();
-          };
-          label.append(range);
-          row.append(label);
-        }
-        if (n.isHost) {
-          const b = el(
-            "button",
-            p.muted ? "Allow microphone" : "Mute for everyone",
+      ...(r?.members || [])
+        .filter((p) => p.connected)
+        .map((p) => {
+          const row = el("div", undefined, "member-row");
+          row.dataset.speaking = p.id;
+          row.append(
+            el("strong", p.name),
+            el(
+              "small",
+              p.muted || (r.muteSpectators && p.slot < 0)
+                ? "Muted by host"
+                : p.voice
+                  ? "In voice"
+                  : "Voice off",
+            ),
           );
-          b.onclick = () =>
-            n.send({ type: "voice-moderate", id: p.id, muted: !p.muted });
-          row.append(b);
-        }
-        return row;
-      }),
+          if (p.id !== n.id) {
+            const label = el("label", "Volume "),
+              range = el("input");
+            range.type = "range";
+            range.min = 0;
+            range.max = 100;
+            range.value = (v.levels.get(p.id) ?? 1) * 100;
+            range.setAttribute("aria-label", `${p.name} voice volume`);
+            range.oninput = () => {
+              v.levels.set(p.id, Number(range.value) / 100);
+              v.settings();
+            };
+            label.append(range);
+            row.append(label);
+          }
+          if (n.isHost) {
+            const b = el(
+              "button",
+              p.muted ? "Allow microphone" : "Mute for everyone",
+            );
+            b.onclick = () =>
+              n.send({ type: "voice-moderate", id: p.id, muted: !p.muted });
+            row.append(b);
+          }
+          return row;
+        }),
     );
   }
 }

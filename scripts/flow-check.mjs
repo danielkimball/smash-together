@@ -275,12 +275,29 @@ try {
     repairs: smash.net.repairs,
   }));
   const guestFrame = await b.evaluate(() => smash.net.frame);
+  const guestTiming = await b.evaluate(() => ({
+    buffer: smash.net.personalDelay,
+    typicalRTT: smash.net.inputTiming.rtt,
+    configured: smash.net.delay,
+  }));
+  assert.ok(
+    guestTiming.buffer <=
+      Math.max(
+        guestTiming.configured,
+        Math.ceil(guestTiming.typicalRTT / (1000 / 60)) + 2,
+      ) +
+        2,
+    `Recovered controller retained excess delay: ${JSON.stringify(guestTiming)}`,
+  );
   assert.equal(after.repairs, before.repairs);
   assert.ok(after.matches > before.matches);
-  assert.ok(Math.abs(after.frame - guestFrame) < 12);
+  assert.ok(
+    Math.abs(after.frame - guestFrame) < 12,
+    JSON.stringify({ before, during, after, guestFrame, guestTiming }),
+  );
   record(
     "One player stalled for two seconds: other player keeps moving, guest catches up, matching states without repair",
-    { before, during, after, guestFrame },
+    { before, during, after, guestFrame, guestTiming },
   );
   await b.evaluate(() => {
     smash.controls.touch.setMode("auto");

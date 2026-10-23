@@ -133,6 +133,15 @@ Missing inputs and brief delivery stalls do not freeze other players. The server
 
 ## Voice and larger rooms
 
-Rooms allow eight people and four active fighters. Spectators run the game locally and share room voice by default. Voice requires explicit microphone permission and uses transient audio packets over the existing secure server connection. Several people talking add upload traffic to this Windows host; silence suppression limits unused traffic. No microphone is captured on the server and no recording is stored. Players and Voice buttons are beside Menu in the game toolbar. See README for rotation rules.
+Rooms allow eight people and four active fighters. Spectators run the game locally and can join room voice. Voice requires explicit microphone permission and uses transient audio packets over a separate secure media connection. Several people talking add upload traffic to this Windows host; silence suppression limits unused traffic. No microphone is captured on the server and no recording is stored. Players and Voice buttons are beside Menu in the game toolbar. See README for rotation rules.
 
 A browser room host is different from this Windows hosting computer. Room-host handoff is automatic within this running backend. Switching from Ryker's server to Dan's and recovering matches after backend loss are still not implemented. Preserve the manual backup procedure and primary ownership guard.
+
+
+## Performance monitoring (v3.6.1)
+
+The server writes private, numeric performance summaries every 30 seconds while rooms exist to `.local/performance.jsonl`, rotating at approximately 5 MB to `.local/performance.jsonl.1`. Read the latest entries on Windows with `Get-Content .local/performance.jsonl -Tail 10`. No audio, game-state content, player names, room names, IP addresses or invitation/reconnect tickets are recorded. Aggregate backend scheduling metrics are also in `/api/status`; per-room reports require that room's host connection.
+
+Players can use **Menu → Connection → Download performance report** after a bad moment. The report contains up to ten minutes of five-second browser measurements. The room host's export also includes the latest anonymized member reports. Compare input-buffer frames, backlog, emulator frame cost, RTT and delivery gaps before deciding a problem is bandwidth. See [PERFORMANCE.md](PERFORMANCE.md) for the audit, measurements and interpretation.
+
+Gameplay uses the original `/room` WebSocket. Voice and live spectator/recovery snapshots use an additional authenticated `/media` WebSocket at the same backend origin. Cloudflare forwards both without router changes. Each room member can have one of each; losing media does not disconnect their controller. Planned group synchronization retains its ordered room connection. Refresh old tabs after deployment to enable the new transport and bounded input timing.

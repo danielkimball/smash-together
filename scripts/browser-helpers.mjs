@@ -78,23 +78,7 @@ export function browserHelpers(browser, { url, pages, errors }) {
     await p.mouse.move(0, 0);
     await p.waitForFunction(() => smash.view === "browse");
   }
-  async function openPage(mobile = false) {
-    const c = await browser.newContext({
-      viewport: mobile
-        ? { width: 390, height: 844 }
-        : { width: 1280, height: 900 },
-      isMobile: mobile,
-      hasTouch: mobile,
-      permissions: ["microphone"],
-    });
-    await c.addInitScript(() => {
-      Object.defineProperty(document, "hidden", { get: () => false });
-      Object.defineProperty(navigator, "getGamepads", { value: () => [] });
-    });
-    const p = await c.newPage();
-    pages.push(p);
-    p.on("pageerror", (e) => errors.push(e.message));
-    await p.goto(url);
+  async function boot(p) {
     await p.waitForFunction(() => window.smash);
     for (let i = 0; i < 3; i++) {
       if (
@@ -109,6 +93,28 @@ export function browserHelpers(browser, { url, pages, errors }) {
       await wait(500);
     }
     await scene(p, 7);
+  }
+  async function openPage(mobile = false) {
+    const c = await browser.newContext({
+      viewport: mobile
+        ? { width: 390, height: 844 }
+        : { width: 1280, height: 900 },
+      isMobile: mobile,
+      hasTouch: mobile,
+      permissions: ["microphone"],
+    });
+    await c.addInitScript(() => {
+      Object.defineProperty(document, "hidden", { get: () => false });
+      Object.defineProperty(navigator, "getGamepads", {
+        configurable: true,
+        value: () => [],
+      });
+    });
+    const p = await c.newPage();
+    pages.push(p);
+    p.on("pageerror", (e) => errors.push(e.message));
+    await p.goto(url);
+    await boot(p);
     return p;
   }
   async function clickNative(p, x, y) {
@@ -134,5 +140,16 @@ export function browserHelpers(browser, { url, pages, errors }) {
     );
     await p.waitForFunction(() => smash.net.running, null, { timeout: 90000 });
   }
-  return { wait, scene, pad, act, create, browse, openPage, clickNative, join };
+  return {
+    wait,
+    scene,
+    pad,
+    act,
+    create,
+    browse,
+    boot,
+    openPage,
+    clickNative,
+    join,
+  };
 }

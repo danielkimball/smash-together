@@ -315,10 +315,22 @@ try {
   );
   for (const [i, p] of pages.entries())
     if (i) {
-      await act(p, ["KeyW"], 28, 12);
-      if (i === 1) await act(p, ["KeyA"], 8, 12);
-      if (i === 3) await act(p, ["KeyA"], 8, 12);
-      await act(p, ["KeyJ"], 6, 20);
+      // Exact native targets keep transport/state regression independent of
+      // cursor travel at different client deadlines. flow-check covers pads.
+      await p.evaluate(
+        (i) =>
+          smash.net.send({
+            type: "pointer",
+            scene: 16,
+            x: [86, 128, 170, 210][i],
+            y: 64,
+          }),
+        i,
+      );
+      await p.waitForFunction(
+        (i) => smash.engine.inspect().players[i]?.selected,
+        i,
+      );
     }
   for (const p of pages)
     assert.ok(
@@ -561,6 +573,19 @@ try {
 } catch (e) {
   report.passed = false;
   report.failure = e.stack;
+  report.failureDiagnostics = await Promise.all(
+    pages.map((p) =>
+      p
+        .evaluate(() => ({
+          ...smash.diagnostics(),
+          message: smash.net.message,
+          frame: smash.net.frame,
+          serverFrame: smash.net.serverFrame,
+          events: smash.net.performanceEvents,
+        }))
+        .catch(() => null),
+    ),
+  );
   console.error(e);
   for (const [i, p] of pages.entries())
     try {
