@@ -84,3 +84,5 @@ Use `scripts/four-fighter-check.mjs` to isolate one browser rendering all four f
 ## v3.6.3 public-path follow-up
 
 The v3.6.2 public test exposed simultaneous delivery/RTT spikes despite 60 FPS; its p95 latency target failed. Do not hide that result behind local measurements. Hosting now defaults to Cloudflare `auto` (QUIC with HTTP/2 fallback), with optional private `tunnelProtocol` override. Record protocol only after successful registration; `/api/status.tunnelProtocol` and numeric `server.tunnelTransport` expose it. Preserve automatic fallback and health recycling; do not open router ports/change firewalls or claim that QUIC guarantees zero jitter. See PERFORMANCE.md for evidence and source links.
+
+Ryker's verified v3.6.3 host actually registered HTTP/2 fallback. The public two-browser run held 60 FPS/no repairs but still failed the latency target (p95 165–176 ms). Both browsers shared Dan's Wi-Fi; even with the emulators closed, local-router ping reached 344 ms. Do not attribute every shared test stall to the backend or claim public zero-lag success. The next useful comparison is Ethernet plus Connection reports; server clock timing remained healthy.

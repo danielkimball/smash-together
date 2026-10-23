@@ -6,7 +6,27 @@ The hosting launcher was hard-coded to `--protocol http2` from the initial commi
 
 The host records the transport from successful registration logs, including chunked messages and later fallback. `/api/status.tunnelProtocol` reports `quic`, `http2`, or unknown. Private server performance logs and room-host exports include numeric `tunnelTransport` (0 unknown, 1 QUIC, 2 HTTP/2). A configured preference is never reported as proof of successful negotiation. Public benchmark reports now include server clock/room metrics as well as client timing.
 
-A temporary isolated tunnel on Dan's Mac successfully negotiated QUIC using the same pinned cloudflared binary. It exposed only a test backend with cartridge/testing access disabled and did not publish a host registry or change primary ownership. The final public verification must distinguish this transport check from measurements on Ryker's actual network.
+A temporary isolated tunnel on Dan's Mac successfully negotiated QUIC using the same pinned cloudflared binary. It exposed only a test backend with cartridge/testing access disabled and did not publish a host registry or change primary ownership. Ryker's actual v3.6.3 deployment instead registered **HTTP/2**, confirmed through both `/api/status.tunnelProtocol` and the numeric room report. Do not claim that the public host received a QUIC benefit; the fallback kept it reachable. Determining why QUIC is unavailable there requires that host's connection logs/network, not a change to the reported protocol.
+
+### Deployed gameplay result and remaining limit
+
+v3.6.3 (`bc17a85`) and its frontend bytes were verified through the permanent Pages origin and Ryker's new relay. The six public API/WebSocket checks passed, including voice/media, next-tick input with another controller absent, and immediate host succession. A subsequent **60-second, two-real-browser combat run still failed the 150 ms p95 input target**:
+
+| Measurement | Host browser | Guest browser |
+| --- | --- | --- |
+| Combat rate | 60.00 FPS | 60.01 FPS |
+| Input completion median | 97.5 ms | 93.5 ms |
+| Input completion p95 / maximum | 176.2 / 327.1 ms | 164.6 / 347.8 ms |
+| Emulator step average / p95 | 7.77 / 8.7 ms | 7.76 / 8.7 ms |
+| Queued frames median / p95 / maximum | 0 / 3 / 14 | 0 / 3 / 14 |
+| Recorded controller transitions | 120 / 120 | 120 / 120 |
+| Matching checks / unexpected repairs | 65 / 0 | 65 / 0 |
+
+The server clock's maximum lateness was 19 ms, with zero clock hiccups; the captured server event-loop utilization was 2.2%. Both clients saw a 301 ms delivery gap during a window without browser long tasks. The real browsers were on **one Mac using Wi-Fi**, not separate homes. During test startup, 60 read-only pings to that Mac's local router had zero packet loss but **25.4 ms average and 140.3 ms maximum RTT** (minimum 2.1 ms), before any internet/tunnel travel.
+
+An additional check **after closing the emulator browsers** reproduced the network problem without game rendering or cartridge downloads: 150 router pings measured median **11.5 ms**, p95 **152.4 ms**, maximum **343.5 ms**, average 33.5 ms. A concurrent lightweight relay-only check delivered 603 frames at 59.95 Hz with a 306.7 ms maximum delivery gap, while the server clock had maximum lateness 16 ms and zero hiccups. This establishes a local-network contributor and a limit of this test setup; it does not prove that every public delay came from Wi-Fi or describe Ryker's own connection. The two clients shared that same Wi-Fi path, so simultaneous stalls do not prove that unrelated players on healthy connections stalled.
+
+The next useful comparison is Ethernet on the host and affected player, followed by the same test and Connection reports. Download bandwidth alone cannot resolve delay already visible to the local router. No firewall, router or global power settings were changed. The public measurements are different runs/routes and are not a controlled QUIC-vs-TCP comparison. The software queue/rendering improvements are established by the controlled local measurements below; the remaining public tail-latency failure is explicitly unresolved. Ignored artifacts: `performance-public-v363.json`, `deployed-assets-v363.json`, `test-client-network.json`, `idle-router-ping.json`, and `relay-clock-v363.json`.
 
 The v3.6.2 gameplay/renderer/startup fixes below remain unchanged. The v3.6.2 public performance failure is retained as evidence, not relabeled as a pass.
 
