@@ -1,6 +1,6 @@
 {
   "application": "Smash Portal",
-  "version": "3.6.0",
+  "version": "3.6.1",
   "engine_source": "https://github.com/waveplate/M64Wasm",
   "engine_commit": "f6b5d6cc31821ec501a94aa761eae022d08f5a9d",
   "emscripten": "2.0.7",

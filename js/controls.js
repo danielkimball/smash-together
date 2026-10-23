@@ -173,7 +173,7 @@ export class Controls extends EventTarget {
       if (event.target.closest("input,select,textarea")) return;
       if (this.capture) {
         event.preventDefault();
-        this.finishCapture(key(event.code));
+        if (!event.repeat) this.finishCapture(key(event.code));
         return;
       }
       if (

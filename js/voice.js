@@ -69,17 +69,9 @@ export class RoomVoice extends EventTarget {
       this.source.connect(this.node);
       this.node.connect(ctx.destination);
       this.node.port.onmessage = ({ data: m }) => {
-        if (
-          m.type !== "packet" ||
-          this.blocked ||
-          this.net.socket?.bufferedAmount > 65536
-        )
-          return;
+        if (m.type !== "packet" || this.blocked || !this.net.room) return;
         this.speaking.set(this.net.id, performance.now() + 250);
-        this.net.send({
-          type: "voice",
-          audio: btoa(String.fromCharCode(...m.bytes)),
-        });
+        this.net.sendVoice(btoa(String.fromCharCode(...m.bytes)));
       };
       stream.getAudioTracks()[0].onended = () => this.stop();
       this.net.send({ type: "voice-state", enabled: true });
