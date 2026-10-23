@@ -1388,7 +1388,7 @@ function refreshDevices() {
 function renderBindings() {
   const kind = profileKind(controls.id());
   $("controller-saved").textContent =
-    `${kind === "n64-usb" ? "N64 USB preset" : kind === "keyboard" ? "Keyboard" : "Xbox / standard preset"} · Changes saved automatically in this browser`;
+    `${controls.profile.customized ? "Custom mapping" : kind === "n64-usb" ? "N64 USB preset" : kind === "keyboard" ? "Keyboard" : "Xbox / standard preset"} · Changes saved automatically in this browser`;
   $("mac-controller-help").hidden = !(
     kind === "n64-usb" && /Mac/.test(navigator.platform)
   );
@@ -1416,8 +1416,9 @@ function renderBindings() {
   $("range-value").value = $("range").value + "%";
   $("invert-y").checked = controls.profile.invertY;
 }
-function beginMapping(action, label) {
-  controls.beginCapture(action);
+function beginMapping(action, label, continueSequence = false) {
+  controls.beginCapture(action, { continueSequence });
+  if (!continueSequence) $("mapping-status").textContent = "";
   $("mapping-prompt").hidden = false;
   $("mapping-prompt").textContent =
     `${wizardIndex >= 0 ? `${wizardIndex + 1}/${ACTIONS.length} · ` : ""}${label}: release all controls, then press a button, move the stick, or press a key. Escape cancels.`;
@@ -1428,10 +1429,20 @@ function beginMapping(action, label) {
     .querySelector(`[data-action="${action}"]`)
     ?.scrollIntoView({ block: "nearest" });
 }
-controls.addEventListener("mapped", () => {
+controls.addEventListener("mapped", ({ detail }) => {
   renderBindings();
-  if (wizardIndex >= 0 && ++wizardIndex < ACTIONS.length) {
-    beginMapping(...ACTIONS[wizardIndex]);
+  if (detail?.canceled) $("mapping-status").textContent = "";
+  if (detail?.action) {
+    const name = (action) =>
+      ACTIONS.find(([id]) => id === action)?.[1] || action;
+    $("mapping-status").textContent =
+      `${name(detail.action)} → ${bindingLabel(detail.binding)} saved.` +
+      (detail.replaced.length
+        ? ` Reassigned from ${detail.replaced.map(name).join(", ")}.`
+        : "");
+  }
+  if (!detail?.canceled && wizardIndex >= 0 && ++wizardIndex < ACTIONS.length) {
+    beginMapping(...ACTIONS[wizardIndex], true);
   } else {
     wizardIndex = -1;
     $("mapping-prompt").hidden = true;
@@ -1461,6 +1472,8 @@ $("preset").onclick = () => {
   toast("Default mapping restored.");
 };
 $("calibrate").onclick = attempt(async () => {
+  wizardIndex = -1;
+  controls.cancelCapture();
   toast("Let go of both sticks…");
   await controls.calibrate();
   toast("Stick center calibrated.");
@@ -1593,11 +1606,11 @@ $("reset").onclick = () => {
 function diagnostics() {
   const sample = net.performanceSamples.at(-1);
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.6.4`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.6.5`;
 }
 $("performance-export").onclick = () => {
   const report = {
-    version: "3.6.4",
+    version: "3.6.5",
     exported: new Date().toISOString(),
     samples: net.performanceSamples,
     events: net.performanceEvents,
