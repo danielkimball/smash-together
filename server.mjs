@@ -56,6 +56,7 @@ export function createApp({
   const loopDelay = monitorEventLoopDelay({ resolution: 20 });
   loopDelay.enable();
   let loopBaseline = performance.eventLoopUtilization();
+  let tunnelProtocol = null;
   let serverMetrics = {
     eventLoopP99Ms: 0,
     eventLoopMaxMs: 0,
@@ -82,6 +83,7 @@ export function createApp({
       eventLoopMaxMs: Math.round(loopDelay.max / 1e6),
       eventLoopUtilization: Math.round(utilization.utilization * 1000) / 1000,
       rssMB: Math.round(process.memoryUsage().rss / 1048576),
+      tunnelTransport: { quic: 1, http2: 2 }[tunnelProtocol] || 0,
     };
     loopDelay.reset();
     if (rooms.size)
@@ -215,10 +217,15 @@ export function createApp({
       const url = new URL(req.url, "http://local");
       if (url.pathname === "/health" || url.pathname === "/api/status") {
         let shareUrl = null;
+        tunnelProtocol = null;
         try {
-          shareUrl = JSON.parse(
+          const sharing = JSON.parse(
             await readFile(path.join(ROOT, ".local/share.json"), "utf8"),
-          ).url;
+          );
+          shareUrl = sharing.url;
+          tunnelProtocol = ["quic", "http2"].includes(sharing.protocol)
+            ? sharing.protocol
+            : null;
         } catch {}
         res.setHeader("Cache-Control", "no-store");
         res.setHeader("Content-Type", "application/json");
@@ -231,6 +238,7 @@ export function createApp({
             performance: serverMetrics,
             updating: !!updating(),
             shareUrl,
+            tunnelProtocol,
             publicUrl: frontend?.href || shareUrl,
             testingAvailable: !!config.testing?.romPath,
             testingAutoLoad:

@@ -121,6 +121,7 @@ try {
     ),
   );
   await a.screenshot({ path: "artifacts/performance-combat.png" });
+  report.server = await a.evaluate(() => smash.net.roomPerformance);
   for (const client of report.clients) {
     assert.equal(client.inputMode, "latest");
     assert.equal(client.inputBuffer, 0);

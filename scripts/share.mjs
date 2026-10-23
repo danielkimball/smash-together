@@ -75,6 +75,14 @@ export async function ensureTunnel() {
 }
 export async function share(port = 8787) {
   const bin = await ensureTunnel();
+  let transport = "auto";
+  try {
+    const config = JSON.parse(
+      await readFile(path.join(root, ".local/config.json"), "utf8"),
+    );
+    if (["auto", "quic", "http2"].includes(config.tunnelProtocol))
+      transport = config.tunnelProtocol;
+  } catch {}
   await rm(path.join(root, ".local/share.json"), { force: true });
   const child = spawn(
     bin,
@@ -82,7 +90,7 @@ export async function share(port = 8787) {
       "tunnel",
       "--no-autoupdate",
       "--protocol",
-      "http2",
+      transport,
       "--url",
       `http://127.0.0.1:${port}`,
     ],
@@ -90,6 +98,8 @@ export async function share(port = 8787) {
   );
   const state = new TunnelState();
   let published = false,
+    publishedProtocol = null,
+    publishedAt = null,
     checking = false,
     stopping = false,
     publicationTimer,
@@ -121,19 +131,23 @@ export async function share(port = 8787) {
       if (!alive()) return;
       if (published && state.health(ok))
         return recycle("public health checks failed three times");
-      if (!ok || published) return;
+      if (!ok || (published && publishedProtocol === state.protocol)) return;
+      publishedAt ||= new Date().toISOString();
       await writeFile(
         path.join(root, ".local/share.json"),
         JSON.stringify({
           url: state.url,
           pid: process.pid,
-          started: new Date().toISOString(),
+          started: publishedAt,
+          protocol: state.protocol,
         }) + "\n",
       );
       if (!alive()) {
         await rm(path.join(root, ".local/share.json"), { force: true });
         return;
       }
+      publishedProtocol = state.protocol;
+      if (published) return;
       published = true;
       console.log(`SHARE_URL=${state.url}`);
       await writeFriendsShortcut(state.url);

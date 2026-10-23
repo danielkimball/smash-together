@@ -1,3 +1,11 @@
+# Relay transport follow-up — v3.6.3 — 2026-10-23
+
+- The first deployed v3.6.2 two-browser check sustained ~59.9 FPS with zero repairs and ~49–50 ms median input completion, but **failed** the p95 backlog/input target (six queued frames and 214–220 ms). Simultaneous 179 ms delivery gaps and RTT spikes occurred with normal emulator costs and zero long tasks. See PERFORMANCE.md; do not describe this run as a full latency pass.
+- The launcher now defaults to Cloudflare's recommended QUIC-first `auto` mode with HTTP/2 fallback. `tunnelProtocol` is an optional host override. A temporary isolated Mac tunnel negotiated QUIC; cartridge/testing access was disabled and no primary registry was published.
+- New regression checks verify negotiated transport logging, split messages, and fallback without confusing configuration with connection success. API status and numeric private logs expose the actual transport.
+- **57 Node tests pass on Node 20.11.0**, along with syntax, asset, pinned-engine checksum and ROM-exclusion checks. The temporary QUIC tunnel delivered 601 frames at 59.98 Hz; server clock maximum lateness was 5 ms with zero hiccups. Delivery gaps still reached 156 ms, so this isolated transport check does not establish that public tail latency is fixed.
+- Renderer, input sequencing, startup, voice and session behavior are unchanged from the v3.6.2 verification below.
+
 # Performance-first audit — v3.6.2 — 2026-10-23
 
 - **56 Node tests pass on Node 20.11.0.** New checks cover next-tick current input, tap retention, duplicate/stale sequence rejection, jitter/150 ms release, unaffected healthy controllers, authenticated rejoin sequence reset, mixed cached/new clients, and acknowledgement timing at 20/40/100/200 ms simulated RTT with a two-second interruption.

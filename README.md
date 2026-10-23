@@ -1,3 +1,7 @@
+# Relay update — v3.6.3
+
+The host now prefers Cloudflare's QUIC transport with automatic TCP fallback, instead of forcing TCP for the shared tunnel. Reports expose the transport actually connected. This addresses another possible source of network stalls while keeping all v3.6.2 performance improvements below. Actual network latency still varies; use the Connection report after a spike.
+
 # Performance update — v3.6.2
 
 Responsive play is the first priority. The renderer now uses its native vertex buffers, controllers reach the next available server tick with no deliberate future-frame buffer, and completed frames render without a two-frame queue. Voice remains available on its separate connection. Refresh every player's tab to load the update. See [the measured audit](PERFORMANCE.md) and [verification](QA.md).

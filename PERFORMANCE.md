@@ -1,3 +1,17 @@
+# Public-path follow-up — v3.6.3
+
+The deployed v3.6.2 test held ~59.9 FPS with zero repairs and ~49–50 ms median button-to-emulator completion, but failed the strict tail-latency/backlog target: p95 was 214–220 ms, and render backlog p95 six frames. Both clients saw the same 179 ms frame-delivery gap, RTT temporarily rose to 160 ms, emulator work stayed ~7.5–7.6 ms, and no browser long tasks were recorded. That points to shared delivery-path jitter rather than a sustained rendering bottleneck; it does not by itself identify the ISP, Wi-Fi or Cloudflare as the source.
+
+The hosting launcher was hard-coded to `--protocol http2` from the initial commit. This carries tunnel streams over shared TCP, so the separate game/media WebSockets can still block behind packet loss on that connection. v3.6.3 uses Cloudflare's recommended **`auto` transport: QUIC first, with automatic HTTP/2 fallback when UDP connectivity cannot be established**. This reduces a possible shared-transport bottleneck; it cannot eliminate all network jitter. No firewall/router changes, new service, paid plan or credentials are required. Hosts can explicitly set `tunnelProtocol` to `http2` if their network requires it. [Cloudflare transport documentation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/), [Cloudflare protocol selection source](https://github.com/cloudflare/cloudflared/blob/master/connection/protocol.go).
+
+The host records the transport from successful registration logs, including chunked messages and later fallback. `/api/status.tunnelProtocol` reports `quic`, `http2`, or unknown. Private server performance logs and room-host exports include numeric `tunnelTransport` (0 unknown, 1 QUIC, 2 HTTP/2). A configured preference is never reported as proof of successful negotiation. Public benchmark reports now include server clock/room metrics as well as client timing.
+
+A temporary isolated tunnel on Dan's Mac successfully negotiated QUIC using the same pinned cloudflared binary. It exposed only a test backend with cartridge/testing access disabled and did not publish a host registry or change primary ownership. The final public verification must distinguish this transport check from measurements on Ryker's actual network.
+
+The v3.6.2 gameplay/renderer/startup fixes below remain unchanged. The v3.6.2 public performance failure is retained as evidence, not relabeled as a pass.
+
+---
+
 # Second latency audit — v3.6.2
 
 Audited 2026-10-23, starting at v3.6.1 (`8aa794e`). Dan's priority is responsive gameplay above optional features. The first audit fixed the runaway delay feedback loop, but did not remove the renderer bottleneck or the deliberate input/render queues. This audit reproduces and addresses those remaining causes. Voice was off in the comparative combat measurements.

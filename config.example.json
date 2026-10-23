@@ -3,5 +3,6 @@
   "pagesRepo": "danielkimball/smash-together",
   "publishLink": false,
   "hostId": "choose-your-host-id",
-  "autoUpdate": false
+  "autoUpdate": false,
+  "tunnelProtocol": "auto"
 }

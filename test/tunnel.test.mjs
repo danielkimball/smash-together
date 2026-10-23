@@ -24,3 +24,21 @@ test("health recovery tolerates transient outages and recycles only after consec
   assert.equal(state.health(false), false);
   assert.equal(state.health(false), true);
 });
+
+test("tunnel telemetry reports actual negotiation and automatic fallback across log chunks", () => {
+  const state = new TunnelState();
+  state.log("INF Initial protocol quic\n");
+  assert.equal(state.protocol, null);
+  state.log("INF Registered tunnel connection connIndex=0 protocol=qui");
+  assert.equal(state.protocol, null);
+  state.log("c\n");
+  assert.equal(state.protocol, "quic");
+  state.log("INF Switching to fallback protocol http2\n");
+  assert.equal(
+    state.protocol,
+    "quic",
+    "selection alone is not a successful connection",
+  );
+  state.log("INF Registered tunnel connection connIndex=0 protocol=http2\n");
+  assert.equal(state.protocol, "http2");
+});

@@ -80,3 +80,7 @@ Numeric input acknowledgement measurements follow sequence IDs through the serve
 Cartridge acceptance, automatic host download and core startup each share a completion promise. Never restore the old early-return `loading` boolean: a second load could start local menu emulation inside a live room. `runSequence` must not advance local menu frames when netplay is running. `scripts/load-race-check.mjs` exercises overlapping automatic/manual loads; do not dismiss the broad test’s duplicate-load case as merely a harness artifact.
 
 Use `scripts/four-fighter-check.mjs` to isolate one browser rendering all four fighters, with three explicitly synthetic network controllers. Do not describe it as four independently emulating devices. Four full browser emulators overload Dan’s Intel Mac; the two-real-browser combat check and synthetic-controller rendering check have distinct scopes.
+
+## v3.6.3 public-path follow-up
+
+The v3.6.2 public test exposed simultaneous delivery/RTT spikes despite 60 FPS; its p95 latency target failed. Do not hide that result behind local measurements. Hosting now defaults to Cloudflare `auto` (QUIC with HTTP/2 fallback), with optional private `tunnelProtocol` override. Record protocol only after successful registration; `/api/status.tunnelProtocol` and numeric `server.tunnelTransport` expose it. Preserve automatic fallback and health recycling; do not open router ports/change firewalls or claim that QUIC guarantees zero jitter. See PERFORMANCE.md for evidence and source links.
