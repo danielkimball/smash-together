@@ -8,6 +8,10 @@ The game frontend stays on GitHub Pages. `public/js/service.js` reads `active-ho
 
 **Implemented today:** one active backend, public health checks, automatic recovery of that host's expired tunnel, Windows x64 tunnel download, verified Windows login startup, guarded primary ownership, tested idle-only main updates, and a stable player URL. **Not implemented yet:** automatic switching between Ryker's and Dan's computers, shared room state, or preserving an active match across loss of the backend. The design below is the next milestone; do not confuse single-host tunnel recovery with multi-machine failover.
 
+## v3.7 rollout
+
+The audio/shared-device/live-lobby release uses room protocol 7 and build suffix `-smash-native-v7`. Let the normal idle-only updater validate and publish the backend and static assets together. Do not interrupt occupied rooms. After deployment, every player should refresh the permanent site (Windows: Ctrl+F5); cached older room clients receive a reload message. Use one tab per computer and **Players on this device** for multiple controllers. Listening is automatic, microphone capture remains explicit, and browser autoplay may still require **Audio & Voice → Enable sound**.
+
 ## What Ryker can tell Codex
 
 > Pull the main branch of https://github.com/danielkimball/smash-together onto this Windows computer. Read AGENTS.md and HOSTING.md, install and verify it, then help me take over as the primary host. Use my GitHub account widdlewyter. Keep the permanent player URL and preserve Dan's backup plan. Verify the public connection before publishing my host address.

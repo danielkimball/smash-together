@@ -126,3 +126,34 @@ test("jitter holds briefly, silent inputs release, and another player keeps movi
     "rejoined session can restart sequence",
   );
 });
+
+test("releasing a controller discards its unsent menu commands and Start pulses", () => {
+  const frames = [];
+  let now = 0;
+  const clock = new FrameClock({
+    slots: [0, 1],
+    delay: 4,
+    now: () => now,
+    emit: (frame) => frames.push(frame),
+  });
+  clock.pulse(0, 16);
+  clock.commands.push(
+    { at: 2, command: { slot: 0, scene: 16, button: 128 } },
+    { at: 2, command: { slot: 1, scene: 16, button: 128 } },
+  );
+  clock.inputState(0, 1, { buttons: 128, x: 80, y: 0 });
+  clock.release(0);
+  for (let i = 0; i < 6; i++) {
+    now = 201 + (i * 1000) / 60;
+    clock.tick();
+  }
+  assert.ok(
+    frames.every(
+      (frame) => frame.inputs[0].buttons === 0 && frame.inputs[0].x === 0,
+    ),
+  );
+  assert.deepEqual(
+    frames[2].commands.map((command) => command.slot),
+    [1],
+  );
+});

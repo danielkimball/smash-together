@@ -6,6 +6,14 @@ import { fileURLToPath } from "node:url";
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { FrameClock } from "./scripts/frame-clock.mjs";
+import { PROTOCOL } from "./public/js/protocol.js";
+import {
+  ownerOf,
+  party,
+  connections,
+  validateLocals,
+  reconcileParty,
+} from "./scripts/room-party.mjs";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { cleanMetrics, performanceLogger } from "./scripts/performance-log.mjs";
 import {
@@ -99,6 +107,7 @@ export function createApp({
   const stopClock = (room) => {
     clearInterval(room.clockTimer);
     room.clock = null;
+    room.slotReady = {};
   };
   const updating = () => {
     try {
@@ -352,6 +361,8 @@ export function createApp({
     timing: "deadline",
     inputMode: "latest",
     mediaTransport: true,
+    localPlayers: true,
+    liveLobby: true,
     phase: r.phase,
     match: r.match,
     revision: r.revision,
@@ -368,6 +379,9 @@ export function createApp({
     muteSpectators: !!r.muteSpectators,
     members: [...r.members.values()].map((p) => ({
       id: p.id,
+      ownerId: ownerOf(p),
+      localKey: p.localKey || "primary",
+      localIndex: p.localIndex || 0,
       slot: p.slot,
       name: p.name,
       connected: !!p.socket,
@@ -376,26 +390,73 @@ export function createApp({
       queue: p.queue,
       team: p.team,
       voice: !!p.voice,
+      listening: !!p.listening,
       muted: !!p.muted,
     })),
   });
   const broadcast = (r, message, except) => {
-    for (const p of r.members.values())
+    for (const p of connections(r))
       if (p.id !== except) send(p.socket, message);
   };
   const update = (r) => broadcast(r, { type: "room", room: publicRoom(r) });
   const removeMember = (room, member) => {
-    clearTimeout(member.reconnectTimer);
-    room.members.delete(member.id);
-    room.override = room.override?.filter((id) => id !== member.id);
+    for (const p of party(room, ownerOf(member))) {
+      clearTimeout(p.reconnectTimer);
+      room.members.delete(p.id);
+      room.override = room.override?.filter((id) => id !== p.id);
+    }
+  };
+  const clockSlots = (room) => {
+    if (room.clock)
+      room.clock.slots = active(room)
+        .filter((p) => p.socket && (p.ready || !room.selecting))
+        .map((p) => p.slot);
+  };
+  const clearSelectionSlot = (room, slot) => {
+    if (slot < 0 || !room.selecting || !room.clock) return;
+    room.clock.release(slot);
+    // Recall and park only this token on the shared timeline. Other players
+    // keep choosing; no local-only emulator frames or group snapshot needed.
+    const at = room.clock.frame + 2;
+    room.slotReady ||= {};
+    room.slotReady[slot] = at + 40;
+    room.clock.commands.push(
+      { at, command: { scene: 16, slot, releaseSlot: true } },
+      { at: at + 36, command: { scene: 16, slot, x: 36 + slot * 69, y: 205 } },
+    );
+  };
+  const changeLineup = (room) => {
+    const before = active(room).map((p) => ({ id: p.id, slot: p.slot }));
+    const teamRotation = !!room.results?.teams;
+    applyLineup(room);
+    // Native team colors/costumes need the existing configured-screen
+    // rebuild for explicit team lineup edits and between-round team rotation.
+    // Ordinary joins, reconnects and setup dialogs never take this path.
+    if (teamRotation || room.teams) stopClock(room);
+    if (room.clock) {
+      for (const p of before)
+        if (
+          !active(room).some((next) => next.id === p.id && next.slot === p.slot)
+        )
+          clearSelectionSlot(room, p.slot);
+      clockSlots(room);
+    } else room.revision++;
   };
   const disconnect = (room, member, socket, voluntary = false) => {
     if (member.socket !== socket) return;
     member.mediaSocket?.close(1000, "Room connection closed");
     member.mediaSocket = null;
-    member.socket = null;
-    member.voice = false;
-    member.disconnectedAt = Date.now();
+    const family = party(room, member.id);
+    for (const p of family) {
+      p.socket = null;
+      p.voice = p.listening = false;
+      p.disconnectedAt = Date.now();
+      if (p.slot >= 0) room.clock?.release(p.slot);
+      if (room.selecting) {
+        clearSelectionSlot(room, p.slot);
+        if (!voluntary) enqueue(room, p);
+      }
+    }
     if (voluntary) removeMember(room, member);
     const successor = nextHost(room);
     if (!successor) {
@@ -405,18 +466,8 @@ export function createApp({
       return;
     }
     if (room.hostId === member.id) room.hostId = successor.id;
-    if (room.clock) {
-      room.clock.slots = active(room)
-        .filter((p) => p.socket && (p.ready || !room.selecting))
-        .map((p) => p.slot);
-      if (member.slot >= 0) room.clock.release(member.slot);
-    }
-    if (room.selecting && member.slot >= 0) {
-      // A shared snapshot clears only the departed token; keep other choices.
-      if (!voluntary) enqueue(room, member);
-      stopClock(room);
-      room.revision++;
-    }
+    clockSlots(room);
+    if (room.selecting && !room.clock) room.revision++;
     if (!voluntary) {
       member.reconnectTimer = setTimeout(() => {
         if (member.socket || rooms.get(room.token) !== room) return;
@@ -500,7 +551,7 @@ export function createApp({
             if (frame.frame >= header.frame) send(transfer, frame);
           return;
         }
-        for (const p of room.members.values()) {
+        for (const p of connections(room)) {
           if (p.id === meta.id || !p.socket) continue;
           const transfer = p.socket;
           if (transfer.bufferedAmount > 24 * 1024 * 1024)
@@ -536,7 +587,7 @@ export function createApp({
       if (m.type === "ping") return send(socket, { type: "pong", id: m.id });
       if (m.type === "create" || m.type === "join") {
         if (meta) return fail("Already in a room");
-        if (m.protocol !== 6)
+        if (m.protocol !== PROTOCOL)
           return fail(
             "This page has been updated. Reload to use the new Smash rooms.",
           );
@@ -549,6 +600,11 @@ export function createApp({
         )
           return fail("Load a supported ROM first.");
         const name = clean(m.name, "Player", 30);
+        try {
+          if (m.locals !== undefined) validateLocals(m.locals);
+        } catch (e) {
+          return fail(e.message);
+        }
         let r, p;
         if (m.type === "create") {
           if (updating())
@@ -591,14 +647,20 @@ export function createApp({
               "Everyone needs the same ROM and game build. Reload the pages and try again.",
             );
           p = [...r.members.values()].find(
-            (p) => m.ticket && p.ticket === m.ticket,
+            (p) => !p.ownerId && m.ticket && p.ticket === m.ticket,
           );
-          if (!p && r.members.size >= r.capacity) {
-            const reserved = [...r.members.values()]
-              .filter((p) => !p.socket)
+          const required = p
+            ? (m.locals?.length ?? party(r, p.id).length - 1) -
+              (party(r, p.id).length - 1)
+            : 1 + (m.locals?.length || 0);
+          while (r.members.size + required > r.capacity) {
+            const reserved = connections(r)
+              .filter((member) => !member.socket && member !== p)
               .sort((a, b) => a.disconnectedAt - b.disconnectedAt)[0];
             if (!reserved)
-              return fail("This room is full. Choose another room.");
+              return fail(
+                "This room is too full for everyone on this device. It holds eight people.",
+              );
             removeMember(r, reserved);
           }
         }
@@ -625,7 +687,10 @@ export function createApp({
           // A reload can rejoin before the old transport's close arrives.
           // Only the saved secret ticket can replace that session.
           const previous = p.socket;
-          p.socket = null;
+          for (const local of party(r, p.id)) {
+            local.socket = null;
+            if (local.slot >= 0) r.clock?.release(local.slot);
+          }
           if (r.hostId === p.id) r.hostId = nextHost(r)?.id || p.id;
           p.mediaSocket?.close(1000, "Session replaced");
           p.mediaSocket = null;
@@ -636,20 +701,22 @@ export function createApp({
           });
           previous.close(1000, "Session replaced");
         }
-        if (r.selecting && p.slot < 0 && p.ready) {
-          const occupied = new Set(active(r).map((member) => member.slot));
-          p.slot = [0, 1, 2, 3].find((slot) => !occupied.has(slot)) ?? -1;
-        }
-        const liveJoin = !!r.clock && (!r.selecting || p.slot < 0);
+        const liveJoin = !!r.clock;
         p.socket = socket;
-        p.voice = false;
-        if (
-          liveJoin &&
-          p.slot >= 0 &&
-          (p.ready || !r.selecting) &&
-          !r.clock.slots.includes(p.slot)
-        )
-          r.clock.slots.push(p.slot);
+        p.voice = p.listening = false;
+        if (m.locals !== undefined) {
+          const changes = reconcileParty(r, p, m.locals, clean);
+          for (const removed of changes.removed)
+            clearSelectionSlot(r, removed.slot);
+        }
+        for (const local of party(r, p.id)) {
+          local.socket = socket;
+          if (r.selecting && local.slot < 0 && local.ready) {
+            const occupied = new Set(active(r).map((member) => member.slot));
+            local.slot = [0, 1, 2, 3].find((slot) => !occupied.has(slot)) ?? -1;
+          }
+        }
+        clockSlots(r);
         if (!liveJoin) {
           stopClock(r);
           r.revision++;
@@ -673,11 +740,28 @@ export function createApp({
         return;
       }
       if (!room || !member) return fail("Join a room first.");
+      if (m.type === "local-players") {
+        try {
+          const changes = reconcileParty(room, member, m.locals, clean);
+          for (const removed of changes.removed) {
+            if (removed.slot >= 0) room.clock?.release(removed.slot);
+            clearSelectionSlot(room, removed.slot);
+          }
+          clockSlots(room);
+          if (!room.clock) room.revision++;
+          update(room);
+        } catch (e) {
+          fail(e.message);
+        }
+        return;
+      }
       if (m.type === "pointer") {
+        const actor = m.playerId ? room.members.get(m.playerId) : member;
+        if (!actor || ownerOf(actor) !== member.id) return;
         const slot =
-          member.slot < 0 && isHost && m.scene === 24
+          actor.slot < 0 && isHost && m.scene === 24
             ? (active(room).find((p) => p.socket)?.slot ?? 0)
-            : member.slot;
+            : actor.slot;
         if (
           !room.clock ||
           slot < 0 ||
@@ -691,8 +775,8 @@ export function createApp({
         )
           return;
         if (m.scene === 16 && !room.selecting) return;
-        if (Date.now() - (member.lastPointer || 0) < 250) return;
-        member.lastPointer = Date.now();
+        if (Date.now() - (actor.lastPointer || 0) < 250) return;
+        actor.lastPointer = Date.now();
         const offset =
           m.scene === 16 && m.recall
             ? 45
@@ -705,14 +789,14 @@ export function createApp({
           for (let f = 0; f < 3; f++)
             room.clock.commands.push({
               at: room.clock.frame + delay + f,
-              command: { id: member.id, slot, scene: m.scene, button },
+              command: { id: actor.id, slot, scene: m.scene, button },
             });
         };
         if (m.scene === 16 && m.recall) buttons(64, 2);
         room.clock.commands.push({
           at: room.clock.frame + offset,
           command: {
-            id: member.id,
+            id: actor.id,
             slot,
             scene: m.scene,
             x: m.x,
@@ -738,12 +822,12 @@ export function createApp({
         return;
       }
       if (m.type === "availability") {
-        member.ready = m.ready === true;
-        if (member.ready && member.slot < 0) member.queue = ++room.queueCounter;
+        const target = m.id ? room.members.get(m.id) : member;
+        if (!target || ownerOf(target) !== member.id) return;
+        target.ready = m.ready === true;
+        if (target.ready && target.slot < 0) target.queue = ++room.queueCounter;
         if (room.selecting) {
-          stopClock(room);
-          applyLineup(room);
-          room.revision++;
+          changeLineup(room);
         }
         update(room);
         return;
@@ -764,9 +848,7 @@ export function createApp({
             return fail("Choose up to four ready players.");
           room.override = ids;
           if (room.selecting) {
-            stopClock(room);
-            applyLineup(room);
-            room.revision++;
+            changeLineup(room);
           }
         }
         if (Array.isArray(m.queue)) {
@@ -824,6 +906,8 @@ export function createApp({
       }
       if (m.type === "voice-state") {
         member.voice = m.enabled === true;
+        member.listening =
+          typeof m.listening === "boolean" ? m.listening : member.voice;
         update(room);
         return;
       }
@@ -846,7 +930,7 @@ export function createApp({
         if (typeof m.spectators === "boolean")
           room.muteSpectators = m.spectators;
         if (typeof m.muted === "boolean" && room.members.has(m.id))
-          room.members.get(m.id).muted = m.muted;
+          room.members.get(ownerOf(room.members.get(m.id))).muted = m.muted;
         update(room);
         return;
       }
@@ -854,7 +938,8 @@ export function createApp({
         if (
           !member.voice ||
           member.muted ||
-          (room.muteSpectators && member.slot < 0) ||
+          (room.muteSpectators &&
+            !party(room, member.id).some((p) => p.slot >= 0)) ||
           typeof m.audio !== "string" ||
           !/^[A-Za-z0-9+/]{854}==$/.test(m.audio)
         )
@@ -865,8 +950,8 @@ export function createApp({
           member.voicePackets = 0;
         }
         if (++member.voicePackets > 35) return;
-        for (const p of room.members.values())
-          if (p.id !== member.id && p.voice && p.socket) {
+        for (const p of connections(room))
+          if (p.id !== member.id && p.listening && p.socket) {
             const transport =
               p.mediaSocket?.readyState === 1 ? p.mediaSocket : p.socket;
             // Voice is disposable. Never build a queue of stale audio.
@@ -898,6 +983,13 @@ export function createApp({
         if (m.match !== room.match || m.revision !== room.revision) return;
         if (
           m.type === "seal" &&
+          Object.values(room.slotReady || {}).some(
+            (f) => f > (room.clock?.frame || 0),
+          )
+        )
+          return;
+        if (
+          m.type === "seal" &&
           active(room).filter((p) => p.socket && p.ready).length < 2
         )
           return fail("Wait for at least two connected players.");
@@ -921,9 +1013,7 @@ export function createApp({
           room.override ||
           active(room).some((p) => !p.ready || !p.socket)
         ) {
-          stopClock(room);
-          applyLineup(room);
-          room.revision++;
+          changeLineup(room);
           for (const p of room.members.values())
             if (!p.socket) room.members.delete(p.id);
         }
@@ -948,7 +1038,7 @@ export function createApp({
         broadcast(room, { type: "launch", match: room.match });
         return;
       }
-      const recipients = [...room.members.values()].filter(
+      const recipients = connections(room).filter(
         (p) => p.id !== meta.id && p.socket && (!m.to || p.id === m.to),
       );
       if (m.type === "signal") {
@@ -980,16 +1070,33 @@ export function createApp({
           return fail("Only the host can start or synchronize.");
         if (g.match !== room.match || g.revision !== room.revision) return;
         if (g.type === "input" || g.type === "input-state") {
-          if (member.slot < 0 || (room.selecting && !member.ready)) return;
+          const player = g.playerId ? room.members.get(g.playerId) : member;
+          if (
+            !player ||
+            ownerOf(player) !== member.id ||
+            player.slot < 0 ||
+            (room.selecting && !player.ready)
+          )
+            return;
+          if (
+            room.selecting &&
+            (room.slotReady?.[player.slot] || 0) > (room.clock?.frame || 0)
+          )
+            return;
           if (g.epoch === room.clockEpoch) {
             if (g.type === "input-state")
-              room.clock?.inputState(member.slot, g.sequence, g.input);
-            else room.clock?.input(member.slot, g.frame, g.input);
+              room.clock?.inputState(player.slot, g.sequence, g.input);
+            else room.clock?.input(player.slot, g.frame, g.input);
           }
           return;
         }
-        if (["pause", "resync"].includes(g.type) && member.slot < 0 && !isHost)
+        if (
+          ["pause", "resync"].includes(g.type) &&
+          !party(room, member.id).some((p) => p.slot >= 0) &&
+          !isHost
+        )
           return;
+        if (g.type === "pause" && room.selecting) return;
         if (["sync", "pause"].includes(g.type)) stopClock(room);
         if (g.type === "start") {
           if (room.selecting && !active(room).every((p) => p.socket)) return;
@@ -1013,7 +1120,7 @@ export function createApp({
               room.history.push(packet);
               if (room.history.length > 900) room.history.shift();
               const wire = JSON.stringify(packet);
-              for (const p of room.members.values()) {
+              for (const p of connections(room)) {
                 if (p.socket?.bufferedAmount > 1024 * 1024) {
                   p.socket.close(1008, "Connection too slow");
                 } else if (p.socket?.readyState === 1) p.socket.send(wire);

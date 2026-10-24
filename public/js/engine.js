@@ -31,6 +31,7 @@ export class Engine {
     this.audio = null;
     this.logs = [];
     this.volume = 0.55;
+    this.voiceGain = 1;
   }
   async load(bytes) {
     if (this.loaded) return;
@@ -341,7 +342,7 @@ export class Engine {
         latencyHint: "interactive",
       });
       const gain = ctx.createGain();
-      gain.gain.value = this.volume;
+      gain.gain.value = this.volume * this.voiceGain;
       gain.connect(ctx.destination);
       const processor = ctx.createScriptProcessor(1024, 0, 2);
       this.audio = {
@@ -383,6 +384,20 @@ export class Engine {
   }
   setVolume(value) {
     this.volume = value;
-    if (this.audio) this.audio.gain.gain.value = value;
+    this.applyVolume();
+  }
+  setVoiceGain(value) {
+    this.voiceGain = value;
+    this.applyVolume();
+  }
+  applyVolume() {
+    if (!this.audio) return;
+    const { gain, ctx } = this.audio;
+    gain.gain.cancelScheduledValues(ctx.currentTime);
+    gain.gain.setTargetAtTime(
+      this.volume * this.voiceGain,
+      ctx.currentTime,
+      0.04,
+    );
   }
 }

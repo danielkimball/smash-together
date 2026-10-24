@@ -1,6 +1,7 @@
 import { Rounds } from "./rounds.js";
 import { socketURL } from "./service.js";
 import { InputTiming } from "./input-timing.js";
+import { PROTOCOL, ROOM_BUILD } from "./protocol.js";
 const neutral = () => ({ buttons: 0, x: 0, y: 0 });
 const bytesOf = async (stream) =>
   new Uint8Array(await new Response(stream).arrayBuffer());
@@ -77,6 +78,7 @@ export class Netplay extends EventTarget {
     this.performanceSamples = [];
     this.performanceEvents = [];
     this.observations = new Map();
+    this.localStreams = new Map();
   }
   get isHost() {
     return this.id && this.id === this.room?.hostId;
@@ -90,9 +92,20 @@ export class Netplay extends EventTarget {
   get players() {
     return this.room?.members.filter((p) => p.slot >= 0) || [];
   }
+  get devices() {
+    return this.connected.filter((p) => !p.ownerId || p.ownerId === p.id);
+  }
+  get localMembers() {
+    return this.connected.filter((p) => (p.ownerId || p.id) === this.id);
+  }
+  get localFighters() {
+    return this.localMembers.filter((p) => p.slot >= 0);
+  }
   get participants() {
-    return this.connected.filter(
-      (p) => p.slot >= 0 || p.id === this.room.hostId,
+    return this.devices.filter(
+      (p) =>
+        p.id === this.room.hostId ||
+        this.players.some((m) => (m.ownerId || m.id) === p.id),
     );
   }
   get allConnected() {
@@ -236,7 +249,7 @@ export class Netplay extends EventTarget {
       revision: this.room?.revision,
     };
     if (direct) {
-      for (const p of this.connected) {
+      for (const p of this.devices) {
         if (p.id === this.id || (to && to !== p.id)) continue;
         const ch = this.peers.get(p.id)?.channel;
         if (ch?.readyState === "open") {
@@ -270,14 +283,14 @@ export class Netplay extends EventTarget {
       this.send({
         ...options,
         type: options.token || options.roomId ? "join" : "create",
-        protocol: 6,
+        protocol: PROTOCOL,
         ticket: options.token
           ? sessionStorage.getItem("smash.ticket." + options.token)
           : options.roomId
             ? sessionStorage.getItem("smash.room-ticket." + options.roomId)
             : undefined,
         rom: this.engine.romHash,
-        build: this.engine.build + "-smash-native-v6",
+        build: this.engine.build + ROOM_BUILD,
       });
     ws.onmessage = (e) => {
       if (ws !== this.socket) return;
@@ -379,7 +392,7 @@ export class Netplay extends EventTarget {
         this.peers.delete(id);
       }
     }
-    for (const p of this.connected)
+    for (const p of this.devices)
       if (p.id !== this.id) this.setupRTC(p.id).catch(() => {});
     const changed =
       old && (old.revision !== room.revision || oldMatch !== room.match);
@@ -428,6 +441,8 @@ export class Netplay extends EventTarget {
           detail: `${room.members.find((p) => p.id === room.hostId)?.name || "Next player"} is now hosting.`,
         }),
       );
+      if (!this.isHost && !this.running && room.phase !== "starting")
+        this.send({ type: "observe" });
       if (
         this.isHost &&
         !this.running &&
@@ -502,6 +517,7 @@ export class Netplay extends EventTarget {
     this.remoteHashes.clear();
     this.sentInputs.clear();
     this.sentStates.clear();
+    this.localStreams.clear();
     this.frameSequences.clear();
     this.status("offline");
   }
@@ -791,6 +807,7 @@ export class Netplay extends EventTarget {
     this.remoteHashes.clear();
     this.sentInputs.clear();
     this.sentStates.clear();
+    this.localStreams.clear();
     this.frameSequences.clear();
     this.lastPublishedInput = null;
     this.lastControllerSampleTime = null;
@@ -853,7 +870,6 @@ export class Netplay extends EventTarget {
     if (
       !this.observationRequested &&
       !this.isHost &&
-      !this.room.selecting &&
       m.frame > this.frame + 90 &&
       arrival - (this.lastObservationRequest ?? -Infinity) >= 5000
     ) {
@@ -971,12 +987,16 @@ export class Netplay extends EventTarget {
         this.remoteHashes.set(m.frame, new Map());
       this.remoteHashes.get(m.frame).set(from, m.hash);
       this.compare(m.frame);
-    } else if (m.type === "pause") {
+    } else if (m.type === "pause" && !this.room.selecting) {
       this.running = false;
       this.status("paused");
-    } else if (m.type === "resync" && this.isHost)
-      this.synchronize().catch((e) => this.error(e.message));
-    else if (m.type === "echo")
+    } else if (m.type === "resync" && this.isHost) {
+      if (this.room.selecting && this.running)
+        this.sendObservation(from).catch((e) =>
+          this.dispatchEvent(new CustomEvent("notice", { detail: e.message })),
+        );
+      else this.synchronize().catch((e) => this.error(e.message));
+    } else if (m.type === "echo")
       this.sendGame({ type: "echo-reply", sent: m.sent }, true, from);
     else if (m.type === "echo-reply") {
       this.rtt = Math.round(performance.now() - m.sent);
@@ -998,7 +1018,8 @@ export class Netplay extends EventTarget {
       if (
         own !== hash &&
         this.isHost &&
-        this.room.members.find((p) => p.id === id)?.slot < 0
+        (this.room.selecting ||
+          !this.players.some((p) => (p.ownerId || p.id) === id))
       ) {
         this.sendObservation(id).catch(() => {});
         remote.set(id, null);
@@ -1041,44 +1062,72 @@ export class Netplay extends EventTarget {
     this.jitterLead = this.personalDelay;
     const target = Math.max(0, this.serverFrame + 1) + this.personalDelay;
     if (
-      this.player >= 0 &&
-      (this.me?.ready || !this.room.selecting) &&
+      this.localFighters.length &&
       (latest
         ? this.lastControllerSampleTime !== time
         : target > this.lastSample)
     ) {
       this.lastControllerSampleTime = time;
-      const input = this.filterInput
-        ? this.filterInput(this.controls.sample())
-        : this.controls.sample();
-      if (latest) {
-        const previous = this.lastPublishedInput;
-        if (
-          (this.socket?.bufferedAmount || 0) < 8192 &&
-          (!previous ||
-            previous.buttons !== input.buttons ||
-            previous.x !== input.x ||
-            previous.y !== input.y ||
-            this.now() - this.lastPublishedAt >= 50)
-        ) {
-          const sequence = ++this.inputSequence;
-          this.lastPublishedAt = this.now();
-          this.lastPublishedInput = { ...input };
-          this.sentStates.set(sequence, this.lastPublishedAt);
-          if (this.sentStates.size > 256)
-            this.sentStates.delete(this.sentStates.keys().next().value);
-          this.sendGame({ type: "input-state", sequence, input }, false);
+      for (const player of this.localFighters) {
+        if (!player.ready && this.room.selecting) continue;
+        let stream = this;
+        if (player.id !== this.id) {
+          if (!this.localStreams.has(player.id))
+            this.localStreams.set(player.id, { lastSample: this.lastSample });
+          stream = this.localStreams.get(player.id);
         }
-      } else
-        for (
-          let f = Math.max(this.lastSample + 1, this.serverFrame + 1);
-          f <= target;
-          f++
-        ) {
-          this.sendGame({ type: "input", frame: f, input }, false);
-          this.sentInputs.set(f, this.now());
+        if (stream.slot !== player.slot) {
+          stream.slot = player.slot;
+          stream.lastPublishedInput = null;
         }
+        const sampled = this.samplePlayer
+          ? this.samplePlayer(player)
+          : this.controls.sample();
+        const input = this.filterInput
+          ? this.filterInput(sampled, player)
+          : sampled;
+        const targetPlayer =
+          player.id === this.id ? {} : { playerId: player.id };
+        if (latest) {
+          const previous = stream.lastPublishedInput;
+          if (
+            (this.socket?.bufferedAmount || 0) < 8192 &&
+            (!previous ||
+              previous.buttons !== input.buttons ||
+              previous.x !== input.x ||
+              previous.y !== input.y ||
+              this.now() - stream.lastPublishedAt >= 50)
+          ) {
+            const sequence = ++this.inputSequence;
+            stream.lastPublishedAt = this.now();
+            stream.lastPublishedInput = { ...input };
+            if (player.id === this.id)
+              this.sentStates.set(sequence, stream.lastPublishedAt);
+            if (this.sentStates.size > 256)
+              this.sentStates.delete(this.sentStates.keys().next().value);
+            this.sendGame(
+              { type: "input-state", sequence, input, ...targetPlayer },
+              false,
+            );
+          }
+        } else
+          for (
+            let f = Math.max(stream.lastSample + 1, this.serverFrame + 1);
+            f <= target;
+            f++
+          ) {
+            this.sendGame(
+              { type: "input", frame: f, input, ...targetPlayer },
+              false,
+            );
+            this.sentInputs.set(f, this.now());
+          }
+        stream.lastSample = target;
+      }
       this.lastSample = target;
+      for (const id of this.localStreams.keys())
+        if (!this.localFighters.some((p) => p.id === id))
+          this.localStreams.delete(id);
       for (const f of this.sentInputs.keys())
         if (f < this.serverFrame - 120) this.sentInputs.delete(f);
     }
@@ -1122,6 +1171,12 @@ export class Netplay extends EventTarget {
     }
     const inputs = current.map((input) => ({ ...input }));
     for (const command of this.frameCommands.get(this.frame) || []) {
+      if (command.releaseSlot) {
+        const info = this.engine.inspect();
+        if (info.scene === 16 && info.players[command.slot]?.selected)
+          inputs[command.slot] = { buttons: 64, x: 0, y: 0 };
+        continue;
+      }
       if (
         command.scene === 21 &&
         command.id !== this.rounds.chooser(this.room)?.id
@@ -1227,13 +1282,21 @@ export class Netplay extends EventTarget {
     return sample;
   }
   pause() {
-    if (!this.running || (this.player < 0 && !this.isHost)) return;
+    if (
+      !this.running ||
+      this.room?.selecting ||
+      (this.engine.info?.scene ??
+        this.engine.inspect?.()?.scene ??
+        this.rounds.scene) !== 22 ||
+      (!this.localFighters.length && !this.isHost)
+    )
+      return;
     this.running = false;
     this.sendGame({ type: "pause" }, false);
     this.status("paused");
   }
   resume() {
-    if (!this.allConnected) return;
+    if (this.running || !this.allConnected) return;
     this.message = "";
     if (this.isHost) this.synchronize().catch((e) => this.error(e.message));
     else this.sendGame({ type: "resync" }, false, this.room.hostId);

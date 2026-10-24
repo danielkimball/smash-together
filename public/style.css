@@ -2169,3 +2169,49 @@ body[data-view="native"] .testing-corner {
 #testing-dialog {
   max-width: 420px;
 }
+.audio-levels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 24px 0;
+}
+.audio-levels label {
+  display: grid;
+  gap: 10px;
+}
+.audio-levels output {
+  color: var(--green, #22b573);
+}
+.audio-levels small {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.local-player-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  border-top: 1px solid #343434;
+  padding: 20px 0;
+}
+.local-player-row label {
+  display: grid;
+  gap: 8px;
+}
+.local-player-row select {
+  min-width: 0;
+  width: 100%;
+  align-self: end;
+}
+.local-player-row small {
+  grid-column: 1 / -1;
+}
+[data-voice].speaking {
+  color: #22b573;
+  border-color: #22b573;
+}
+@media (max-width: 600px) {
+  .audio-levels,
+  .local-player-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -136,6 +136,13 @@
             >
           </div>
           <div class="room-top-actions">
+            <label id="pointer-player-label" hidden
+              >Mouse / touch player
+              <select
+                id="pointer-player"
+                aria-label="Mouse or touch player"
+              ></select
+            ></label>
             <button id="copy-invite" data-invite>Invite friends</button
             ><button data-room-panel>Players</button
             ><button data-voice>Voice</button>
@@ -337,6 +344,7 @@
               </div>
               <button id="create-open" class="primary">Create a room</button>
               <button id="join-open">Join a room</button>
+              <button data-local-players>Players on this device</button>
             </div>
           </div>
           <section class="room-browser" aria-label="Available rooms">
@@ -390,6 +398,7 @@
         </button>
       </div>
       <p id="queue-status"></p>
+      <button data-local-players>Players on this device</button>
       <button id="sit-out">Sit out until I'm ready</button>
       <label for="rotation-mode">Rotation</label
       ><select id="rotation-mode">
@@ -415,19 +424,39 @@
     </dialog>
     <dialog id="voice-dialog">
       <div class="dialog-heading">
-        <h2>Room Voice</h2>
-        <button data-close="voice-dialog" aria-label="Close voice">
+        <h2>Audio &amp; Voice</h2>
+        <button data-close="voice-dialog" aria-label="Close audio settings">
           &times;
         </button>
       </div>
+      <div class="audio-levels">
+        <label
+          >Game volume <output id="game-volume-value">55%</output>
+          <input id="volume" type="range" min="0" max="100" value="55" />
+          <small id="game-volume-status">Your chosen game volume</small>
+        </label>
+        <label
+          >Voice volume <output id="voice-volume-value">100%</output>
+          <input id="voice-volume" type="range" min="0" max="100" value="100" />
+          <small>Everyone you hear in this room</small>
+        </label>
+      </div>
+      <label class="checkbox-label"
+        ><input id="voice-duck" type="checkbox" checked /> Lower game volume
+        while people talk</label
+      >
       <p id="voice-status" role="status"></p>
       <div class="actions">
-        <button id="voice-join">Join Voice</button
-        ><button id="voice-mute" hidden>Mute microphone</button
-        ><button id="voice-leave" hidden>Leave Voice</button>
+        <button id="voice-enable" class="primary" hidden>Enable sound</button>
+        <button id="voice-listen">Mute all voices</button>
+        <button id="voice-join">Turn microphone on</button>
+        <button id="voice-mute" hidden>Microphone on · Mute</button>
       </div>
-      <label for="voice-volume">Speaker volume</label
-      ><input id="voice-volume" type="range" min="0" max="100" value="100" />
+      <p class="subtext">
+        You hear the room automatically. Your microphone stays off until you
+        turn it on. Game volume returns to your chosen level when the
+        conversation is quiet.
+      </p>
       <label id="voice-host-options" hidden
         ><input id="mute-spectators" type="checkbox" /> Mute spectators for
         everyone</label
@@ -641,9 +670,8 @@
         ><button data-controls>Controller setup</button
         ><button id="help-open">Controls guide</button
         ><button data-fullscreen>Toggle fullscreen</button
-        ><label class="volume-label"
-          >VOLUME<input id="volume" type="range" min="0" max="100" value="55"
-        /></label>
+        ><button data-voice>Audio &amp; Voice</button>
+        <button data-local-players>Players on this device</button>
         <div id="local-save-actions" class="form-grid">
           <button id="save">Save progress</button
           ><button id="load-save">Load progress</button
@@ -717,6 +745,9 @@
         <option value="keyboard">Keyboard</option>
       </select>
       <div class="control-actions">
+        <button data-local-players class="subtle-button">
+          Players on this device
+        </button>
         <button id="preset" class="subtle-button">Reset preset</button
         ><button id="wizard" class="button primary compact">Guided setup</button
         ><button id="calibrate" class="subtle-button">Calibrate center</button>
@@ -764,6 +795,30 @@
         its old action. Keyboard: press the desired key. Close this panel to
         resume control of the game.
       </p>
+    </dialog>
+    <dialog id="local-players-dialog">
+      <div class="dialog-heading">
+        <h2>Players on this device</h2>
+        <button
+          data-close="local-players-dialog"
+          aria-label="Close local players"
+        >
+          ×
+        </button>
+      </div>
+      <p>
+        Share one screen and one tab. Connect each controller, press a button so
+        the browser sees it, then add a player. Each person needs a different
+        controller or the keyboard.
+      </p>
+      <div id="local-players-list"></div>
+      <button id="local-player-add" class="primary">Add player</button>
+      <p class="subtext">
+        Up to four people on this device. Rooms hold eight people, with four
+        fighting at once. During a match, new players wait for the next round.
+        This device shares one microphone and voice connection.
+      </p>
+      <button data-close="local-players-dialog">Done</button>
     </dialog>
     <dialog id="help-dialog">
       <div class="dialog-heading">

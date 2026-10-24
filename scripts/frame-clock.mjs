@@ -52,6 +52,10 @@ export class FrameClock {
   release(slot) {
     this.latest.delete(slot);
     for (const row of this.pending.values()) delete row[slot];
+    this.pulses = this.pulses.filter((pulse) => pulse.slot !== slot);
+    this.commands = this.commands.filter(
+      (entry) => entry.command.slot !== slot,
+    );
   }
   pulse(slot, buttons, count = 6, offset = 2) {
     if (this.slots.includes(slot))

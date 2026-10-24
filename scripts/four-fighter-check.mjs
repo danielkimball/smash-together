@@ -51,7 +51,7 @@ try {
     url: smash.net.socket.url,
     token: smash.net.token,
     rom: smash.engine.romHash,
-    build: smash.engine.build + "-smash-native-v6",
+    build: smash.engine.build + "-smash-native-v7",
   }));
   for (let i = 0; i < 3; i++) {
     const ws = new WebSocket(identity.url),
@@ -97,7 +97,7 @@ try {
       ...identity,
       url: undefined,
       type: "join",
-      protocol: 6,
+      protocol: 7,
       name: "Synthetic controller",
     });
     bot.timer = setInterval(() => {

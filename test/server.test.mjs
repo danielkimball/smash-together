@@ -1,4 +1,4 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { WebSocket } from "ws";
@@ -120,7 +120,7 @@ async function until(c, type, predicate = () => true) {
 }
 async function create(a, options = {}) {
   const h = await client(a.ws);
-  h.send({ type: "create", protocol: 6, rom, build, name: "Dan", ...options });
+  h.send({ type: "create", protocol: 7, rom, build, name: "Dan", ...options });
   const joined = await until(h, "joined");
   const { room } = await until(h, "room");
   return { h, token: joined.token, id: joined.id, room };
@@ -129,7 +129,7 @@ async function join(a, token, options = {}) {
   const g = await client(a.ws);
   g.send({
     type: "join",
-    protocol: 6,
+    protocol: 7,
     rom,
     build,
     token,
@@ -184,7 +184,7 @@ test("update drain counts private rooms, blocks new rooms, permits joins and exp
     0,
   );
   const blocked = await client(a.ws);
-  blocked.send({ type: "create", protocol: 6, rom, build });
+  blocked.send({ type: "create", protocol: 7, rom, build });
   assert.match((await until(blocked, "error")).message, /installing an update/);
   const guest = await join(a, hidden.token);
   await until(guest, "joined");
@@ -196,7 +196,7 @@ test("update drain counts private rooms, blocks new rooms, permits joins and exp
   await create(a);
   assert.equal(a.rooms.size, 2);
 });
-test("solo room opens immediately; joining changes roster revision, not the match", async (t) => {
+test("solo room opens immediately; live joining preserves the existing timeline", async (t) => {
   const a = await setup(t),
     { h, token, id, room } = await create(a, { capacity: 2 });
   assert.equal(room.phase, "starting");
@@ -214,20 +214,22 @@ test("solo room opens immediately; joining changes roster revision, not the matc
   await until(g, "joined");
   const next = (await until(g, "room")).room;
   assert.equal(next.match, 1);
-  assert.equal(next.revision, 2);
+  assert.equal(next.revision, 1);
+  assert.equal(next.epoch, 1);
+  assert.ok(a.rooms.get(token).clock);
   assert.equal(next.members[1].slot, 1);
-  g.send({ type: "seal", match: 1, revision: 2 });
+  g.send({ type: "seal", match: 1, revision: 1 });
   assert.match((await until(g, "error")).message, /Only the host/);
   g.send({
     type: "game",
-    payload: { type: "start", match: 1, revision: 2, epoch: 2 },
+    payload: { type: "start", match: 1, revision: 1, epoch: 2 },
   });
   assert.match((await until(g, "error")).message, /Only the host/);
   g.s.send(Buffer.alloc(64));
   assert.match((await until(g, "error")).message, /Only the host/);
   h.send({
     type: "game",
-    payload: { type: "start", match: 1, revision: 2, epoch: 2 },
+    payload: { type: "start", match: 1, revision: 1, epoch: 2 },
   });
   h.send({
     type: "game",
@@ -235,7 +237,7 @@ test("solo room opens immediately; joining changes roster revision, not the matc
     payload: {
       type: "input",
       match: 1,
-      revision: 2,
+      revision: 1,
       epoch: 2,
       frame: 6,
       input: { buttons: 128, x: 85, y: 0 },
@@ -248,7 +250,7 @@ test("solo room opens immediately; joining changes roster revision, not the matc
     (await until(h, "frame", (m) => m.frame === 6)).inputs,
     agreed.inputs,
   );
-  h.send({ type: "seal", match: 1, revision: 2 });
+  h.send({ type: "seal", match: 1, revision: 1 });
   await until(h, "room", (m) => !m.room.selecting);
   const stranger = await join(a, token);
   await until(stranger, "joined");

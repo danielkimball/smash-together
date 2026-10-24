@@ -5,13 +5,16 @@ export const waiting = (room) =>
     .filter((p) => p.slot < 0 && p.ready && p.socket)
     .sort((a, b) => a.queue - b.queue);
 export function nextHost(room) {
+  const rank = (p) =>
+    Math.min(
+      ...[...room.members.values()]
+        .filter((m) => (m.ownerId || m.id) === p.id && m.slot >= 0)
+        .map((m) => m.slot),
+      10,
+    );
   return [...room.members.values()]
-    .filter((p) => p.socket)
-    .sort(
-      (a, b) =>
-        (a.slot < 0 ? 10 : a.slot) - (b.slot < 0 ? 10 : b.slot) ||
-        a.joined - b.joined,
-    )[0];
+    .filter((p) => p.socket && !p.ownerId)
+    .sort((a, b) => rank(a) - rank(b) || a.joined - b.joined)[0];
 }
 export function enqueue(room, member) {
   member.slot = -1;
