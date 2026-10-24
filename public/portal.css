@@ -1120,3 +1120,102 @@ body[data-navigation="controller"] .room-row:focus {
     grid-column: 1 / -1;
   }
 }
+
+/* Extra local players stay subordinate to Name / Create / Join. */
+.lobby-actions .add-screen-player,
+.lobby-actions .add-screen-player:hover:not(:disabled),
+body[data-navigation="controller"] .lobby-actions .add-screen-player:focus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 36px;
+  margin: 5px auto 0;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 clamp(11px, 0.9vw, 14px) / 1.3 var(--heading);
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: left;
+}
+.lobby-actions .add-screen-player:hover:not(:disabled) {
+  color: var(--ink);
+}
+.add-player-icon {
+  position: relative;
+  flex: 0 0 21px;
+  width: 21px;
+  height: 21px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+}
+.add-player-icon::before,
+.add-player-icon::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 9px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+}
+.add-player-icon::after {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+.lobby-local-names {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.lobby-local-names[hidden] {
+  display: none;
+}
+.lobby-actions .name-field .lobby-local-name {
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: calc(50% - 4px);
+  margin: 0;
+  color: var(--muted);
+  text-align: center;
+}
+.lobby-local-name > span {
+  display: block;
+  margin-bottom: 5px;
+  font: 500 8px / 1.4 var(--label);
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.lobby-actions .name-field .lobby-local-name input {
+  width: 100%;
+  min-height: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 7px 8px 5px;
+  border: 1px solid #8282aa80;
+  border-radius: 999px;
+  background: #252532;
+  color: var(--ink);
+  font: 600 clamp(12px, 1vw, 16px) / 1.1 var(--heading);
+  letter-spacing: 0;
+}
+.lobby-actions .name-field .lobby-local-name input:focus {
+  background: var(--idle);
+  color: #000;
+}
+@media (pointer: coarse) {
+  .lobby-actions .add-screen-player {
+    min-height: 44px;
+  }
+  .lobby-actions .name-field .lobby-local-name input {
+    min-height: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
+}

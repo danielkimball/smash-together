@@ -760,16 +760,25 @@ function savePlayerName() {
   if ($("player-name").value.trim())
     localStorage.setItem("smash.name", playerName());
 }
-function openNameKeyboard() {
-  $("name-draft").value = playerName();
+let nameTarget;
+function openNameKeyboard(target = $("player-name")) {
+  nameTarget = target;
+  $("name-draft").value = target.value;
+  $("name-dialog-title").textContent = target.dataset.localName
+    ? `Change ${target.getAttribute("aria-label").toLowerCase()}`
+    : "Change your name";
+  $("name-draft-label").textContent = target.getAttribute("aria-label");
   dialog("name-dialog");
   $("name-keys").querySelector("button").focus();
 }
 function finishName() {
-  $("player-name").value = $("name-draft").value.trim() || funnyName();
-  savePlayerName();
+  const target = nameTarget || $("player-name");
+  target.value = $("name-draft").value.trim() || funnyName();
+  if (target.dataset.localName)
+    localPlayers.rename(target.dataset.localName, target.value);
+  else savePlayerName();
   $("name-dialog").close();
-  $("player-name").focus();
+  target.focus();
 }
 const nameKeys = [
   ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
@@ -1656,11 +1665,11 @@ $("reset").onclick = () => {
 function diagnostics() {
   const sample = net.performanceSamples.at(-1);
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.7.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.7.1`;
 }
 $("performance-export").onclick = () => {
   const report = {
-    version: "3.7.0",
+    version: "3.7.1",
     exported: new Date().toISOString(),
     samples: net.performanceSamples,
     events: net.performanceEvents,
@@ -1797,7 +1806,11 @@ function menuController(time) {
         lastMenuMove = time;
       }
       if (active.a && !menuEdges.a) {
-        if (document.activeElement === $("player-name")) openNameKeyboard();
+        if (
+          document.activeElement === $("player-name") ||
+          document.activeElement?.matches("[data-local-name]")
+        )
+          openNameKeyboard(document.activeElement);
         else if (document.activeElement?.tagName === "BUTTON")
           document.activeElement.click();
       }

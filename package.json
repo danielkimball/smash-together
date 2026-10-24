@@ -1,6 +1,6 @@
 {
   "name": "smash64-online",
-  "version": "3.7.0",
+  "version": "3.7.1",
   "private": true,
   "type": "module",
   "description": "Free fullscreen BYOR Smash 64 with native menus and live character-selection rooms and configurable controllers",

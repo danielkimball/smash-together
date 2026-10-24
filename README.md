@@ -1,3 +1,7 @@
+# Compact local-player setup — v3.7.1
+
+Use the small red **+ Add additional players on this screen** directly below **Change your name**. It opens the existing local-player setup. Added people get smaller editable name pills in one row; names save automatically and support the controller keyboard. At four people, the link becomes **Manage players on this screen**. Create, Join and the room list remain the main actions. Gameplay, network timing and emulator code are unchanged.
+
 # Audio, shared-device players and live lobbies — v3.7.0
 
 **Refresh every player's tab after this update.** Room protocol 7 keeps old and new clients from mixing; the pinned emulator binaries are unchanged.
