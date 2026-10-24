@@ -13,6 +13,7 @@ import { Netplay, compress, decompress } from "./netplay.js";
 import { TouchControls } from "./touch.js";
 import { Attract } from "./attract.js";
 import { RoomUI } from "./room-ui.js";
+import { LocalPlayers, localPlayersPanel } from "./local-players.js";
 import { menuRows, isGameplay, characterScenes } from "./native-menus.js";
 import * as storage from "./storage.js";
 import { serviceFetch, appBase } from "./service.js";
@@ -143,15 +144,26 @@ const attempt =
       console.error(e);
     }
   };
-const roomUI = new RoomUI(net, (id) => dialog(id, { pauseGame: false }), toast);
+const roomUI = new RoomUI(
+  net,
+  engine,
+  (id) => dialog(id, { pauseGame: false }),
+  toast,
+);
 window.smash.voice = roomUI.voice;
+window.smash.audio = roomUI.audio;
+const localPlayers = new LocalPlayers(controls);
+window.smash.localPlayers = localPlayers;
+localPlayersPanel(localPlayers, net, (id) => dialog(id), toast, playerName);
+net.samplePlayer = (player) =>
+  localPlayers.sample(player.localKey || "primary");
 function blockInput() {
   controls.blocked =
     !["game", "native"].includes(view) ||
     !!document.querySelector("dialog[open]") ||
     (paused && net.state === "offline") ||
     !["offline", "playing"].includes(net.state) ||
-    (net.room && net.player < 0);
+    (net.room && !net.localFighters.length);
   if (controls.blocked) {
     controls.keys.clear();
     controls.touch.reset();
@@ -197,10 +209,12 @@ function dialog(id, { pauseGame = true } = {}) {
   d.resumeOnClose =
     pauseGame &&
     ["game", "native"].includes(view) &&
-    (net.running || (net.state === "offline" && !paused));
+    ((net.running && (engine.info || engine.inspect()).scene === 22) ||
+      (net.state === "offline" && !paused));
   if (d.resumeOnClose) pause();
   if (id === "controls-dialog") {
     refreshDevices();
+    $("device").value = controls.selected;
     renderBindings();
   }
   if (id === "diagnostics-dialog") diagnostics();
@@ -707,18 +721,20 @@ function requestMatch() {
     playerTeams: info.players.map((p) => p.team),
   });
 }
-net.filterInput = (input) => {
+net.filterInput = (input, player = net.me) => {
   const r = net.room;
-  if (net.player < 0) return neutral;
-  if (pointerQueue.length && engine.info?.scene !== 22)
+  if (!player || player.slot < 0) return neutral;
+  const primary = player.id === net.id;
+  if (primary && pointerQueue.length && engine.info?.scene !== 22)
     input = nextPointerInput();
   if (r?.selecting) {
-    const bPressed = input.buttons & BITS.b && !(selectionButtons & BITS.b);
-    selectionButtons = input.buttons;
+    const bPressed =
+      primary && input.buttons & BITS.b && !(selectionButtons & BITS.b);
+    if (primary) selectionButtons = input.buttons;
     const info = engine.info || engine.inspect();
     if (
       info.scene === 16 &&
-      !info.players[net.player]?.selected &&
+      !info.players[player.slot]?.selected &&
       input.buttons & BITS.b
     ) {
       if (bPressed) queueMicrotask(leaveRoom);
@@ -808,7 +824,12 @@ async function joinRoom(options) {
   await powerOn();
   closeDialogs();
   paused = true;
-  net.connect({ ...options, name: playerName(), controller: controllerName() });
+  net.connect({
+    ...options,
+    name: playerName(),
+    controller: localPlayers.controller(localPlayers.ensure()[0]),
+    locals: localPlayers.roster(),
+  });
 }
 function openCreate() {
   $("room-name").value =
@@ -982,6 +1003,18 @@ $("back-lobby").onclick = returnLobby;
 $("game-rejoin").onclick = attempt(() => joinRoom(net.lastOptions));
 function renderCharacterRoom() {
   const r = net.room;
+  const local = net.localFighters;
+  const mouse = $("pointer-player");
+  const options = local.map((p) => `${p.id}:${p.name}:${p.slot}`).join("|");
+  if (mouse.dataset.options !== options) {
+    const selected = mouse.value;
+    mouse.replaceChildren(
+      ...local.map((p) => new Option(`${p.name} · P${p.slot + 1}`, p.id)),
+    );
+    if (local.some((p) => p.id === selected)) mouse.value = selected;
+    mouse.dataset.options = options;
+  }
+  $("pointer-player-label").hidden = local.length < 2;
   const chooser = net.rounds.chooser(r);
   const stage = r && net.rounds.scene === 21 && view === "game";
   const winner = r?.members.find((p) => p.id === net.rounds.winnerId);
@@ -993,7 +1026,7 @@ function renderCharacterRoom() {
     winner;
   $("stage-choice").hidden = !stage && !results;
   if (stage || results) {
-    const yours = chooser?.id === net.id;
+    const yours = (chooser?.ownerId || chooser?.id) === net.id;
     $("stage-choice").textContent = results
       ? `${chooser?.name || "Host"} won · picks next stage · Start to continue`
       : yours
@@ -1007,12 +1040,11 @@ function renderCharacterRoom() {
   $("room-title").textContent = r.name;
   $("rename-open").hidden = !net.isHost;
   const info = engine.info || { players: [] };
-  $("room-waiting").textContent =
-    net.player < 0
-      ? "Spectating · Open Players to see the queue"
-      : net.players.length < 2
-        ? "Choose your fighter while you wait for friends"
-        : `${net.connected.length} / ${r.capacity} players · ${net.isHost ? "Start when everyone has chosen" : "The host starts the match"}`;
+  $("room-waiting").textContent = !net.localFighters.length
+    ? "Spectating · Open Players to see the queue"
+    : net.players.length < 2
+      ? "Choose your fighter while you wait for friends"
+      : `${net.connected.length} / ${r.capacity} players · ${net.isHost ? "Start when everyone has chosen" : "The host starts the match"}`;
   const signature = JSON.stringify([
     r,
     info.players.map((p) => [p.selected, p.fighter]),
@@ -1272,25 +1304,36 @@ $("canvas").onclick = attempt((event) => {
       else pointerPress("b");
       return;
     }
-    if (net.room && net.player < 0 && !(net.isHost && info.scene === 24))
+    const chooser = net.rounds.chooser(net.room);
+    const actor =
+      info.scene === 21 && (chooser?.ownerId || chooser?.id) === net.id
+        ? chooser
+        : net.localFighters.find((p) => p.id === $("pointer-player").value) ||
+          net.me;
+    if (
+      net.room &&
+      (actor?.slot ?? -1) < 0 &&
+      !(net.isHost && info.scene === 24)
+    )
       return;
     if (info.scene === 21 && (x < 30 || x > 280 || y < 30 || y > 106)) return;
     const command = {
       scene: info.scene,
-      slot: net.room ? net.player : 0,
+      slot: net.room ? actor.slot : 0,
       x,
       y,
     };
     if (net.room)
       net.send({
         type: "pointer",
+        playerId: actor.id,
         ...command,
         wait:
           info.scene === 24
             ? Math.max(0, info.results.exitTicks - info.results.ticks + 4)
             : 0,
         recall:
-          info.scene === 16 && y < 124 && info.players[net.player]?.selected,
+          info.scene === 16 && y < 124 && info.players[actor.slot]?.selected,
       });
     else {
       if (info.scene === 16 && y < 124 && info.players[0]?.selected) {
@@ -1322,7 +1365,6 @@ $("canvas").onclick = attempt((event) => {
   }
   return engine.audioStart();
 });
-$("volume").oninput = () => engine.setVolume(Number($("volume").value) / 100);
 function refreshDevices() {
   controls.touch.refresh();
   const devices = controls.devices(),
@@ -1382,7 +1424,11 @@ function refreshDevices() {
     controls.selected === "keyboard"
       ? "Keyboard ready · Or pair a controller and press a button"
       : controllerName();
-  if (net.room) net.send({ type: "profile", controller: controllerName() });
+  if (net.room)
+    net.send({
+      type: "profile",
+      controller: localPlayers.controller(localPlayers.ensure()[0]),
+    });
   if ($("controls-dialog").open) renderBindings();
 }
 function renderBindings() {
@@ -1454,7 +1500,11 @@ $("device").onchange = () => {
   controls.select($("device").value);
   localStorage.setItem("smash.inputChoice", controllerKey(controls.id()));
   $("footer-input").textContent = controllerName();
-  if (net.room) net.send({ type: "profile", controller: controllerName() });
+  if (net.room)
+    net.send({
+      type: "profile",
+      controller: localPlayers.controller(localPlayers.ensure()[0]),
+    });
   wizardIndex = -1;
   controls.cancelCapture();
   renderBindings();
@@ -1606,11 +1656,11 @@ $("reset").onclick = () => {
 function diagnostics() {
   const sample = net.performanceSamples.at(-1);
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.6.5`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.7.0`;
 }
 $("performance-export").onclick = () => {
   const report = {
-    version: "3.6.5",
+    version: "3.7.0",
     exported: new Date().toISOString(),
     samples: net.performanceSamples,
     events: net.performanceEvents,
@@ -1626,7 +1676,9 @@ $("performance-export").onclick = () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 function menuController(time) {
-  const pad = controls.pad();
+  const pad = net.room
+    ? localPlayers.pad(localPlayers.ensure()[0])
+    : controls.pad();
   const homeInput = view === "home" && !document.querySelector("dialog[open]");
   attract.tick(
     pad ||
@@ -1642,7 +1694,9 @@ function menuController(time) {
     return;
   }
   if (controls.capture || $("busy").hidden === false) return;
-  const input = evaluate(controls.profile, pad, controls.keys);
+  const input = net.room
+    ? localPlayers.sample("primary", { menu: true })
+    : evaluate(controls.profile, pad, controls.keys);
   const touchInput = controls.touch.sample();
   input.buttons |= touchInput.buttons;
   const buttons = input.buttons;
@@ -1762,11 +1816,15 @@ window.addEventListener("keydown", (e) => {
     net.room?.selecting &&
     !e.repeat &&
     !controls.capture &&
-    controls.selected === "keyboard" &&
+    localPlayers.ensure()[0].device.kind === "keyboard" &&
     !e.target.closest("input,select,textarea") &&
     !document.querySelector("dialog[open]")
   ) {
-    const pressed = evaluate(controls.profile, null, new Set([e.code])).buttons;
+    const pressed = evaluate(
+      controls.saved.keyboard || defaultProfile("keyboard"),
+      null,
+      new Set([e.code]),
+    ).buttons;
     const info = engine.info || engine.inspect();
     if (
       pressed & BITS.b &&
@@ -1976,7 +2034,11 @@ function tick(time) {
       lastUI = time;
       if (net.room && time - lastPerformanceSample >= 5000) {
         lastPerformanceSample = time;
-        net.samplePerformance(lastFPS, !!roomUI.voice.stream, longTasks);
+        net.samplePerformance(
+          lastFPS,
+          roomUI.voice.isListening || !!roomUI.voice.stream,
+          longTasks,
+        );
         longTasks = 0;
       }
       if ($("diagnostics-dialog").open) diagnostics();

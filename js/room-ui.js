@@ -1,4 +1,5 @@
 import { RoomVoice } from "./voice.js";
+import { AudioSettings } from "./audio-settings.js";
 const $ = (id) => document.getElementById(id);
 const el = (tag, text, cls) => {
   const n = document.createElement(tag);
@@ -7,10 +8,12 @@ const el = (tag, text, cls) => {
   return n;
 };
 export class RoomUI {
-  constructor(net, open, toast) {
+  constructor(net, engine, open, toast) {
     this.net = net;
     this.voice = new RoomVoice(net);
+    this.audio = new AudioSettings(engine, this.voice);
     this.open = open;
+    this.toast = toast;
     document.querySelectorAll("[data-room-panel]").forEach(
       (b) =>
         (b.onclick = () => {
@@ -22,6 +25,7 @@ export class RoomUI {
       (b) =>
         (b.onclick = () => {
           this.renderVoice();
+          this.voice.listen();
           open("voice-dialog");
         }),
     );
@@ -48,14 +52,29 @@ export class RoomUI {
         ),
       });
     $("voice-join").onclick = () => this.voice.join();
-    $("voice-leave").onclick = () => this.voice.stop();
+    $("voice-enable").onclick = () => this.voice.listen();
+    $("voice-listen").onclick = () => {
+      const unmute = this.voice.deafened || this.voice.volume === 0;
+      if (unmute && this.voice.volume === 0) this.audio.setVoice(1);
+      this.voice.muteAll(!unmute);
+    };
     $("voice-mute").onclick = () => {
       this.voice.muted = !this.voice.muted;
       this.voice.settings();
     };
     $("voice-volume").oninput = (e) => {
-      this.voice.volume = Number(e.target.value) / 100;
-      this.voice.settings();
+      this.audio.setVoice(Number(e.target.value) / 100);
+      this.renderVoice();
+    };
+    $("volume").oninput = (e) => {
+      this.audio.setGame(Number(e.target.value) / 100);
+      this.renderVoice();
+    };
+    $("voice-duck").onchange = (e) => {
+      this.audio.autoLower = e.target.checked;
+      this.audio.save();
+      this.audio.tick();
+      this.renderVoice();
     };
     $("mute-spectators").onchange = (e) =>
       net.send({ type: "voice-moderate", spectators: e.target.checked });
@@ -65,6 +84,25 @@ export class RoomUI {
     });
     this.voice.addEventListener("change", () => this.renderVoice());
     setInterval(() => {
+      const lowered = this.audio.tick();
+      $("game-volume-status").textContent = lowered
+        ? "Lowered while someone speaks"
+        : "Your chosen game volume";
+      const talking = [...this.voice.speaking].some(
+        ([, until]) => until > performance.now(),
+      );
+      document.querySelectorAll("[data-voice]").forEach((button) => {
+        button.classList.toggle("speaking", talking);
+        button.textContent = this.net.room
+          ? this.voice.deafened || !this.voice.volume
+            ? "Audio · Voice muted"
+            : !this.voice.isListening
+              ? "Audio · Enable sound"
+              : talking
+                ? "Audio · Talking"
+                : "Audio & Voice"
+          : "Audio & Voice";
+      });
       for (const n of document.querySelectorAll("[data-speaking]"))
         n.classList.toggle(
           "speaking",
@@ -72,14 +110,18 @@ export class RoomUI {
             performance.now(),
         );
     }, 150);
+    this.renderVoice();
   }
   render() {
     const n = this.net,
       r = n.room;
     document
-      .querySelectorAll("[data-room-panel],[data-voice]")
+      .querySelectorAll("[data-room-panel]")
       .forEach((b) => (b.hidden = !r));
     if (!r) return;
+    document
+      .querySelectorAll("[data-voice]")
+      .forEach((b) => (b.hidden = false));
     $("sit-out").textContent = n.me?.ready
       ? "Sit out until I’m ready"
       : "Ready to play";
@@ -139,6 +181,15 @@ export class RoomUI {
           ),
         );
         row.append(info);
+        if ((p.ownerId || p.id) === n.id && p.id !== n.id) {
+          const availability = el(
+            "button",
+            p.ready ? "Sit out" : "Ready to play",
+          );
+          availability.onclick = () =>
+            n.send({ type: "availability", id: p.id, ready: !p.ready });
+          row.append(availability);
+        }
         if (n.isHost) {
           const label = el("label", "Next round "),
             check = el("input");
@@ -198,23 +249,51 @@ export class RoomUI {
     $("voice-join").disabled = v.joining || !r;
     $("voice-join").textContent = v.joining
       ? "Waiting for microphone permission…"
-      : "Join Voice";
-    $("voice-leave").hidden = !v.stream;
+      : "Turn microphone on";
     $("voice-mute").hidden = !v.stream;
-    const forced = n.me?.muted || (r?.muteSpectators && n.me?.slot < 0);
+    const forced = v.forced;
     $("voice-mute").disabled = !!forced;
     $("voice-mute").textContent = forced
       ? "Muted by host"
       : v.muted
-        ? "Unmute microphone"
-        : "Mute microphone";
+        ? "Microphone muted · Unmute"
+        : "Microphone on · Mute";
+    $("voice-mute").setAttribute("aria-pressed", String(!v.blocked));
+    $("voice-enable").hidden =
+      !r || !!v.audioError || !v.ctx || v.ctx.state === "running";
+    $("voice-listen").disabled = !r;
+    $("voice-listen").textContent =
+      v.deafened || !v.volume ? "Unmute all voices" : "Mute all voices";
+    $("voice-listen").setAttribute(
+      "aria-pressed",
+      String(v.deafened || !v.volume),
+    );
     $("voice-status").textContent =
+      v.audioError ||
       v.error ||
-      (v.stream
-        ? "Voice connected · Microphone " + (v.blocked ? "muted" : "on")
-        : "Your microphone stays off until you choose Join Voice.");
+      (!r
+        ? "Join a room to hear and talk with friends."
+        : `${v.deafened ? "You muted voice playback" : !v.volume ? "Voice volume is at 0%" : v.isListening ? "Listening to the room" : "Enable sound to hear the room"} · ${v.stream ? (v.blocked ? "Microphone muted" : "Microphone on") : "Microphone off"}.`);
+    if (r && v.ctx?.state === "suspended" && this.soundPrompt !== r.id) {
+      this.soundPrompt = r.id;
+      this.toast(
+        "Click Audio → Enable sound to hear the room. Your microphone stays off.",
+      );
+    }
+    $("volume").value = Math.round(this.audio.game * 100);
+    $("game-volume-value").value = `${Math.round(this.audio.game * 100)}%`;
+    $("voice-volume").value = Math.round(v.volume * 100);
+    $("voice-volume-value").value = `${Math.round(v.volume * 100)}%`;
+    $("voice-duck").checked = this.audio.autoLower;
     $("voice-host-options").hidden = !n.isHost;
     $("mute-spectators").checked = !!r?.muteSpectators;
+    for (const button of document.querySelectorAll("[data-voice-mute]")) {
+      const muted = (v.levels.get(button.dataset.voiceMute) ?? 1) <= 0;
+      button.textContent = muted ? "Unmute for me" : "Mute for me";
+      button.setAttribute("aria-pressed", String(muted));
+    }
+    for (const range of document.querySelectorAll("[data-voice-level]"))
+      range.value = (v.levels.get(range.dataset.voiceLevel) ?? 1) * 100;
     const signature = JSON.stringify([
       r?.members,
       r?.muteSpectators,
@@ -223,20 +302,32 @@ export class RoomUI {
     if (signature === this.voiceKey) return;
     this.voiceKey = signature;
     $("voice-members").replaceChildren(
-      ...(r?.members || [])
+      ...(n.devices || [])
         .filter((p) => p.connected)
         .map((p) => {
           const row = el("div", undefined, "member-row");
           row.dataset.speaking = p.id;
           row.append(
-            el("strong", p.name),
+            el(
+              "strong",
+              r.members
+                .filter((m) => (m.ownerId || m.id) === p.id && m.connected)
+                .map((m) => m.name)
+                .join(" + "),
+            ),
             el(
               "small",
-              p.muted || (r.muteSpectators && p.slot < 0)
+              p.muted ||
+                (r.muteSpectators &&
+                  !r.members.some(
+                    (m) => (m.ownerId || m.id) === p.id && m.slot >= 0,
+                  ))
                 ? "Muted by host"
                 : p.voice
-                  ? "In voice"
-                  : "Voice off",
+                  ? "Microphone on"
+                  : p.listening
+                    ? "Listening · Mic off"
+                    : "Voice playback off",
             ),
           );
           if (p.id !== n.id) {
@@ -246,18 +337,30 @@ export class RoomUI {
             range.min = 0;
             range.max = 100;
             range.value = (v.levels.get(p.id) ?? 1) * 100;
+            range.dataset.voiceLevel = p.id;
             range.setAttribute("aria-label", `${p.name} voice volume`);
             range.oninput = () => {
-              v.levels.set(p.id, Number(range.value) / 100);
-              v.settings();
+              v.setLevel(p.id, Number(range.value) / 100);
             };
             label.append(range);
             row.append(label);
+            const mute = el(
+              "button",
+              (v.levels.get(p.id) ?? 1) > 0 ? "Mute for me" : "Unmute for me",
+            );
+            mute.dataset.voiceMute = p.id;
+            mute.setAttribute(
+              "aria-pressed",
+              String((v.levels.get(p.id) ?? 1) === 0),
+            );
+            mute.onclick = () =>
+              v.setLevel(p.id, (v.levels.get(p.id) ?? 1) > 0 ? 0 : 1);
+            row.append(mute);
           }
           if (n.isHost) {
             const b = el(
               "button",
-              p.muted ? "Allow microphone" : "Mute for everyone",
+              p.muted ? "Host: allow mic" : "Host: mute mic",
             );
             b.onclick = () =>
               n.send({ type: "voice-moderate", id: p.id, muted: !p.muted });
