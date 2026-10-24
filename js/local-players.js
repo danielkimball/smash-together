@@ -212,7 +212,7 @@ export function localPlayersPanel(party, net, open, toast, name) {
       nameKeys = keys;
       list.replaceChildren(
         ...entries.map((entry, index) => {
-          const label = document.createElement("label");
+          const label = document.createElement("div");
           label.className = "lobby-local-name";
           const caption = document.createElement("span");
           caption.textContent = `P${index + 2} · Change name`;
@@ -226,7 +226,16 @@ export function localPlayersPanel(party, net, open, toast, name) {
           input.onchange = () => {
             input.value = entry.name;
           };
-          label.append(caption, input);
+          const field = document.createElement("div");
+          field.className = "local-name-field";
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "remove-local-player";
+          remove.textContent = "×";
+          remove.setAttribute("aria-label", `Remove Player ${index + 2}`);
+          remove.onclick = () => party.remove(entry.key);
+          field.append(input, remove);
+          label.append(caption, field);
           return label;
         }),
       );
@@ -291,6 +300,7 @@ export function localPlayersPanel(party, net, open, toast, name) {
         map.textContent = "Map buttons";
         map.disabled = value.startsWith("missing:");
         map.onclick = () => {
+          party.controls.mappingPlayerKey = entry.key;
           party.controls.select(value === "keyboard" ? value : value.slice(4));
           const resume = $("local-players-dialog").resumeOnClose;
           $("local-players-dialog").resumeOnClose = false;

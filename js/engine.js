@@ -140,7 +140,7 @@ export class Engine {
       m._netplay_get_state_buffer() + m._netplay_get_state_size(),
     );
   }
-  restore(bytes) {
+  restore(bytes, { preserveAudio = false } = {}) {
     const m = this.module;
     if (bytes.length !== m._netplay_get_state_size())
       throw Error("Incompatible game state.");
@@ -148,7 +148,7 @@ export class Engine {
     if (!m._netplay_unserialize_state(bytes.length))
       throw Error("Could not restore the game state.");
     this.info = null;
-    this.flushAudio();
+    if (!preserveAudio) this.flushAudio();
   }
   unlockAll() {
     // Native LBBackupData: all twelve playable fighters (FTKind 0..11),
@@ -241,6 +241,36 @@ export class Engine {
     const state = this.snapshot();
     state[448 + ((0xa4d08 + 10) ^ 3)] = 1;
     this.restore(state);
+  }
+  keepMenuAlive() {
+    // US decomp: TotalTimeTics / ReturnTic. Extend only the menu's idle
+    // deadline; never rewind its animation, choices, music or gameplay clock.
+    // Online callers run this on an agreed frame, including after late joins.
+    const timers = {
+      7: [0x132ca0, 0x132ca4],
+      8: [0x1331c8, 0x1331cc],
+      9: [0x134980, 0x134984],
+      10: [0x13490c, 0x134910],
+      11: [0x133468, 0x13346c],
+      16: [0x13bdcc, 0x13bdd0],
+      17: [0x138f74, 0x138f78],
+      18: [0x13888c, 0x138890],
+      19: [0x137724, 0x137728],
+      20: [0x137724, 0x137728],
+      21: [0x134c24, 0x134c2c],
+      47: [0x1330e0, 0x1330ec],
+      57: [0x1337e4, 0x1337e8],
+      58: [0x133094, 0x133098],
+    };
+    const state = this.snapshot();
+    const scene = state[448 + (0xa4ad0 ^ 3)];
+    const timer = timers[scene];
+    if (!timer) return;
+    const data = new DataView(state.buffer, state.byteOffset, state.byteLength);
+    const ticks = data.getInt32(448 + timer[0], true);
+    data.setInt32(448 + timer[1], ticks + 18000, true);
+    // No time travel occurred, so queued sound remains valid.
+    this.restore(state, { preserveAudio: true });
   }
   inspect() {
     // Read-only introspection of the verified US cartridge. The pinned core's

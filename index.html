@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="./touch.css" />
     <link rel="stylesheet" href="./portal.css" />
     <link rel="stylesheet" href="./room.css" />
+    <link rel="stylesheet" href="./refinements.css" />
     <script type="module" src="./js/app.js"></script>
   </head>
   <body>
@@ -23,7 +24,12 @@
       <button data-fullscreen>⛶ Fullscreen</button>
     </nav>
     <dialog id="fullscreen-help">
-      <h2>Play fullscreen</h2>
+      <div class="dialog-heading">
+        <h2>Play fullscreen</h2>
+        <button data-close="fullscreen-help" aria-label="Close fullscreen help">
+          ×
+        </button>
+      </div>
       <p>
         If this browser cannot go fullscreen, add Smash Portal to your home
         screen and open it there.
@@ -40,6 +46,12 @@
         tabindex="0"
         aria-label="Super Smash Bros. game"
       ></canvas>
+      <div id="native-opening" hidden>
+        <button id="game-sound" class="glass" hidden>Enable sound</button>
+        <button id="power-on" aria-label="Press Start">
+          <span>PRESS START</span>
+        </button>
+      </div>
       <div id="native-menu" hidden>
         <nav class="native-hitbox" aria-label="Smash main menu">
           <button
@@ -135,21 +147,6 @@
               >Choose your fighter while friends join</span
             >
           </div>
-          <div class="room-top-actions">
-            <label id="pointer-player-label" hidden
-              >Mouse / touch player
-              <select
-                id="pointer-player"
-                aria-label="Mouse or touch player"
-              ></select
-            ></label>
-            <button id="copy-invite" data-invite>Invite friends</button
-            ><button data-room-panel>Players</button
-            ><button data-voice>Voice</button>
-            <button id="selection-back" aria-label="Back to multiplayer menu">
-              B · Back
-            </button>
-          </div>
         </div>
         <div class="room-bottom">
           <div id="player-slots" class="native-ports" aria-live="polite"></div>
@@ -168,12 +165,23 @@
           ☰ <span>Menu</span> <kbd>Esc</kbd>
         </button>
         <div id="game-players" class="game-players"></div>
-        <button class="glass" data-room-panel hidden>Players</button
+        <button class="glass" data-room-panel hidden>Server settings</button
         ><button class="glass" data-voice hidden>Voice</button
         ><button class="glass controller-status" data-controls>
           Controller
         </button>
         <button class="glass" data-fullscreen>⛶ <span>Fullscreen</span></button>
+        <button id="copy-invite" class="glass" data-invite hidden>
+          Invite friends
+        </button>
+        <button
+          id="selection-back"
+          class="glass"
+          aria-label="Back to multiplayer menu"
+          hidden
+        >
+          B · Back
+        </button>
       </div>
       <div id="game-notice" class="game-notice" hidden>
         <div class="notice-card">
@@ -260,14 +268,6 @@
       <header class="topbar">
         <span id="cartridge-badge" class="status-badge">Insert cartridge</span>
         <div class="header-actions">
-          <button
-            id="attract-sound"
-            class="quiet"
-            aria-pressed="false"
-            aria-label="Turn opening sound on"
-          >
-            Sound off
-          </button>
           <button class="quiet" data-controls>Controller</button>
           <button class="quiet" data-fullscreen>Fullscreen</button>
         </div>
@@ -278,39 +278,21 @@
           class="screen home-screen"
           aria-label="Super Smash Bros. opening"
         >
-          <div class="attract-display">
-            <video
-              id="attract-opening"
-              src="./media/opening.mp4"
-              preload="auto"
-              autoplay
-              muted
-              playsinline
-              disablepictureinpicture
-              aria-label="Original Nintendo 64 opening and Master Hand introduction"
-            ></video>
-            <video
-              id="attract-title"
-              src="./media/fire.mp4"
-              loop
-              preload="auto"
-              muted
-              playsinline
-              disablepictureinpicture
-              hidden
-              aria-label="Original Super Smash Bros. title screen"
-            ></video>
-            <div id="attract-fallback" hidden>
-              <img src="./brand/smash-portal-animated.svg" alt="Smash Portal" />
-              <p>PRESS START</p>
-            </div>
-            <button
-              id="power-on"
-              class="attract-start"
-              aria-label="Skip opening to title screen"
-            >
-              <span id="attract-hint">PRESS ANY BUTTON</span>
-            </button>
+          <div class="cartridge-welcome">
+            <img
+              class="welcome-brand"
+              src="./brand/smash-portal-animated.svg"
+              alt="Smash Portal"
+            />
+            <img
+              class="welcome-box"
+              src="./media/smash-box.webp"
+              alt="Super Smash Bros. Nintendo 64 box art"
+            />
+            <p class="eyebrow">GOOD FRIENDS. GREAT RIVALRIES.</p>
+            <h1>Your next match starts here.</h1>
+            <p>Bring your cartridge. We’ll bring everyone together.</p>
+            <button id="add-rom-home">Add your ROM</button>
           </div>
         </section>
         <section
@@ -408,32 +390,21 @@
 
     <dialog id="players-dialog">
       <div class="dialog-heading">
-        <h2>Players &amp; Queue</h2>
-        <button data-close="players-dialog" aria-label="Close players">
+        <h2>Server settings</h2>
+        <button data-close="players-dialog" aria-label="Close server settings">
           &times;
         </button>
       </div>
-      <p id="queue-status"></p>
-      <button data-local-players>Players on this device</button>
-      <button id="sit-out">Sit out until I'm ready</button>
-      <label for="rotation-mode">Rotation</label
-      ><select id="rotation-mode">
+      <label for="rotation-mode">Rotation</label>
+      <select id="rotation-mode">
         <option value="automatic">Automatic · Winner stays</option>
         <option value="manual">Host chooses the lineup</option>
       </select>
+      <p id="queue-status"></p>
       <div id="room-members"></div>
-      <p id="lineup-help"></p>
-      <label id="battle-mode-label"
-        >Battle mode
-        <select id="battle-mode">
-          <option value="ffa">Free for all</option>
-          <option value="teams">Teams</option>
-        </select></label
-      >
-      <div class="actions">
-        <button id="lineup-apply">Apply lineup</button
-        ><button id="teams-apply">Apply teams / mode</button>
-      </div>
+      <p id="lineup-help" class="subtext">
+        Changes save automatically. During a match, they apply next round.
+      </p>
       <h3>Waiting to play</h3>
       <div id="waiting-queue"></div>
       <p id="next-round"></p>
@@ -512,7 +483,11 @@
         browser, and we’ll remember it for next time.
       </p>
       <div class="cartridge-card">
-        <img src="./mark.svg" width="56" height="56" alt="" />
+        <img
+          src="./media/smash-box.webp"
+          class="rom-box"
+          alt="Super Smash Bros. Nintendo 64 box art"
+        />
         <div>
           <strong>Super Smash Bros.</strong>
           <p id="rom-status">Original US release · .z64, .v64 or .n64</p>
@@ -669,10 +644,17 @@
       </p>
       <label for="invite-link">YOUR ROOM INVITATION</label
       ><input id="invite-link" readonly />
-      <p class="subtext">
-        Press ⌘C on Mac or Ctrl+C on Windows to copy the selected link.
+      <button id="invite-copy" class="primary wide">
+        Copy invitation link
+      </button>
+      <p
+        id="invite-copy-status"
+        class="subtext"
+        role="status"
+        aria-live="polite"
+      >
+        Anyone with this link can join your room.
       </p>
-      <button class="primary wide" data-close="invite-dialog">Done</button>
     </dialog>
     <dialog id="menu-dialog">
       <div class="dialog-heading">
@@ -728,6 +710,38 @@
         </p>
       </form>
     </dialog>
+    <dialog id="kicked-dialog">
+      <div class="dialog-heading">
+        <h2>Removed from server</h2>
+        <button data-close="kicked-dialog" aria-label="Close removal notice">
+          ×
+        </button>
+      </div>
+      <p id="kicked-message">You've been kicked from the server.</p>
+      <button data-close="kicked-dialog">Got it</button>
+    </dialog>
+    <dialog id="player-rename-dialog">
+      <form id="player-rename-form">
+        <div class="dialog-heading">
+          <h2>Change your name</h2>
+          <button
+            type="button"
+            data-close="player-rename-dialog"
+            aria-label="Cancel name change"
+          >
+            ×
+          </button>
+        </div>
+        <label for="player-rename-input">Player name</label>
+        <input
+          id="player-rename-input"
+          maxlength="30"
+          required
+          autocomplete="nickname"
+        />
+        <button type="submit" class="wide">Save name</button>
+      </form>
+    </dialog>
     <dialog id="controls-dialog">
       <div class="dialog-heading">
         <div>
@@ -742,31 +756,36 @@
           ×
         </button>
       </div>
-      <p class="dialog-description">
-        Pair Bluetooth controllers in your device’s settings, or connect by USB.
-        Then press a button. Xbox and DragonRise N64 USB controllers have
-        presets. Select a mapping, then press each button in order. Setup
-        advances and saves automatically; release between presses. Escape stops.
-      </p>
-      <label for="touch-mode">PHONE TOUCH CONTROLS</label>
-      <select id="touch-mode">
-        <option value="auto">
-          Automatic · hide when a controller is connected
-        </option>
-        <option value="on">Show touch controls</option>
-        <option value="off">Hide · use a paired controller</option>
-      </select>
-      <label for="device">INPUT DEVICE</label
-      ><select id="device">
-        <option value="keyboard">Keyboard</option>
-      </select>
-      <div class="control-actions">
-        <button data-local-players class="subtle-button">
-          Players on this device
+      <div
+        id="controller-players"
+        class="controller-players"
+        role="tablist"
+        aria-label="Player controller settings"
+      ></div>
+      <div class="controller-toolbar">
+        <label
+          >Phone touch controls
+          <select id="touch-mode">
+            <option value="auto">Automatic</option>
+            <option value="on">Show</option>
+            <option value="off">Hide</option>
+          </select>
+        </label>
+        <label
+          >Input device
+          <select id="device">
+            <option value="keyboard">Keyboard</option>
+          </select>
+        </label>
+        <button id="preset">Reset preset</button>
+        <button id="wizard">Guided setup</button>
+        <button
+          id="calibrate"
+          aria-expanded="false"
+          aria-controls="stick-calibration"
+        >
+          Calibrate center
         </button>
-        <button id="preset" class="subtle-button">Reset preset</button
-        ><button id="wizard" class="button primary compact">Guided setup</button
-        ><button id="calibrate" class="subtle-button">Calibrate center</button>
       </div>
       <p id="controller-saved" class="subtext"></p>
       <p id="mac-controller-help" class="subtext" hidden>
@@ -780,36 +799,39 @@
         hidden
       ></p>
       <p id="mapping-status" class="subtext" aria-live="polite"></p>
-      <div class="controller-preview">
-        <div class="stick-meter"><span id="stick-dot"></span></div>
-        <div>
-          <strong id="control-test">Press buttons or move the stick</strong>
-          <p id="raw-input">Your mapping is saved for this device.</p>
+      <p id="control-test" class="controller-feedback">
+        Press a button to test your controller
+      </p>
+      <div id="stick-calibration" hidden>
+        <div class="controller-preview">
+          <div class="stick-meter"><span id="stick-dot"></span></div>
+          <div>
+            <p id="raw-input">Your mapping is saved for this device.</p>
+          </div>
         </div>
+        <div class="sliders">
+          <label
+            >STICK DEADZONE <output id="deadzone-value">12%</output
+            ><input
+              id="deadzone"
+              type="range"
+              min="0"
+              max="40"
+              value="12" /></label
+          ><label
+            >STICK RANGE <output id="range-value">100%</output
+            ><input id="range" type="range" min="50" max="150" value="100"
+          /></label>
+        </div>
+        <label class="checkbox-label"
+          ><input id="invert-y" type="checkbox" /> Invert vertical stick</label
+        >
+        <button id="calibrate-save">Save stick center</button>
       </div>
-      <div class="sliders">
-        <label
-          >STICK DEADZONE <output id="deadzone-value">12%</output
-          ><input
-            id="deadzone"
-            type="range"
-            min="0"
-            max="40"
-            value="12" /></label
-        ><label
-          >STICK RANGE <output id="range-value">100%</output
-          ><input id="range" type="range" min="50" max="150" value="100"
-        /></label>
-      </div>
-      <label class="checkbox-label"
-        ><input id="invert-y" type="checkbox" /> Invert vertical stick</label
-      >
       <div id="bindings" class="bindings"></div>
       <p class="small-print">
-        Let go of the sticks before starting setup. Click any mapping, then
-        press the desired button or move an axis. Each input is reassigned from
-        its old action. Keyboard: press the desired key. Close this panel to
-        resume control of the game.
+        Let go of the stick before setup. Select a mapping, then press your
+        button. Release between steps. Escape stops. Changes save automatically.
       </p>
     </dialog>
     <dialog id="local-players-dialog">
@@ -894,7 +916,7 @@
     </dialog>
     <div id="busy" class="busy" hidden role="status">
       <div class="spinner"></div>
-      <h2 id="busy-title">Powering on…</h2>
+      <h2 id="busy-title">Loading your cartridge…</h2>
       <p id="busy-detail">Loading your cartridge in this browser.</p>
     </div>
     <div id="toast" class="toast" role="status" hidden></div>

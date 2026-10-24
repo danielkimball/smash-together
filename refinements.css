@@ -1,0 +1,481 @@
+/* Native startup and compact, accessible room tools. */
+dialog {
+  --dialog-pad: 24px;
+  padding: var(--dialog-pad);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  scroll-padding-top: 90px;
+}
+dialog .dialog-heading {
+  position: sticky;
+  top: calc(-1 * var(--dialog-pad));
+  z-index: 10;
+  margin: calc(-1 * var(--dialog-pad)) calc(-1 * var(--dialog-pad)) 18px;
+  padding: 20px var(--dialog-pad) 14px;
+  background: #000;
+  border-bottom: 1px solid #8282aa50;
+}
+.dialog-heading button {
+  flex-shrink: 0;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 6px 10px;
+}
+.dialog-heading h2 {
+  margin: 0;
+}
+.dialog-heading .eyebrow {
+  margin-bottom: 5px;
+}
+#controls-dialog {
+  width: min(960px, calc(100vw - 32px));
+}
+#controls-dialog .dialog-heading {
+  margin-bottom: 12px;
+}
+.controller-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.controller-players button {
+  font-size: 13px;
+  padding: 8px 16px;
+}
+.controller-players button[aria-selected="true"],
+.controller-players button[aria-selected="true"]:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.controller-toolbar {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.controller-toolbar label {
+  flex: 1 1 150px;
+  min-width: 0;
+  margin: 0;
+  font-size: 8px;
+}
+.controller-toolbar select {
+  width: 100%;
+  min-width: 0;
+  margin-top: 4px;
+  padding: 9px 12px 7px;
+  font-size: 13px;
+}
+.controller-toolbar button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 8px 12px;
+  font-size: 11px;
+}
+#controls-dialog .subtext {
+  margin: 8px 0;
+  font-size: 8px;
+}
+#controls-dialog .bindings {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(9, auto);
+  grid-auto-flow: column;
+  gap: 0 24px;
+}
+#controls-dialog .binding {
+  min-width: 0;
+  padding: 5px 0;
+  font-size: 13px;
+  gap: 8px;
+}
+#controls-dialog .binding button {
+  padding: 7px 12px 5px;
+  min-height: 30px;
+  max-width: 62%;
+  font-size: 12px;
+}
+#controls-dialog .binding button:not(.active):hover,
+.controller-players button:not([aria-selected="true"]):hover {
+  background: #a2a2c4;
+  border-color: #fafafa;
+  color: #000;
+}
+#controls-dialog .binding button.active,
+#controls-dialog .binding button.active:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+}
+#controls-dialog .mapping-prompt {
+  padding: 7px 10px;
+  margin: 9px 0 5px;
+  font-size: 12px;
+}
+#controls-dialog .small-print {
+  font-size: 8px;
+  line-height: 1.6;
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+#controls-dialog .controller-feedback {
+  margin: 7px 0;
+  font-size: 12px;
+  min-height: 18px;
+  color: var(--green);
+}
+#controls-dialog #mapping-status:empty {
+  display: none;
+}
+#stick-calibration {
+  padding: 10px 0;
+}
+#stick-calibration .controller-preview {
+  margin: 0 0 12px;
+  padding: 12px;
+  background: #111;
+}
+#stick-calibration .checkbox-label {
+  margin: 10px 0;
+}
+#stick-calibration button {
+  padding: 8px 14px;
+  font-size: 12px;
+}
+.local-name-field {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+.lobby-actions .name-field .lobby-local-name .local-name-field input {
+  flex: 1;
+  width: 0;
+}
+.lobby-actions .remove-local-player {
+  flex: 0 0 28px;
+  min-height: 28px;
+  height: 28px;
+  width: 28px;
+  padding: 0;
+  font: 22px/1 var(--heading);
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid #8282aa80;
+}
+.lobby-actions .remove-local-player:hover {
+  color: var(--ink);
+  background: var(--accent);
+}
+.player-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.player-actions button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 5px;
+  border: 1px solid #8282aa70;
+  background: #111;
+  color: var(--ink);
+  font: 18px/1 var(--heading);
+}
+.player-actions button:hover {
+  background: #333344;
+  border-color: var(--idle);
+  color: var(--ink);
+}
+.player-mic svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.player-mic .mic-slash {
+  display: none;
+}
+.player-mic.muted {
+  color: #9999a8;
+}
+.player-mic.muted .mic-slash {
+  display: block;
+}
+.player-mic.speaking {
+  color: var(--green);
+  border-color: var(--green);
+  background: #0c2517;
+}
+.native-port .player-actions {
+  margin-top: 5px;
+}
+.hud-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.hud-player .player-actions button {
+  min-width: 24px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 3px;
+}
+#players-dialog {
+  width: min(800px, calc(100vw - 24px));
+}
+#players-dialog .member-row {
+  gap: 8px;
+}
+#players-dialog .member-row > div:first-child {
+  min-width: 160px;
+}
+#players-dialog .member-row > button {
+  padding: 8px 12px;
+  font-size: 11px;
+}
+#players-dialog .member-row label {
+  font-size: 8px;
+}
+#players-dialog .member-kick {
+  background: transparent;
+  border: 1px solid #8282aa;
+  color: var(--ink);
+}
+#players-dialog .member-host-mute {
+  background: transparent;
+  border: 1px solid #8282aa50;
+  color: var(--muted);
+}
+#players-dialog .member-kick:hover {
+  background: var(--accent);
+  color: #000;
+}
+#invite-copy {
+  margin-top: 12px;
+}
+#invite-link {
+  text-transform: none;
+  font-size: 15px;
+}
+#player-rename-dialog {
+  width: min(440px, calc(100vw - 24px));
+}
+#player-rename-form > button {
+  margin-top: 16px;
+}
+#game-hud,
+body:has(#character-room:not([hidden])) #game-hud {
+  height: auto;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px 12px;
+  background: #000;
+  inset: 0 0 auto;
+}
+#game-hud > button {
+  white-space: nowrap;
+}
+#game-hud #copy-invite {
+  margin-left: 0;
+}
+#game-hud #game-players {
+  min-width: 0;
+}
+body:has(#character-room:not([hidden])) #game-players {
+  display: none;
+}
+body:has(#character-room:not([hidden])) #game-menu {
+  margin-right: auto;
+}
+.room-ribbon {
+  top: var(--hud-height, 44px);
+}
+body:has(#character-room:not([hidden])) #canvas {
+  top: calc(var(--hud-height, 44px) + 64px) !important;
+  height: calc(100% - var(--hud-height, 44px) - 184px) !important;
+}
+#native-opening {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+#native-opening button {
+  pointer-events: auto;
+}
+#power-on {
+  position: absolute;
+  bottom: max(20px, 4vh);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #000b;
+  color: var(--ink);
+  border: 1px solid #fafafa70;
+  padding: 12px 22px;
+  font: 11px var(--label);
+}
+#power-on:hover {
+  background: var(--idle);
+  color: #000;
+}
+#game-sound {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+}
+.cartridge-welcome {
+  margin: auto;
+  max-width: 650px;
+  text-align: center;
+  padding: 20px;
+}
+.welcome-brand {
+  display: block;
+  width: 90px;
+  height: 80px;
+  object-fit: contain;
+  margin: 0 auto 24px;
+}
+.welcome-box {
+  display: block;
+  max-width: 100%;
+  width: 370px;
+  margin: 0 auto 28px;
+  box-shadow: 8px 8px 0 #8282aa30;
+}
+.cartridge-welcome .eyebrow {
+  color: var(--accent);
+  font-size: 9px;
+}
+.cartridge-welcome h1 {
+  font-size: clamp(26px, 4vw, 42px);
+  margin: 16px 0;
+}
+.cartridge-welcome p {
+  color: var(--muted);
+}
+.cartridge-welcome button {
+  margin-top: 18px;
+}
+#rom-dialog {
+  width: min(620px, calc(100vw - 24px));
+}
+#rom-dialog .cartridge-card {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  gap: 20px;
+}
+#rom-dialog .rom-box {
+  width: 44%;
+  height: auto;
+  box-shadow: 6px 6px 0 #8282aa40;
+}
+#rom-dialog .cartridge-card strong {
+  font-size: 20px;
+}
+#rom-dialog .cartridge-card p {
+  font-size: 13px;
+}
+body[data-view="home"] .home-screen {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 70dvh;
+}
+@media (max-width: 700px) {
+  dialog {
+    --dialog-pad: 16px;
+  }
+  dialog .dialog-heading {
+    padding-top: 16px;
+    gap: 10px;
+  }
+  dialog .dialog-heading h2 {
+    font-size: 23px;
+  }
+  #controls-dialog .bindings {
+    gap: 0 12px;
+  }
+  #controls-dialog .binding {
+    font-size: 11px;
+  }
+  #controls-dialog .binding button {
+    font-size: 10px;
+    min-width: 54px;
+    padding: 7px 6px;
+  }
+  .controller-toolbar label {
+    flex-basis: 40%;
+  }
+  .controller-toolbar button {
+    flex: 1;
+    font-size: 10px;
+  }
+  #game-hud,
+  body:has(#character-room:not([hidden])) #game-hud {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+  #game-hud > button {
+    padding: 7px 9px;
+    font-size: 10px;
+    min-height: 30px;
+  }
+  #game-hud .controller-status {
+    margin-left: 0;
+    max-width: none;
+  }
+  #game-hud [data-fullscreen] {
+    display: inline-flex;
+  }
+  #game-view {
+    --toolbar: var(--hud-height, 72px);
+  }
+  .room-ribbon,
+  body[data-touch="on"] .room-ribbon {
+    top: var(--hud-height, 72px);
+    padding: 6px 10px;
+  }
+  .room-ribbon strong {
+    font-size: 14px;
+  }
+  .native-port .player-actions {
+    gap: 2px;
+  }
+  .native-port .player-actions button {
+    width: 27px;
+    height: 27px;
+    min-width: 27px;
+    min-height: 27px;
+  }
+}
+@media (pointer: coarse) {
+  #controls-dialog .binding {
+    min-height: 48px;
+  }
+  #controls-dialog .binding button {
+    min-height: 40px;
+  }
+  .lobby-actions .remove-local-player {
+    min-width: 32px;
+    width: 32px;
+    height: 40px;
+  }
+}
+/* Character-room overlays otherwise let pointer events reach the native game. */
+.native-port .player-actions {
+  pointer-events: auto;
+}

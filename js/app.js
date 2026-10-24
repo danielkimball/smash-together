@@ -11,7 +11,6 @@ import {
 } from "./controls.js";
 import { Netplay, compress, decompress } from "./netplay.js";
 import { TouchControls } from "./touch.js";
-import { Attract } from "./attract.js";
 import { RoomUI } from "./room-ui.js";
 import { LocalPlayers, localPlayersPanel } from "./local-players.js";
 import { menuRows, isGameplay, characterScenes } from "./native-menus.js";
@@ -28,6 +27,8 @@ let rom = null,
   versusState,
   menuState,
   homeBooting = false,
+  nativeOpening = false,
+  mainMenuEnteredAt = null,
   startRequest = null,
   selectionButtons = 0,
   enteredStage = false,
@@ -39,6 +40,7 @@ let rom = null,
   paused = true,
   next = 0;
 let pendingAction = null,
+  pendingJoin = null,
   cartridgeLoadPromise = null,
   cartridgeDownloadPromise = null,
   engineBootPromise = null,
@@ -68,12 +70,7 @@ if (
     longTasks += list.getEntries().length;
   }).observe({ type: "longtask", buffered: false });
 }
-const attract = new Attract({
-  start: () => attempt(() => withCartridge(showMainMenu))(),
-  hasDialog: () => !!document.querySelector("dialog[open]"),
-});
 document.body.dataset.view = "home";
-document.body.dataset.attract = "opening";
 controls.blocked = true;
 controls.touch = new TouchControls($("touch-controls"), controls, {
   menu: () => {
@@ -95,7 +92,6 @@ window.smash = {
   engine,
   controls,
   net,
-  attract,
   get bootState() {
     return bootState;
   },
@@ -176,12 +172,12 @@ function setView(name) {
     $(screen + "-screen").hidden = screen !== name;
   $("shell").hidden = ["game", "native"].includes(name);
   $("game-view").hidden = !["game", "native"].includes(name);
-  $("native-menu").hidden = name !== "native";
+  $("native-menu").hidden = name !== "native" || nativeOpening;
+  $("native-opening").hidden = name !== "native" || !nativeOpening;
   $("game-hud").hidden = name === "native";
   $("game-notice").hidden = name === "native";
   $("room-setup").hidden = !roomSetup || name !== "game";
   document.body.dataset.view = name;
-  attract.setActive(name === "home");
   blockInput();
   if (changed) {
     window.scrollTo(0, 0);
@@ -214,6 +210,7 @@ function dialog(id, { pauseGame = true } = {}) {
   if (d.resumeOnClose) pause();
   if (id === "controls-dialog") {
     refreshDevices();
+    selectMappingPlayer(controls.mappingPlayerKey || "primary");
     $("device").value = controls.selected;
     renderBindings();
   }
@@ -233,6 +230,16 @@ for (const d of document.querySelectorAll("dialog"))
     if (d.id === "controls-dialog") {
       wizardIndex = -1;
       controls.cancelCapture();
+      const primary = localPlayers.ensure()[0];
+      const value = localPlayers.value(primary);
+      controls.select(
+        value === "keyboard"
+          ? value
+          : value.startsWith("pad:")
+            ? value.slice(4)
+            : "keyboard",
+      );
+      controls.mappingPlayerKey = "primary";
     }
     if (d.id === "rom-dialog" && !rom) pendingAction = null;
     const resume = d.resumeOnClose;
@@ -243,9 +250,13 @@ for (const d of document.querySelectorAll("dialog"))
 document
   .querySelectorAll("[data-close]")
   .forEach((b) => (b.onclick = () => $(b.dataset.close).close()));
-document
-  .querySelectorAll("[data-controls]")
-  .forEach((b) => (b.onclick = () => dialog("controls-dialog")));
+document.querySelectorAll("[data-controls]").forEach(
+  (b) =>
+    (b.onclick = () => {
+      controls.mappingPlayerKey = "primary";
+      dialog("controls-dialog");
+    }),
+);
 document.querySelectorAll("[data-fullscreen]").forEach(
   (b) =>
     (b.onclick = attempt(async () => {
@@ -375,19 +386,18 @@ async function acceptCartridge(file) {
   const action = pendingAction;
   pendingAction = null;
   if (action) await action();
-  else await showMainMenu();
+  else await startNativeGame();
 }
 async function withCartridge(action) {
   await savedCartridge;
   if (cartridgeLoadPromise) return cartridgeLoadPromise;
   if (rom || engine.loaded) return action();
   pendingAction = action;
-  if (view === "home") attract.holdTitle();
   const status = await hostStatus;
   if (status?.testingAutoLoad) {
     if (!cartridgeDownloadPromise)
       cartridgeDownloadPromise = (async () => {
-        busy("Loading game…", "Getting the testing game from the host.");
+        busy("Loading your cartridge…", "Your game will begin in a moment.");
         try {
           const response = await serviceFetch("/api/testing/cartridge", {
             method: "POST",
@@ -416,18 +426,18 @@ async function withCartridge(action) {
 async function powerOn() {
   if (engineBootPromise) return engineBootPromise;
   if (engine.loaded) {
-    await engine.audioStart();
+    engine.audioStart().catch(() => {});
     return;
   }
   if (!rom) throw Error("Choose your ROM first.");
   engineBootPromise = (async () => {
-    busy("Powering on…", "Loading your cartridge in this browser.");
+    busy("Loading your cartridge…", "Getting ready for the opening.");
     try {
       await engine.load(rom);
       engine.romHash = ROM_SHA1;
       engine.frame([neutral]);
       bootState = engine.snapshot();
-      await engine.audioStart();
+      engine.audioStart().catch(() => {});
     } finally {
       $("busy").hidden = true;
     }
@@ -453,20 +463,44 @@ async function prepareMain() {
     engine.restore(menuState);
     return;
   }
-  engine.restore(bootState);
-  await runSequence([
-    [360, neutral],
-    [10, { buttons: BITS.start, x: 0, y: 0 }],
-    [210, neutral],
-    [10, { buttons: BITS.start, x: 0, y: 0 }],
-    [180, neutral],
-  ]);
   if (engine.inspect().scene !== 7)
-    throw Error("Could not open the Smash menu. Reload to retry.");
+    throw Error("Press Start to open the game's main menu first.");
   engine.unlockAll();
   menuState = engine.snapshot();
 }
+async function startNativeGame() {
+  if (net.room || homeBooting) return;
+  if (engine.loaded) return;
+  homeBooting = true;
+  preparing = true;
+  try {
+    await powerOn();
+    nativeOpening = true;
+    menuInput = [];
+    pointerQueue = [];
+    paused = false;
+    next = performance.now();
+    setView("native");
+    $("canvas").focus();
+  } finally {
+    preparing = false;
+    homeBooting = false;
+    $("busy").hidden = true;
+  }
+}
+$("add-rom-home").onclick = attempt(() => withCartridge(startNativeGame));
+$("power-on").onclick = () => {
+  if (!nativeOpening || !engine.loaded) return;
+  pointerPress("start");
+  engine.audioStart().catch(() => {});
+  $("canvas").focus();
+};
+$("game-sound").onclick = () => engine.audioStart().catch(() => {});
+
 async function showMainMenu() {
+  if (!engine.loaded) return withCartridge(startNativeGame);
+  if (nativeOpening && !menuState) return;
+  nativeOpening = false;
   roomSetup = null;
   if (!rom && !engine.loaded) {
     setView("home");
@@ -650,7 +684,6 @@ net.prepare = () => {
 $("rom-file").onchange = attempt((e) => loadFile(e.target.files[0]));
 $("choose-rom").onclick = () => $("rom-file").click();
 $("cartridge-open").onclick = () => {
-  if (view === "home") attract.holdTitle();
   dialog("rom-dialog");
 };
 $("rom-continue").onclick = attempt(async () => {
@@ -830,6 +863,12 @@ function inviteToken(value = location.hash) {
   return String(value).match(/(?:room=)?([a-f0-9]{36})/)?.[1] || "";
 }
 async function joinRoom(options) {
+  if (!engine.loaded || nativeOpening) {
+    pendingJoin = options;
+    closeDialogs();
+    await startNativeGame();
+    return;
+  }
   await powerOn();
   closeDialogs();
   paused = true;
@@ -943,21 +982,27 @@ async function copyInvite() {
       publicUrl = status.publicUrl;
     } catch {}
     if (shareUrl) base = shareUrl;
-    else
-      throw Error(
-        "Internet sharing is not running. Open Start Sharing on the host computer, then copy a fresh invite.",
-      );
   }
   const link = `${(publicUrl || base).replace(/\/$/, "")}/#room=${net.token}`;
-  try {
-    await navigator.clipboard.writeText(link);
-    toast("Invite copied. Send it to your friends.");
-  } catch {
-    $("invite-link").value = link;
-    dialog("invite-dialog");
-    $("invite-link").select();
-  }
+  $("invite-link").value = link;
+  $("invite-copy-status").textContent =
+    "Anyone with this link can join your room.";
+  $("invite-copy").textContent = "Copy invitation link";
+  dialog("invite-dialog", { pauseGame: false });
 }
+$("invite-copy").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($("invite-link").value);
+    $("invite-copy").textContent = "✓ Link copied";
+    $("invite-copy-status").textContent =
+      "Copied! Send this link to your friends.";
+  } catch {
+    $("invite-link").select();
+    $("invite-copy-status").textContent =
+      "Select the link and press ⌘C or Ctrl+C to copy.";
+  }
+};
+
 document
   .querySelectorAll("[data-invite]")
   .forEach((b) => (b.onclick = attempt(copyInvite)));
@@ -1001,6 +1046,35 @@ $("rename-form").onsubmit = (event) => {
   net.send({ type: "rename", name });
   $("rename-dialog").close();
 };
+let editingPlayer;
+roomUI.renamePlayer = (player) => {
+  editingPlayer = player;
+  $("player-rename-input").value = player.name;
+  dialog("player-rename-dialog", { pauseGame: false });
+  $("player-rename-input").select();
+};
+roomUI.removeLocal = (player) => localPlayers.remove(player.localKey);
+$("player-rename-form").onsubmit = (event) => {
+  event.preventDefault();
+  const name = $("player-rename-input").value.trim();
+  if (!name || !editingPlayer) return;
+  if (editingPlayer.localKey === "primary") {
+    $("player-name").value = name;
+    savePlayerName();
+  } else localPlayers.rename(editingPlayer.localKey, name);
+  net.send({ type: "player-name", id: editingPlayer.id, name });
+  $("player-rename-dialog").close();
+};
+net.addEventListener("kicked", ({ detail }) => {
+  leaveRoom();
+  $("kicked-message").textContent = detail.message;
+  dialog("kicked-dialog", { pauseGame: false });
+});
+net.addEventListener("local-removed", ({ detail }) => {
+  localPlayers.remove(detail.localKey);
+  $("kicked-message").textContent = detail.message;
+  dialog("kicked-dialog", { pauseGame: false });
+});
 function returnLobby() {
   enteredStage = false;
   startRequest = null;
@@ -1010,20 +1084,13 @@ function returnLobby() {
 $("game-back-lobby").onclick = returnLobby;
 $("back-lobby").onclick = returnLobby;
 $("game-rejoin").onclick = attempt(() => joinRoom(net.lastOptions));
+const hudObserver = new ResizeObserver(([entry]) => {
+  const height = Math.ceil(entry.target.getBoundingClientRect().height);
+  if (height) $("game-view").style.setProperty("--hud-height", `${height}px`);
+});
+hudObserver.observe($("game-hud"));
 function renderCharacterRoom() {
   const r = net.room;
-  const local = net.localFighters;
-  const mouse = $("pointer-player");
-  const options = local.map((p) => `${p.id}:${p.name}:${p.slot}`).join("|");
-  if (mouse.dataset.options !== options) {
-    const selected = mouse.value;
-    mouse.replaceChildren(
-      ...local.map((p) => new Option(`${p.name} · P${p.slot + 1}`, p.id)),
-    );
-    if (local.some((p) => p.id === selected)) mouse.value = selected;
-    mouse.dataset.options = options;
-  }
-  $("pointer-player-label").hidden = local.length < 2;
   const chooser = net.rounds.chooser(r);
   const stage = r && net.rounds.scene === 21 && view === "game";
   const winner = r?.members.find((p) => p.id === net.rounds.winnerId);
@@ -1050,7 +1117,7 @@ function renderCharacterRoom() {
   $("rename-open").hidden = !net.isHost;
   const info = engine.info || { players: [] };
   $("room-waiting").textContent = !net.localFighters.length
-    ? "Spectating · Open Players to see the queue"
+    ? "Spectating · Open Server settings to see the queue"
     : net.players.length < 2
       ? "Choose your fighter while you wait for friends"
       : `${net.connected.length} / ${r.capacity} players · ${net.isHost ? "Start when everyone has chosen" : "The host starts the match"}`;
@@ -1083,6 +1150,7 @@ function renderCharacterRoom() {
               : `P${slot + 1} · Choose a fighter`
           : `P${slot + 1} · ${slot < r.capacity ? "Open" : "—"}`;
         card.append(name, state);
+        if (p) card.append(roomUI.playerActions(p));
         return card;
       }),
     );
@@ -1105,6 +1173,8 @@ function renderGame() {
     !!roomSetup || !notice || !!document.querySelector("dialog[open]");
   $("room-setup").hidden = !roomSetup || view !== "game";
   $("game-hud").hidden = !!roomSetup || view === "native";
+  $("copy-invite").hidden = !net.room;
+  $("selection-back").hidden = !net.room;
   $("game-notice-label").textContent =
     state === "error"
       ? "CONNECTION NEEDS ATTENTION"
@@ -1134,17 +1204,28 @@ function renderGame() {
   $("rename-menu").hidden = !online || !net.isHost;
   $("reset").hidden = online;
   $("local-save-actions").hidden = online;
-  $("game-players").replaceChildren(
-    ...(online
-      ? net.connected
-      : [{ slot: 0, name: "Local play", connected: true }]
-    ).map((p) => {
-      const badge = document.createElement("span");
-      badge.className = `hud-player p${p.slot + 1}${!p.connected ? " offline" : ""}`;
-      badge.textContent = `${p.slot < 0 ? "Watching" : "P" + (p.slot + 1)} · ${p.name}${p.id === net.id ? " (you)" : ""}`;
-      return badge;
-    }),
-  );
+  const hudKey = JSON.stringify([
+    online,
+    net.id,
+    net.connected.map((p) => [p.id, p.name, p.slot, p.ownerId]),
+  ]);
+  if ($("game-players").dataset.roster !== hudKey) {
+    $("game-players").dataset.roster = hudKey;
+    $("game-players").replaceChildren(
+      ...(online
+        ? net.connected
+        : [{ slot: 0, name: "Local play", connected: true }]
+      ).map((p) => {
+        const badge = document.createElement("span");
+        badge.className = `hud-player p${p.slot + 1}${!p.connected ? " offline" : ""}`;
+        const label = document.createElement("span");
+        label.textContent = `${p.slot < 0 ? "Watching" : "P" + (p.slot + 1)} · ${p.name}${p.id === net.id ? " (you)" : ""}`;
+        badge.append(label);
+        if (online) badge.append(roomUI.playerActions(p));
+        return badge;
+      }),
+    );
+  }
   renderCharacterRoom();
   blockInput();
 }
@@ -1297,6 +1378,10 @@ function chooseMenuRow(info, row, action) {
 $("canvas").onclick = attempt((event) => {
   const info = engine.inspect();
   if (isGameplay(info.scene) || controls.blocked) return;
+  if (nativeOpening) {
+    pointerPress("start");
+    return engine.audioStart();
+  }
   const canvas = $("canvas"),
     rect = canvas.getBoundingClientRect(),
     ratio = canvas.width / canvas.height,
@@ -1317,8 +1402,7 @@ $("canvas").onclick = attempt((event) => {
     const actor =
       info.scene === 21 && (chooser?.ownerId || chooser?.id) === net.id
         ? chooser
-        : net.localFighters.find((p) => p.id === $("pointer-player").value) ||
-          net.me;
+        : net.localFighters[0] || net.me;
     if (
       net.room &&
       (actor?.slot ?? -1) < 0 &&
@@ -1440,10 +1524,44 @@ function refreshDevices() {
     });
   if ($("controls-dialog").open) renderBindings();
 }
+function selectMappingPlayer(key) {
+  const entries = localPlayers.ensure();
+  const player = entries.find((p) => p.key === key) || entries[0];
+  controls.mappingPlayerKey = player.key;
+  wizardIndex = -1;
+  controls.cancelCapture();
+  const value = localPlayers.value(player);
+  controls.select(value.startsWith("pad:") ? value.slice(4) : "keyboard");
+  $("device").value = controls.selected;
+  renderBindings();
+}
 function renderBindings() {
+  const entries = localPlayers.ensure();
+  $("controller-players").replaceChildren(
+    ...entries.map((p, index) => {
+      const button = document.createElement("button");
+      button.textContent = `Player ${index + 1}`;
+      button.setAttribute("role", "tab");
+      button.setAttribute(
+        "aria-selected",
+        String(p.key === (controls.mappingPlayerKey || "primary")),
+      );
+      button.onclick = () => selectMappingPlayer(p.key);
+      return button;
+    }),
+  );
+  for (const option of $("device").options) {
+    const value =
+      option.value === "keyboard" ? "keyboard" : `pad:${option.value}`;
+    option.disabled = entries.some(
+      (p) =>
+        p.key !== (controls.mappingPlayerKey || "primary") &&
+        localPlayers.value(p) === value,
+    );
+  }
   const kind = profileKind(controls.id());
   $("controller-saved").textContent =
-    `${controls.profile.customized ? "Custom mapping" : kind === "n64-usb" ? "N64 USB preset" : kind === "keyboard" ? "Keyboard" : "Xbox / standard preset"} · Changes saved automatically in this browser`;
+    `${controls.profile.customized ? "Custom mapping" : kind === "n64-usb" ? "N64 USB preset" : kind === "keyboard" ? "Keyboard" : "Xbox / standard preset"} · Saved automatically`;
   $("mac-controller-help").hidden = !(
     kind === "n64-usb" && /Mac/.test(navigator.platform)
   );
@@ -1476,7 +1594,7 @@ function beginMapping(action, label, continueSequence = false) {
   if (!continueSequence) $("mapping-status").textContent = "";
   $("mapping-prompt").hidden = false;
   $("mapping-prompt").textContent =
-    `${wizardIndex >= 0 ? `${wizardIndex + 1}/${ACTIONS.length} · ` : ""}${label}: release all controls, then press a button, move the stick, or press a key. Escape cancels.`;
+    `${wizardIndex >= 0 ? `${wizardIndex + 1}/${ACTIONS.length} · ` : ""}${label}: release, then press your input. Escape stops.`;
   document
     .querySelectorAll("[data-action]")
     .forEach((b) => b.classList.toggle("active", b.dataset.action === action));
@@ -1505,6 +1623,18 @@ controls.addEventListener("mapped", ({ detail }) => {
 });
 controls.addEventListener("devices", refreshDevices);
 $("device").onchange = () => {
+  try {
+    localPlayers.assign(
+      controls.mappingPlayerKey || "primary",
+      $("device").value === "keyboard"
+        ? "keyboard"
+        : `pad:${$("device").value}`,
+    );
+  } catch (e) {
+    toast(e.message);
+    $("device").value = controls.selected;
+    return;
+  }
   controls.manualKeyboard = $("device").value === "keyboard";
   controls.select($("device").value);
   localStorage.setItem("smash.inputChoice", controllerKey(controls.id()));
@@ -1530,7 +1660,12 @@ $("preset").onclick = () => {
   renderBindings();
   toast("Default mapping restored.");
 };
-$("calibrate").onclick = attempt(async () => {
+$("calibrate").onclick = () => {
+  const show = $("stick-calibration").hidden;
+  $("stick-calibration").hidden = !show;
+  $("calibrate").setAttribute("aria-expanded", String(show));
+};
+$("calibrate-save").onclick = attempt(async () => {
   wizardIndex = -1;
   controls.cancelCapture();
   toast("Let go of both sticks…");
@@ -1665,11 +1800,11 @@ $("reset").onclick = () => {
 function diagnostics() {
   const sample = net.performanceSamples.at(-1);
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.7.1`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.8.0`;
 }
 $("performance-export").onclick = () => {
   const report = {
-    version: "3.7.1",
+    version: "3.8.0",
     exported: new Date().toISOString(),
     samples: net.performanceSamples,
     events: net.performanceEvents,
@@ -1688,20 +1823,6 @@ function menuController(time) {
   const pad = net.room
     ? localPlayers.pad(localPlayers.ensure()[0])
     : controls.pad();
-  const homeInput = view === "home" && !document.querySelector("dialog[open]");
-  attract.tick(
-    pad ||
-      (homeInput
-        ? controls
-            .devices()
-            .find((device) => device.buttons.some((button) => button.pressed))
-        : null),
-  );
-  if (homeInput) {
-    const buttons = pad ? evaluate(controls.profile, pad).buttons : 0;
-    menuEdges = { a: !!(buttons & BITS.a), b: !!(buttons & BITS.b) };
-    return;
-  }
   if (controls.capture || $("busy").hidden === false) return;
   const input = net.room
     ? localPlayers.sample("primary", { menu: true })
@@ -1880,6 +2001,8 @@ window.addEventListener("keydown", (e) => {
 });
 document.addEventListener("pointerdown", () => {
   document.body.dataset.navigation = "pointer";
+  if (engine.loaded && engine.audio?.ctx.state !== "running")
+    engine.audioStart().catch(() => {});
 });
 document.addEventListener("pointermove", () => {
   lastPointer = performance.now();
@@ -1902,8 +2025,7 @@ document.addEventListener("drop", (e) => {
 function tick(time) {
   requestAnimationFrame(tick);
   try {
-    // Keep the original menu soundtrack continuous through the room browser.
-    // A harmless R pulse every four minutes prevents its idle title transition.
+    // Keep native menu music and animation running while browsing rooms.
     if (
       engine.loaded &&
       !preparing &&
@@ -1912,9 +2034,8 @@ function tick(time) {
       !document.hidden &&
       time + 1 >= next
     ) {
-      engine.frame([
-        { ...neutral, buttons: engine.frames % 14400 === 0 ? BITS.r : 0 },
-      ]);
+      if (engine.frames % 600 === 0) engine.keepMenuAlive();
+      engine.frame([neutral]);
       next = Math.max(next + 1000 / engine.fps, time - 1000 / engine.fps);
     }
     if (engine.loaded && !preparing && ["game", "native"].includes(view)) {
@@ -1948,6 +2069,12 @@ function tick(time) {
           .filter((p) => String(p.index) !== controls.selected)
           .slice(0, 3))
           inputs.push(controls.sampleOther(pad));
+        if (
+          engine.frames % 600 === 0 &&
+          !nativeOpening &&
+          !isGameplay(engine.info?.scene)
+        )
+          engine.keepMenuAlive();
         engine.frame(inputs);
         next = Math.max(next + 1000 / engine.fps, time - 1000 / engine.fps);
       }
@@ -1986,7 +2113,30 @@ function tick(time) {
             setView("browse");
           }
         }
-        if (net.state === "offline" && view === "native" && info.scene !== 7) {
+        if (nativeOpening) {
+          $("game-sound").hidden = engine.audio?.ctx.state === "running";
+          if (info.scene === 7) {
+            mainMenuEnteredAt ??= engine.frames;
+            if (engine.frames - mainMenuEnteredAt >= 30) {
+              engine.unlockAll();
+              menuState = engine.snapshot();
+              nativeOpening = false;
+              $("native-opening").hidden = true;
+              $("native-menu").hidden = false;
+              if (pendingJoin) {
+                const options = pendingJoin;
+                pendingJoin = null;
+                attempt(() => joinRoom(options))();
+              }
+            }
+          } else mainMenuEnteredAt = null;
+        }
+        if (
+          !nativeOpening &&
+          net.state === "offline" &&
+          view === "native" &&
+          info.scene !== 7
+        ) {
           if (info.scene === 9) {
             paused = true;
             setView("browse");
@@ -2113,3 +2263,15 @@ function followInvitation() {
 }
 window.addEventListener("hashchange", followInvitation);
 followInvitation();
+
+// Cache/testing boot starts the original cartridge once, at normal frame pace.
+// A new BYOR visitor needs a verified cartridge before a native title can exist.
+Promise.all([savedCartridge, hostStatus]).then(() => {
+  if (
+    !inviteToken() &&
+    !pendingAction &&
+    !cartridgeLoadPromise &&
+    !engine.loaded
+  )
+    attempt(() => withCartridge(startNativeGame))();
+});

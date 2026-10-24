@@ -29,28 +29,8 @@ export class RoomUI {
           open("voice-dialog");
         }),
     );
-    $("sit-out").onclick = () =>
-      net.send({ type: "availability", ready: !net.me.ready });
     $("rotation-mode").onchange = () =>
       net.send({ type: "manage", rotation: $("rotation-mode").value });
-    $("lineup-apply").onclick = () => {
-      const lineup = [
-        ...document.querySelectorAll("[data-lineup]:checked"),
-      ].map((n) => n.dataset.lineup);
-      if (lineup.length > 4) return toast("Choose no more than four players.");
-      net.send({ type: "manage", lineup });
-    };
-    $("teams-apply").onclick = () =>
-      net.send({
-        type: "manage",
-        teamsEnabled: $("battle-mode").value === "teams",
-        teams: Object.fromEntries(
-          [...document.querySelectorAll("[data-team]")].map((n) => [
-            n.dataset.team,
-            Number(n.value),
-          ]),
-        ),
-      });
     $("voice-join").onclick = () => this.voice.join();
     $("voice-enable").onclick = () => this.voice.listen();
     $("voice-listen").onclick = () => {
@@ -122,21 +102,12 @@ export class RoomUI {
     document
       .querySelectorAll("[data-voice]")
       .forEach((b) => (b.hidden = false));
-    $("sit-out").textContent = n.me?.ready
-      ? "Sit out until I’m ready"
-      : "Ready to play";
     $("queue-status").textContent =
       n.me?.slot >= 0
-        ? `You are Player ${n.me.slot + 1}${n.isHost ? " · Room host" : ""}`
-        : `${n.me?.ready ? "Spectating · Waiting to play" : "Spectating · Sitting out"}${n.isHost ? " · Room host" : ""}`;
+        ? `You are Player ${n.me.slot + 1}${n.isHost ? " · Server host" : ""}`
+        : `${n.me?.ready ? "Waiting to play" : "Sitting out"}${n.isHost ? " · Server host" : ""}`;
     $("rotation-mode").disabled = !n.isHost;
     $("rotation-mode").value = r.rotation;
-    $("lineup-apply").hidden = !n.isHost;
-    $("teams-apply").hidden = !n.isHost || !r.selecting;
-    $("battle-mode-label").hidden = !n.isHost || !r.selecting;
-    $("lineup-help").textContent = r.selecting
-      ? "Choose up to four ready players. Apply changes before starting."
-      : "Changes apply at the next character-selection screen.";
     const key = JSON.stringify([
       r.hostId,
       r.selecting,
@@ -151,11 +122,11 @@ export class RoomUI {
         p.connected,
         p.queue,
         p.team,
+        p.muted,
       ]),
     ]);
     if (key === this.rosterKey) return;
     this.rosterKey = key;
-    $("battle-mode").value = r.teams ? "teams" : "ffa";
     const ordered = r.members
       .filter((p) => p.connected)
       .sort(
@@ -180,36 +151,81 @@ export class RoomUI {
                   : "Sitting out",
           ),
         );
-        row.append(info);
-        if ((p.ownerId || p.id) === n.id && p.id !== n.id) {
-          const availability = el(
-            "button",
-            p.ready ? "Sit out" : "Ready to play",
-          );
-          availability.onclick = () =>
-            n.send({ type: "availability", id: p.id, ready: !p.ready });
-          row.append(availability);
-        }
+        row.dataset.member = p.id;
+        row.append(info, this.playerActions(p));
+        const owned = (p.ownerId || p.id) === n.id;
+        const availability = el(
+          "button",
+          p.ready ? "Sit out next round" : "Ready to play",
+          "member-availability",
+        );
+        availability.disabled = !n.isHost && !owned;
+        availability.setAttribute(
+          "aria-label",
+          `${p.ready ? "Sit out" : "Ready"}: ${p.name}`,
+        );
+        availability.onclick = () =>
+          n.send({ type: "availability", id: p.id, ready: !p.ready });
+        row.append(availability);
         if (n.isHost) {
           const label = el("label", "Next round "),
             check = el("input");
           check.type = "checkbox";
           check.dataset.lineup = p.id;
           check.checked = r.nextLineup.includes(p.id);
-          check.disabled = !p.ready || !p.connected;
+          check.disabled = !p.ready;
+          check.setAttribute("aria-label", `${p.name} next round`);
+          check.onchange = () => {
+            const lineup = [
+              ...$("room-members").querySelectorAll("[data-lineup]:checked"),
+            ].map((n) => n.dataset.lineup);
+            if (lineup.length > 4) {
+              check.checked = false;
+              return this.toast(
+                "Choose up to four players for the next round.",
+              );
+            }
+            n.send({ type: "manage", lineup });
+          };
           label.append(check);
           row.append(label);
-          if (r.selecting && p.slot >= 0) {
-            const select = el("select");
-            select.dataset.team = p.id;
-            select.setAttribute("aria-label", `${p.name} team`);
-            for (const [i, name] of ["Red", "Blue", "Green"].entries()) {
-              const option = new Option(name, String(i));
-              select.append(option);
-            }
-            select.value = String(p.team || 0);
-            row.append(select);
+          if (p.id !== r.hostId) {
+            const family = r.members.filter((m) => m.ownerId === p.id);
+            const kick = el(
+              "button",
+              owned ? "Remove" : family.length > 1 ? "Kick device" : "Kick",
+              "member-kick",
+            );
+            kick.title =
+              family.length > 1
+                ? `Remove ${family.map((m) => m.name).join(" and ")} from this server`
+                : `${owned ? "Remove" : "Kick"} ${p.name}`;
+            kick.setAttribute("aria-label", kick.title);
+            kick.onclick = () =>
+              owned
+                ? this.removeLocal?.(p)
+                : n.send({ type: "kick", id: p.id });
+            row.append(kick);
           }
+        } else if (owned && p.id !== n.id) {
+          const remove = el("button", "Remove", "member-kick");
+          remove.onclick = () => this.removeLocal?.(p);
+          row.append(remove);
+        }
+        if (n.isHost && !owned) {
+          const owner = r.members.find((m) => m.id === (p.ownerId || p.id));
+          const mute = el(
+            "button",
+            owner?.muted ? "Allow mic" : "Mute for everyone",
+            "member-host-mute",
+          );
+          mute.onclick = () =>
+            n.send({
+              type: "voice-moderate",
+              id: owner.id,
+              muted: !owner.muted,
+            });
+          row.append(mute);
         }
         return row;
       }),
@@ -241,7 +257,70 @@ export class RoomUI {
     $("next-round-banner").hidden = !r.results;
     $("next-round-banner").textContent = $("next-round").textContent;
   }
+  playerActions(player) {
+    const actions = el("span", undefined, "player-actions");
+    const owner = player.ownerId || player.id;
+    const mic = el("button", undefined, "player-mic");
+    mic.type = "button";
+    mic.dataset.playerMic = owner;
+    mic.dataset.playerName = player.name;
+    mic.dataset.speaking = owner;
+    mic.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M9 21h6"/><path class="mic-slash" d="M3 3l18 18"/></svg>';
+    mic.onclick = () => {
+      if (owner === this.net.id) {
+        if (!this.voice.stream) this.voice.join();
+        else if (!this.voice.forced) {
+          this.voice.muted = !this.voice.muted;
+          this.voice.settings();
+        }
+      } else
+        this.voice.setLevel(
+          owner,
+          (this.voice.levels.get(owner) ?? 1) > 0 ? 0 : 1,
+        );
+      this.renderVoice();
+    };
+    this.updateMic(mic);
+    actions.append(mic);
+    if (owner === this.net.id) {
+      const edit = el("button", "✎", "player-edit");
+      edit.type = "button";
+      edit.title = `Change ${player.name}'s name`;
+      edit.setAttribute("aria-label", edit.title);
+      edit.onclick = () => this.renamePlayer?.(player);
+      actions.append(edit);
+    }
+    return actions;
+  }
+  updateMic(button) {
+    const id = button.dataset.playerMic,
+      v = this.voice;
+    const own = id === this.net.id;
+    const muted = own ? !v.stream || v.blocked : (v.levels.get(id) ?? 1) <= 0;
+    const member = this.net.room?.members.find((p) => p.id === id);
+    const label = own
+      ? !v.stream
+        ? "Turn microphone on"
+        : v.forced
+          ? "Muted by host"
+          : v.muted
+            ? "Unmute microphone"
+            : "Mute microphone"
+      : `${muted ? "Unmute" : "Mute"} ${button.dataset.playerName} for me`;
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.setAttribute("aria-pressed", String(muted));
+    button.classList.toggle(
+      "muted",
+      muted || !!member?.muted || !member?.voice,
+    );
+    button.disabled = own && !!v.forced;
+  }
   renderVoice() {
+    document
+      .querySelectorAll("[data-player-mic]")
+      .forEach((button) => this.updateMic(button));
     const n = this.net,
       r = n.room,
       v = this.voice;
