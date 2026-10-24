@@ -77,6 +77,9 @@ const mapped = (action) =>
   );
 const open = async () => {
   await page.waitForFunction(() => window.smash);
+  await page.waitForTimeout(350);
+  if (await page.locator("#rom-dialog").isVisible())
+    await page.locator('[data-close="rom-dialog"]').click();
   await page.locator(".header-actions [data-controls]").click();
   await page.waitForFunction(
     () => smash.controls.selected === String(qaPad.index),

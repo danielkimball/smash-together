@@ -1,4 +1,5 @@
 // Isolated real-emulator regression: never attaches to the player's browser.
+import { browserHelpers } from "./browser-helpers.mjs";
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -121,18 +122,7 @@ try {
     p.on("pageerror", (e) => errors.push(e.message));
     await p.goto(url);
     await p.waitForFunction(() => window.smash);
-    for (let press = 0; press < 3; press++) {
-      if (
-        await p.evaluate(
-          () =>
-            smash.view !== "home" || !document.getElementById("busy").hidden,
-        )
-      )
-        break;
-      await p.locator("#power-on").click();
-      await p.mouse.move(0, 0);
-      await wait(500);
-    }
+    await browserHelpers(browser, { url, pages, errors }).boot(p);
     await scene(p, 7);
     assert.equal(await p.locator("#rom-dialog").isVisible(), false);
     assert.equal(await p.locator("#testing-dialog").isVisible(), false);

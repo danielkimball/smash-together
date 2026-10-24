@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { PROTOCOL } from "../public/js/protocol.js";
 import { createApp } from "../server.mjs";
 const rom = "e2929e10fccc0aa84e5776227e798abc07cedabf",
   build = "test-v1";
@@ -79,37 +80,17 @@ test("serves the game, isolates public assets, rejects writes and traversal", as
     405,
   );
 });
-test("attract media supports seeking, suffix ranges, HEAD, and rejects invalid ranges", async (t) => {
+test("serves local box art with the right media type and no recorded opening in the page", async (t) => {
   const a = await setup(t);
-  const url = a.http + "/media/fire.mp4";
-  const head = await fetch(url, { method: "HEAD" });
+  const head = await fetch(a.http + "/media/smash-box.webp", {
+    method: "HEAD",
+  });
   assert.equal(head.status, 200);
-  assert.equal(head.headers.get("content-type"), "video/mp4");
-  assert.equal(head.headers.get("accept-ranges"), "bytes");
-  const size = Number(head.headers.get("content-length"));
-  assert.ok(size > 1000);
-  const first = await fetch(url, { headers: { Range: "bytes=0-31" } });
-  assert.equal(first.status, 206);
-  assert.equal(first.headers.get("content-range"), `bytes 0-31/${size}`);
-  assert.equal((await first.arrayBuffer()).byteLength, 32);
-  const tail = await fetch(url, { headers: { Range: "bytes=-20" } });
-  assert.equal(
-    tail.headers.get("content-range"),
-    `bytes ${size - 20}-${size - 1}/${size}`,
-  );
-  assert.equal((await tail.arrayBuffer()).byteLength, 20);
-  for (const range of [
-    `bytes=${size}-`,
-    "bytes=9-2",
-    "bytes=0-1,8-9",
-    "bytes=-",
-    "bytes=-0",
-  ])
-    assert.equal(
-      (await fetch(url, { headers: { Range: range } })).status,
-      416,
-      range,
-    );
+  assert.equal(head.headers.get("content-type"), "image/webp");
+  const image = await fetch(a.http + "/media/smash-box.webp");
+  assert.ok((await image.arrayBuffer()).byteLength > 1000);
+  const html = await (await fetch(a.http)).text();
+  assert.doesNotMatch(html, /<video|opening\.mp4|fire\.mp4/);
 });
 async function until(c, type, predicate = () => true) {
   for (let i = 0; i < 30; i++) {
@@ -120,7 +101,14 @@ async function until(c, type, predicate = () => true) {
 }
 async function create(a, options = {}) {
   const h = await client(a.ws);
-  h.send({ type: "create", protocol: 7, rom, build, name: "Dan", ...options });
+  h.send({
+    type: "create",
+    protocol: PROTOCOL,
+    rom,
+    build,
+    name: "Dan",
+    ...options,
+  });
   const joined = await until(h, "joined");
   const { room } = await until(h, "room");
   return { h, token: joined.token, id: joined.id, room };
@@ -129,7 +117,7 @@ async function join(a, token, options = {}) {
   const g = await client(a.ws);
   g.send({
     type: "join",
-    protocol: 7,
+    protocol: PROTOCOL,
     rom,
     build,
     token,
@@ -184,7 +172,7 @@ test("update drain counts private rooms, blocks new rooms, permits joins and exp
     0,
   );
   const blocked = await client(a.ws);
-  blocked.send({ type: "create", protocol: 7, rom, build });
+  blocked.send({ type: "create", protocol: PROTOCOL, rom, build });
   assert.match((await until(blocked, "error")).message, /installing an update/);
   const guest = await join(a, hidden.token);
   await until(guest, "joined");

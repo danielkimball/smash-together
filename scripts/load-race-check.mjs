@@ -17,7 +17,7 @@ const browser = await chromium.launch({
 const pages = [],
   errors = [],
   report = { errors };
-const { openPage, browse, scene, wait } = browserHelpers(browser, {
+const { openPage, browse, scene, wait, boot } = browserHelpers(browser, {
   url,
   pages,
   errors,
@@ -67,6 +67,7 @@ try {
   await guest.locator("#join-name").fill("Load race check");
   await guest.locator("#join-room").click();
   await guest.locator("#rom-file").setInputFiles(process.env.SMASH_ROM);
+  await boot(guest);
   await guest.waitForFunction(() => smash.net.running, null, {
     timeout: 90000,
   });

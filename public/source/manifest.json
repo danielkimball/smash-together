@@ -1,6 +1,6 @@
 {
   "application": "Smash Portal",
-  "version": "3.7.1",
+  "version": "3.8.0",
   "engine_source": "https://github.com/waveplate/M64Wasm",
   "engine_commit": "f6b5d6cc31821ec501a94aa761eae022d08f5a9d",
   "emscripten": "2.0.7",
@@ -10,7 +10,7 @@
     "Instrument Sans Condensed Medium Italic",
     "Orbitron Medium"
   ],
-  "media": "Audiovisual recordings of the original US game attract sequence; no ROM or savestate",
+  "media": "User-supplied Super Smash Bros. box art; opening runs from the verified local cartridge; no ROM or savestate",
   "files": {
     "engine/n64wasm.js": {
       "sha256": "9746baf9719a81732ae02bd7601cf3e3f98766a463bed33427d4e9bfd1eabad1",
@@ -47,13 +47,9 @@
       "sha256": "f42db2dd16e642258e35782916eceb1dcdbea06fb958d77ad71dc5963587e8fd",
       "bytes": 38576
     },
-    "media/fire.mp4": {
-      "sha256": "14cb1e5af1b322751fc44f2df4a52ae144d9f0ddbcbeb5de470d6ca3ab3b18e6",
-      "bytes": 675214
-    },
-    "media/opening.mp4": {
-      "sha256": "731efb1d1f33b98d120fd8a128b247a5955b5960f9616a51adca4de1d16382e8",
-      "bytes": 15716120
+    "media/smash-box.webp": {
+      "sha256": "09b37cf99941bc74fc17e6829007e6410188252a5c7d22f7b169402b2dfc4785",
+      "bytes": 283594
     }
   }
 }

@@ -18,10 +18,11 @@ Use Ryker's own GitHub login. Never copy Dan's credentials. The public source is
 ## Product behavior to preserve
 
 - Smash Portal branding: black `#000000`, CRT white `#fafafa`, red `#ff0028`, idle blue `#8282aa`, yellow `#ffff00`, green `#22b573`. Local Josefin Sans Semibold headers/buttons, Instrument Sans Condensed Medium Italic copy, Orbitron Medium labels. Supplied logo in `public/brand`; do not redraw it.
-- Original N64/Master Hand opening with music. Audible autoplay may require one click. Then a **silent looping fire title**, including behind the ROM modal; no title announcer and no How to Play transition. Verified/cached original US ROM opens the actual native Mode Select. Mouse hover highlights the native icon; no HTML Multiplayer overlay. VS opens the branded room browser while native menu music keeps playing.
+- **v3.8 native startup replaces the recorded intro/fire loop.** A cached/development cartridge boots once at normal 60 Hz; original Start skips the native opening/title. No accelerated boot replay, video preview, or automatic local main-menu sequence. Uncached BYOR visitors see Add your ROM with Dan's supplied box art before emulation is possible. Testing auto-load stays opt-in on the host and bypasses that prompt. `prepareMain` restores the menu captured after the player's native Start; invitations finish this opening before joining. Preserve single-flight cartridge/download/engine startup.
+- Native menus, especially character selection, must never time out to the title while waiting or using overlays. `Engine.keepMenuAlive` extends only the native idle deadline through the existing serializer. Online it runs every 600 **agreed frames**, not UI/wall-clock callbacks; never add it to combat. Protocol 8 is required so cached clients cannot disagree.
 - Name/Create/Join and all open rooms support controller up/down + A. The funny default name saves immediately. A on the name opens the controller keyboard; Start saves, B deletes. Typing works normally.
 - DragonRise USB `0079:0006` preset, one-based labels: A7, B9, Z8, R6, L5, Start10; C up1/down3/left4/right2; axes 1/2; D-pad up13/down14/left15/right16. Keep user remaps/calibration. Storage keys use stable device IDs, not gamepad indices. macOS Launchpad is an OS shortcut; web mapping cannot consume it. Dan's OS setting was disabled, but his physical B-button check remains unconfirmed.
-- Native rules and gameplay, all 12 fighters / 9 VS stages, winner-only next-stage selection, server-agreed controller frames, shared pause and reconnects must remain intact. Protocol 7, build suffix `-smash-native-v7` (constants in `public/js/protocol.js`). Core binaries are pinned and unchanged.
+- Native rules and gameplay, all 12 fighters / 9 VS stages, winner-only next-stage selection, server-agreed controller frames, shared pause and reconnects must remain intact. Protocol 8, build suffix `-smash-native-v8` (constants in `public/js/protocol.js`). Core binaries are pinned and unchanged.
 
 ## Engineering and operating practices
 
@@ -38,7 +39,7 @@ Use Ryker's own GitHub login. Never copy Dan's credentials. The public source is
 
 ## Code map / known traps
 
-`server.mjs`: HTTP/rooms/testing/CORS. `public/js/service.js`: stable frontend asset paths and backend discovery. `netplay.js`: transport and synchronization. `engine.js`: native emulator/state. `app.js`: menus, lobby, controller keyboard and continuous menu music. `controls.js`: mappings. `attract.js`: recorded opening/silent fire. `rounds.js`: winner authority. `scripts/host.mjs`, `share.mjs`, `publish-link.mjs`: hosting and public link publication.
+`server.mjs`: HTTP/rooms/testing/CORS. `public/js/service.js`: stable frontend asset paths and backend discovery. `netplay.js`: transport and synchronization. `engine.js`: native emulator/state. `app.js`: menus, lobby, controller keyboard and continuous menu music. `controls.js`: mappings. `refinements.css`: compact dialogs and room controls. `rounds.js`: winner authority. `scripts/host.mjs`, `share.mjs`, `publish-link.mjs`: hosting and public link publication.
 
 Preserve the live canvas under overlays; screenshots of a hidden WebGL canvas can be blank. Native character selection ignores Start during its first second. Release held Start/A between entry screens. Native mouse hover changes menu selection, so tests must move the pointer away before keyboard-only navigation. Storage is per browser and origin; old temporary links cannot automatically donate their cache to the permanent site.
 
@@ -109,3 +110,11 @@ Protocol 7/build v7 deliberately prevents mixed cached clients from interpreting
 ## v3.7.1 compact lobby and performance constraint
 
 Dan reinforced on 2026-10-24 that every change must preserve gameplay speed and latency. Keep additional lobby UI out of the game tick, avoid extra polling/renderers, and verify the timing/transport code stays unchanged for visual edits. The small red circled plus below the main name opens local-player setup; configured extra names appear in one compact row. Names support typing and the existing controller keyboard with the correct target. Render only on local roster/name changes, never on every frame. Do not call `LocalPlayers.ensure()` just to draw the lobby: that would assign the keyboard before a controller connects. The icon is simple local CSS, with no image or network dependency.
+
+## v3.8 interface
+
+Server settings owns rotation, immediate next-round lineup/availability, queue and host kick/mute controls. Teams and battle mode are exclusively native. Player microphones are per-device (one mic for a shared computer); each local person can rename themselves. A kick of a primary connection removes its whole device, explicitly labeled Kick device when needed; kicking a secondary local player removes only that person and informs the owner. Kicks clear reconnect identity and show a persistent notice; they are removal, not a ban. Server permissions, neutralized departed inputs and ordinary lobby clock continuity must remain intact.
+
+Controller tabs default to Player 1; editing another player's mapping must restore primary controls on close. A/B/Z/R/L/C-up/C-down/C-left/C-right fill the left column; Start/stick/D-pad fill the right. Hover cannot use the active-capture red. Calibration is hidden until requested, and every scrolling modal keeps its close header sticky. Invite friends always opens the link and Copy action with inline feedback. Toolbar wraps and observes its actual height, without per-frame layout work.
+
+Relevant checks: `controller-check.mjs`, `interface-check.mjs`, `native-startup-check.mjs` (315-second idle), `autoplay-check.mjs`, `load-race-check.mjs`, `performance-check.mjs`, `party-check.mjs`. Always use session-owned localhost and synthetic controllers. Older recorded-intro checks are superseded by these native-startup checks.

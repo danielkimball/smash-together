@@ -38,6 +38,7 @@ const MIME = {
   ".zip": "application/zip",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".webp": "image/webp",
   ".jpeg": "image/jpeg",
   ".mp4": "video/mp4",
   ".ttf": "font/ttf",
@@ -823,13 +824,53 @@ export function createApp({
       }
       if (m.type === "availability") {
         const target = m.id ? room.members.get(m.id) : member;
-        if (!target || ownerOf(target) !== member.id) return;
+        if (!target || (!isHost && ownerOf(target) !== member.id)) return;
         target.ready = m.ready === true;
         if (target.ready && target.slot < 0) target.queue = ++room.queueCounter;
         if (room.selecting) {
           changeLineup(room);
         }
         update(room);
+        return;
+      }
+      if (m.type === "player-name") {
+        const target = room.members.get(m.id || member.id);
+        if (!target || ownerOf(target) !== member.id)
+          return fail("You can only change names for players on your device.");
+        if (typeof m.name !== "string" || !m.name.trim())
+          return fail("Enter a player name.");
+        target.name = clean(m.name, target.name, 30);
+        update(room);
+        return;
+      }
+      if (m.type === "kick") {
+        if (!isHost) return fail("Only the host can kick players.");
+        const target = room.members.get(m.id);
+        if (!target || target.id === room.hostId) return;
+        if (target.ownerId) {
+          // A secondary local player has no independent socket to close.
+          room.members.delete(target.id);
+          room.override = room.override?.filter((id) => id !== target.id);
+          if (target.slot >= 0) room.clock?.release(target.slot);
+          clearSelectionSlot(room, target.slot);
+          send(target.socket, {
+            type: "local-removed",
+            localKey: target.localKey,
+            name: target.name,
+            message: `${target.name}, you've been kicked from the server.`,
+          });
+          clockSlots(room);
+          if (!room.clock) room.revision++;
+          update(room);
+        } else {
+          const connection = target.socket;
+          send(connection, {
+            type: "kicked",
+            message: "You've been kicked from the server.",
+          });
+          disconnect(room, target, connection, true);
+          connection?.close(1000, "Kicked by host");
+        }
         return;
       }
       if (m.type === "manage") {

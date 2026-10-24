@@ -1,134 +1,127 @@
+// Native autoplay and BYOR checks in disposable contexts; no real controllers.
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
-const url = process.env.SMASH_URL || "http://localhost:8790";
+import { mkdir, writeFile } from "node:fs/promises";
+const url = process.env.SMASH_URL || "http://127.0.0.1:8790";
+if (!process.env.SMASH_ROM)
+  throw Error("Set SMASH_ROM to your original US cartridge.");
 const browser = await chromium.launch({
   headless: true,
-  executablePath:
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  executablePath: process.env.CHROME_PATH,
   args: ["--autoplay-policy=user-gesture-required"],
 });
 const checks = [],
   errors = [];
+const pass = (s) => {
+  checks.push(s);
+  console.log("PASS", s);
+};
+async function context() {
+  const c = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+  });
+  await c.addInitScript(() => {
+    Object.defineProperty(navigator, "getGamepads", { value: () => [] });
+    // Emulate autoplay denial deterministically, independent of Chrome's
+    // machine-level media engagement or headless policy exceptions.
+    window.qaAudioUnlocked = false;
+    document.addEventListener("pointerdown", () => {
+      window.qaAudioUnlocked = true;
+    });
+    const Base = window.AudioContext;
+    window.AudioContext = class extends Base {
+      constructor(...args) {
+        super(...args);
+        if (!window.qaAudioUnlocked) this.suspend();
+      }
+      resume() {
+        return window.qaAudioUnlocked ? super.resume() : new Promise(() => {});
+      }
+    };
+  });
+  const p = await c.newPage();
+  p.on("pageerror", (e) => errors.push(e.message));
+  return { c, p };
+}
 try {
-  const context = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-  });
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, "getGamepads", {
-      configurable: true,
-      value: () => window.testPads || [],
-    });
-    const play = HTMLMediaElement.prototype.play;
-    // Deterministically exercise the browser's audible-autoplay rejection.
-    HTMLMediaElement.prototype.play = function () {
-      if (!this.muted && !navigator.userActivation.hasBeenActive)
-        return Promise.reject(
-          new DOMException("Click to play sound", "NotAllowedError"),
-        );
-      return play.call(this);
-    };
-  });
-  const page = await context.newPage();
-  page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(url);
-  await page.waitForFunction(
+  await mkdir("artifacts", { recursive: true });
+  const { c, p } = await context();
+  await p.goto(url);
+  await p.waitForFunction(
     () =>
-      window.smash?.attract.audioBlocked &&
-      document.getElementById("attract-opening").currentTime > 0.2,
+      window.smash?.engine.loaded &&
+      !document.getElementById("native-opening").hidden,
+    null,
+    { timeout: 90000 },
   );
-  assert.equal(
-    await page.locator("#attract-hint").textContent(),
-    "PLAY INTRO WITH SOUND",
+  await p.waitForFunction(
+    () => document.getElementById("game-sound").hidden === false,
   );
-  await page.locator("#power-on").click();
-  await page.waitForFunction(
-    () =>
-      !smash.attract.audioBlocked &&
-      !document.getElementById("attract-opening").muted &&
-      !document.getElementById("attract-opening").paused,
+  const before = await p.evaluate(() => smash.engine.frames);
+  await p.waitForTimeout(700);
+  assert.ok((await p.evaluate(() => smash.engine.frames)) > before + 20);
+  await p.locator("#game-sound").click();
+  await p.waitForFunction(() => smash.engine.audio.ctx.state === "running");
+  assert.ok((await p.evaluate(() => smash.engine.frames)) > before + 20);
+  assert.equal(await p.locator("video").count(), 0);
+  pass(
+    "Blocked sound never blocks native startup; Enable sound resumes audio without replaying the opening",
   );
-  assert.equal(await page.evaluate(() => smash.attract.phase), "opening");
-  checks.push(
-    "A click replays the blocked original opening with sound instead of silently skipping it",
+  await c.close();
+  const second = await context();
+  await second.c.route("**/api/**", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ testingAutoLoad: false, rooms: [] }),
+    }),
   );
-  await page.waitForTimeout(400);
-  await page.locator("#power-on").click();
-  await page.waitForFunction(() => smash.attract.phase === "title");
-  assert.equal(
-    await page.locator("#attract-title").evaluate((v) => v.muted && v.loop),
-    true,
+  await second.p.goto(url);
+  await second.p.waitForFunction(
+    () => document.getElementById("rom-dialog").open,
   );
-  checks.push("The following title is a silent fire loop");
-  await page.evaluate(() => {
-    document.getElementById("name-dialog").showModal();
-    document.querySelector("#name-keys button").focus();
-  });
-  await page.evaluate(() => document.fonts.ready);
-  const clipped = await page
-    .locator("#name-keys button")
-    .evaluateAll((buttons) =>
-      buttons
-        .filter((button) => {
-          const range = document.createRange();
-          range.selectNodeContents(button);
-          return range.getBoundingClientRect().width > button.clientWidth + 1;
-        })
-        .map((button) => button.textContent),
-    );
-  assert.deepEqual(clipped, []);
-  await page.screenshot({
-    path: "artifacts/refinements-name-keyboard-phone.png",
-  });
-  checks.push("Every controller keyboard label fits on a phone");
-  await context.close();
-  const padContext = await browser.newContext();
-  await padContext.addInitScript(() => {
-    window.testPad = {
-      id: "Test Xbox",
-      index: 0,
-      connected: true,
-      mapping: "standard",
-      axes: [0, 0, 0, 0],
-      buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
-    };
-    Object.defineProperty(navigator, "getGamepads", {
-      configurable: true,
-      value: () => [testPad],
+  await second.p
+    .locator("#rom-file")
+    .setInputFiles({
+      name: "invalid.z64",
+      mimeType: "application/octet-stream",
+      buffer: Buffer.alloc(32),
     });
-  });
-  const padPage = await padContext.newPage();
-  padPage.on("pageerror", (e) => errors.push(e.message));
-  await padPage.goto(url);
-  await padPage.waitForFunction(() => window.smash);
-  for (const phase of ["title", "rom"]) {
-    await padPage.evaluate(
-      () => (testPad.buttons[9] = { pressed: true, value: 1 }),
-    );
-    if (phase === "title")
-      await padPage.waitForFunction(() => smash.attract.phase === "title");
-    else await padPage.waitForSelector("#rom-dialog[open]");
-    await padPage.evaluate(
-      () => (testPad.buttons[9] = { pressed: false, value: 0 }),
-    );
-    await padPage.waitForTimeout(400);
-  }
-  checks.push(
-    "Controller-only startup reaches the ROM modal under strict autoplay policy",
+  await second.p.waitForFunction(
+    () => !document.getElementById("rom-error").hidden,
   );
+  assert.equal(await second.p.evaluate(() => smash.engine.loaded), false);
+  await second.p.locator("#rom-file").setInputFiles(process.env.SMASH_ROM);
+  await second.p.waitForFunction(
+    () =>
+      smash.engine.loaded && !document.getElementById("native-opening").hidden,
+    null,
+    { timeout: 90000 },
+  );
+  assert.equal(await second.p.locator("#rom-dialog").isVisible(), false);
+  const fileFrames = await second.p.evaluate(() => smash.engine.frames);
+  assert.ok(fileFrames < 120);
+  pass(
+    "BYOR gate rejects invalid files and starts the valid cartridge at its real beginning",
+  );
+  await second.p.reload();
+  await second.p.waitForFunction(
+    () =>
+      window.smash?.engine.loaded &&
+      !document.getElementById("native-opening").hidden,
+    null,
+    { timeout: 90000 },
+  );
+  assert.equal(await second.p.locator("#rom-dialog").isVisible(), false);
+  assert.ok((await second.p.evaluate(() => smash.engine.frames)) < 120);
+  pass(
+    "Reload validates the saved cartridge and boots natively without prompting or fast-forwarding",
+  );
+  await second.c.close();
   assert.deepEqual(errors, []);
-  for (const check of checks) console.log("PASS", check);
-} catch (error) {
-  errors.push(error.message);
-  throw error;
 } finally {
   await writeFile(
     "artifacts/portal-autoplay.json",
-    JSON.stringify(
-      { date: new Date().toISOString(), url, checks, errors },
-      null,
-      2,
-    ),
+    JSON.stringify({ checks, errors }, null, 2),
   );
   await browser.close();
 }

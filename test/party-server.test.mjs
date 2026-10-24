@@ -325,3 +325,67 @@ test("native team configuration clears old cleanup deadlines and team rotation r
   assert.ok(room.members.get(g.id).slot >= 0);
   assert.equal(room.members.get(g.id).team, 1);
 });
+
+test("server actions authorize player names, availability and kicks without stopping the shared clock", async (t) => {
+  const app = await setup(t),
+    h = await app.connect({ locals: locals(1) }),
+    g = await app.connect({ token: h.token, locals: locals(1) });
+  const clock = await app.start(h),
+    room = app.rooms.get(h.token);
+  const partner = [...room.members.values()].find((p) => p.ownerId === g.id);
+  g.send({ type: "player-name", id: partner.id, name: "New partner" });
+  await g.until(
+    (m) =>
+      m.type === "room" && m.room.members.some((p) => p.name === "New partner"),
+  );
+  assert.equal(partner.name, "New partner");
+  g.send({ type: "player-name", id: h.id, name: "Spoofed host" });
+  await g.until(
+    (m) => m.type === "error" && /only change names/.test(m.message),
+  );
+  assert.notEqual(room.members.get(h.id).name, "Spoofed host");
+  g.send({ type: "availability", id: h.id, ready: false });
+  g.send({ type: "kick", id: h.id });
+  await g.until(
+    (m) => m.type === "error" && /Only the host can kick/.test(m.message),
+  );
+  assert.equal(room.members.get(h.id).ready, true);
+  h.send({ type: "availability", id: g.id, ready: false });
+  await h.until(
+    (m) =>
+      m.type === "room" &&
+      m.room.members.some((p) => p.id === g.id && !p.ready),
+  );
+  assert.equal(room.members.get(g.id).slot, -1);
+  assert.equal(room.clock, clock);
+  h.send({ type: "kick", id: partner.id });
+  const removed = await g.until((m) => m.type === "local-removed");
+  assert.equal(removed.localKey, partner.localKey);
+  assert.match(removed.message, /kicked from the server/);
+  assert.equal(room.members.has(partner.id), false);
+  assert.equal(room.members.get(g.id).socket.readyState, 1);
+  assert.equal(room.clock, clock);
+  h.send({ type: "kick", id: g.id });
+  const kicked = await g.until((m) => m.type === "kicked");
+  assert.match(kicked.message, /kicked from the server/);
+  assert.equal(room.members.has(g.id), false);
+  assert.equal(room.clock, clock);
+  assert.equal(room.hostId, h.id);
+  assert.equal(room.members.size, 2);
+});
+
+test("kicking a primary connection removes its whole local party and invalidates its reconnect identity", async (t) => {
+  const app = await setup(t),
+    h = await app.connect({}),
+    g = await app.connect({ token: h.token, locals: locals(2) });
+  const room = app.rooms.get(h.token);
+  const ids = [...room.members.values()]
+    .filter((p) => (p.ownerId || p.id) === g.id)
+    .map((p) => p.id);
+  h.send({ type: "kick", id: g.id });
+  await g.until((m) => m.type === "kicked");
+  assert.ok(ids.every((id) => !room.members.has(id)));
+  const again = await app.connect({ token: h.token, ticket: g.ticket });
+  assert.notEqual(again.id, g.id);
+  assert.equal(room.hostId, h.id);
+});

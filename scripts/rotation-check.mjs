@@ -43,12 +43,9 @@ try {
   await join(b, token);
   await a.waitForFunction(() => smash.net.running);
   await wait(1500);
-  await a.locator("#game-hud [data-room-panel]").click();
-  await a.locator("#battle-mode").selectOption("teams");
-  const bID = await b.evaluate(() => smash.net.id);
-  await a.locator(`[data-team="${bID}"]`).selectOption("1");
-  await a.locator("#teams-apply").click();
-  await a.locator('[data-close="players-dialog"]').click();
+  // Teams are chosen with the native controls, not a duplicate web setting.
+  await clickNative(a, 80, 25);
+  await clickNative(a, 120, 136);
   await a.waitForFunction(
     () =>
       smash.net.running &&
@@ -57,11 +54,8 @@ try {
     null,
     { timeout: 30000 },
   );
-  record("Host team controls update native mode and player colors");
-  await a.locator("#game-hud [data-room-panel]").click();
-  await a.locator("#battle-mode").selectOption("ffa");
-  await a.locator("#teams-apply").click();
-  await a.locator('[data-close="players-dialog"]').click();
+  record("Native team controls update mode and player colors");
+  await clickNative(a, 80, 25);
   await a.waitForFunction(
     () => smash.net.running && !smash.engine.inspect().teams,
   );

@@ -8,9 +8,9 @@ The game frontend stays on GitHub Pages. `public/js/service.js` reads `active-ho
 
 **Implemented today:** one active backend, public health checks, automatic recovery of that host's expired tunnel, Windows x64 tunnel download, verified Windows login startup, guarded primary ownership, tested idle-only main updates, and a stable player URL. **Not implemented yet:** automatic switching between Ryker's and Dan's computers, shared room state, or preserving an active match across loss of the backend. The design below is the next milestone; do not confuse single-host tunnel recovery with multi-machine failover.
 
-## v3.7 rollout
+## v3.8 rollout
 
-The audio/shared-device/live-lobby release uses room protocol 7 and build suffix `-smash-native-v7`. Let the normal idle-only updater validate and publish the backend and static assets together. Do not interrupt occupied rooms. After deployment, every player should refresh the permanent site (Windows: Ctrl+F5); cached older room clients receive a reload message. Use one tab per computer and **Players on this device** for multiple controllers. Listening is automatic, microphone capture remains explicit, and browser autoplay may still require **Audio & Voice → Enable sound**.
+The native startup/interface release uses room protocol 8 and build suffix `-smash-native-v8`. Idle deadline changes must run on the same agreed frames on every client. Let the normal idle-only updater validate and publish the backend and static assets together. Do not interrupt occupied rooms. After deployment, every player should refresh the permanent site (Windows: Ctrl+F5); cached older room clients receive a reload message. Use one tab per computer and **Players on this device** for multiple controllers. Listening is automatic, microphone capture remains explicit, and browser autoplay may still require **Audio & Voice → Enable sound**.
 
 ## What Ryker can tell Codex
 
@@ -137,7 +137,7 @@ Missing inputs and brief delivery stalls do not freeze other players. The server
 
 ## Voice and larger rooms
 
-Rooms allow eight people and four active fighters. Spectators run the game locally and can join room voice. Voice requires explicit microphone permission and uses transient audio packets over a separate secure media connection. Several people talking add upload traffic to this Windows host; silence suppression limits unused traffic. No microphone is captured on the server and no recording is stored. Players and Voice buttons are beside Menu in the game toolbar. See README for rotation rules.
+Rooms allow eight people and four active fighters. Spectators run the game locally and can join room voice. Voice requires explicit microphone permission and uses transient audio packets over a separate secure media connection. Several people talking add upload traffic to this Windows host; silence suppression limits unused traffic. No microphone is captured on the server and no recording is stored. Server settings and Audio & Voice buttons are beside Menu in the game toolbar. See README for rotation rules.
 
 A browser room host is different from this Windows hosting computer. Room-host handoff is automatic within this running backend. Switching from Ryker's server to Dan's and recovering matches after backend loss are still not implemented. Preserve the manual backup procedure and primary ownership guard.
 

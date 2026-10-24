@@ -80,19 +80,27 @@ export function browserHelpers(browser, { url, pages, errors }) {
   }
   async function boot(p) {
     await p.waitForFunction(() => window.smash);
-    for (let i = 0; i < 3; i++) {
+    await p.waitForFunction(
+      () => smash.engine.loaded && document.getElementById("busy").hidden,
+      null,
+      { timeout: 90000 },
+    );
+    // Ordinary Start presses skip the ROM's opening/title, without replaying
+    // or accelerating native frames. Tests need not watch the complete movie.
+    for (let i = 0; i < 8; i++) {
       if (
-        await p.evaluate(
-          () =>
-            smash.view !== "home" || !document.getElementById("busy").hidden,
-        )
+        (await p.locator("#native-menu").isVisible()) ||
+        (await p.evaluate(() => !!smash.net.room))
       )
         break;
       await p.locator("#power-on").click();
       await p.mouse.move(0, 0);
-      await wait(500);
+      await wait(1400);
     }
-    await scene(p, 7);
+    await p.waitForFunction(
+      () => !document.getElementById("native-menu").hidden || !!smash.net.room,
+    );
+    if (!(await p.evaluate(() => !!smash.net.room))) await scene(p, 7);
   }
   async function openPage(mobile = false) {
     const c = await browser.newContext({

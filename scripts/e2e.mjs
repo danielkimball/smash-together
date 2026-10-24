@@ -1,3 +1,4 @@
+import { browserHelpers } from "./browser-helpers.mjs";
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import { mkdir, writeFile, access } from "node:fs/promises";
@@ -47,6 +48,11 @@ const browser = await chromium.launch({
 const contexts = [],
   pages = [];
 const count = Number(process.env.SMASH_PLAYERS || 4);
+const { boot: nativeBoot } = browserHelpers(browser, {
+  url: local,
+  pages,
+  errors: report.errors,
+});
 async function waitState(p, state) {
   await p.waitForFunction((s) => smash.net.state === s, state, {
     timeout: 90000,
@@ -145,6 +151,14 @@ try {
         })
       ),
     );
+    await context.route("**/api/status", async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      await route.fulfill({
+        response,
+        json: { ...data, testingAutoLoad: false },
+      });
+    });
     const p = await context.newPage();
     pages.push(p);
     p.on("pageerror", (e) => report.errors.push(e.message));
@@ -158,6 +172,8 @@ try {
     );
     return (await serviceFetch("/api/status")).json();
   });
+  if (await a.locator("#rom-dialog").isVisible())
+    await a.locator('[data-close="rom-dialog"]').click();
   await a.locator(".header-actions [data-fullscreen]").click();
   await a.waitForFunction(
     () => document.fullscreenElement === document.documentElement,
@@ -180,10 +196,11 @@ try {
     document.getElementById("toast").textContent.includes("16 MB"),
   );
   assert.equal(await a.evaluate(() => smash.engine.loaded), false);
-  await a.locator("#power-on").click();
+
   // A pointer parked over a native choice now selects it as the menu appears.
   await a.mouse.move(0, 0);
   await a.locator("#rom-file").setInputFiles(rom);
+  await nativeBoot(a);
   await a.waitForFunction(
     () => smash.view === "native" && !smash.paused,
     null,
@@ -236,10 +253,10 @@ try {
       await p.locator("#join-name").fill("Brother");
       await p.locator("#join-room").click();
       await p.locator("#rom-file").setInputFiles(rom);
+      await nativeBoot(p);
     } else {
-      await p.keyboard.press("Enter");
-      await p.waitForFunction(() => smash.attract.phase === "title");
       await p.locator("#rom-file").setInputFiles(rom);
+      await nativeBoot(p);
       await p.waitForFunction(
         () => smash.view === "native" && !smash.paused,
         null,

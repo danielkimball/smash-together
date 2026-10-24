@@ -1,3 +1,9 @@
+# v3.8 native startup / interface verification — 2026-10-24
+
+The opening now advances at normal frame pace from the verified ROM; the recorded preview and accelerated boot replay are removed. Native menu idle deadlines are refreshed once per 600 agreed online frames, and never during combat. This edits only a deadline in an existing serialized state; it retains animation, choices and queued sound. Protocol 8 prevents mixed idle behavior. New UI work stays outside the game tick; HUD player actions render on roster changes and speech indicators use the existing voice timer.
+
+A 60-second local two-browser combat run passes: 59.99 FPS each, all 120 input transitions each, 66 matching state checks each, no repairs; sample-to-completed-emulator median 32.2–32.3 ms, p95 40.2–43.5 ms, max 50–57.7 ms; step mean 7.74–7.83 ms; backlog p95 0–1/max 2. `artifacts/performance-local-v38.json`. A separate three-person/two-device shared-controller test held 60 FPS with no repairs. A two-browser 315-second idle selection test exceeded the native five-minute timeout without leaving selection or changing epoch. These tests are local, using synthetic controllers, and do not resolve or reclassify the earlier public Wi-Fi results below.
+
 # Transport stabilization — v3.6.4
 
 The v3.6.3 primary host registered HTTP/2 fallback, so the QUIC preference produced no verified public benefit. A subsequent documentation-only restart did not republish a healthy endpoint within the normal four-minute deployment window. The Windows tunnel logs are not accessible from this checkout, so the cause of that publication delay is unconfirmed. **v3.6.4 restores the previously working HTTP/2 default** while retaining negotiated-transport telemetry, all renderer/input/startup fixes and optional explicit `tunnelProtocol: "auto"` or `"quic"` configuration. Do not enable QUIC on the primary as a presumed latency fix without verifying connectivity and actual gameplay results there.

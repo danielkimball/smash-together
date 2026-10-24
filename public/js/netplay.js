@@ -353,7 +353,15 @@ export class Netplay extends EventTarget {
       } else if (m.type === "signal")
         this.receiveSignal(m.from, m.signal).catch(() => {});
       else if (m.type === "game") this.receive(m.from, m.payload);
-      else if (m.type === "closed") this.error(m.message);
+      else if (m.type === "kicked") {
+        sessionStorage.removeItem("smash.ticket." + this.token);
+        sessionStorage.removeItem("smash.room-ticket." + this.room?.id);
+        this.lastOptions = null;
+        this.leave();
+        this.dispatchEvent(new CustomEvent("kicked", { detail: m }));
+      } else if (m.type === "local-removed") {
+        this.dispatchEvent(new CustomEvent("local-removed", { detail: m }));
+      } else if (m.type === "closed") this.error(m.message);
       else if (m.type === "error") {
         this.message = m.message;
         if (!this.room) this.status("error");
@@ -1153,6 +1161,8 @@ export class Netplay extends EventTarget {
     if (this.frame % inspectEvery === 0) {
       const info = this.engine.inspect();
       this.rounds.observe(info, this.room);
+      if (this.frame % 600 === 0 && info.scene !== 22 && info.scene !== 24)
+        this.engine.keepMenuAlive?.();
       if (
         this.isHost &&
         info.scene === 24 &&

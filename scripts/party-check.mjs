@@ -124,10 +124,13 @@ try {
     "Two controllers and names join from one tab with one emulator and one network participant",
   );
 
-  await a.locator("#pointer-player").selectOption(original.id);
   await clickNative(a, 86, 64);
-  await a.locator("#pointer-player").selectOption(original.partner);
-  await clickNative(a, 128, 64);
+  await a.evaluate(
+    (playerId) =>
+      smash.net.send({ type: "pointer", playerId, scene: 16, x: 128, y: 64 }),
+    original.partner,
+  );
+  await wait(1000);
   assert.equal(
     await a.evaluate(() =>
       smash.engine
@@ -324,10 +327,13 @@ try {
     "Refreshing a two-person device removes both live counts, passes hosting, clears only their tokens, and reconnects both identities without pausing the remaining player",
   );
 
-  await a.locator("#pointer-player").selectOption(original.id);
   await clickNative(a, 86, 64);
-  await a.locator("#pointer-player").selectOption(original.partner);
-  await clickNative(a, 128, 64);
+  await a.evaluate(
+    (playerId) =>
+      smash.net.send({ type: "pointer", playerId, scene: 16, x: 128, y: 64 }),
+    original.partner,
+  );
+  await wait(1000);
   await b.locator("#start-game").click();
   await scene(b, 21);
   await wait(500);
@@ -353,8 +359,8 @@ try {
   record(
     "Opening controller setup during an actual match still pauses everyone and resumes together",
   );
-  await a.locator("#game-hud [data-room-panel]").click();
-  await a.locator("#players-dialog [data-local-players]").click();
+  await a.locator("#game-menu").click();
+  await a.locator("#menu-dialog [data-local-players]").click();
   await b.waitForFunction(() => smash.net.state === "paused");
   await a
     .locator("#local-players-list button")
@@ -364,6 +370,7 @@ try {
   await wait(600);
   assert.equal(await b.evaluate(() => smash.net.state), "paused");
   await a.locator('[data-close="controls-dialog"]').click();
+  await a.locator('[data-close="menu-dialog"]').click();
   await b.waitForFunction(() => smash.net.running, null, { timeout: 90000 });
   await a.waitForFunction(() => smash.net.running, null, { timeout: 90000 });
   record(
