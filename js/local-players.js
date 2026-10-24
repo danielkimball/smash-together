@@ -201,6 +201,47 @@ export class LocalPlayers extends EventTarget {
 
 export function localPlayersPanel(party, net, open, toast, name) {
   const $ = (id) => document.getElementById(id);
+  let nameKeys;
+  const renderLobbyNames = () => {
+    // Showing the lobby must not choose a controller before the player has
+    // connected one. Only render people already configured on this device.
+    const entries = party.entries?.slice(1) || [];
+    const list = $("lobby-local-names");
+    const keys = entries.map((p) => p.key).join("|");
+    if (keys !== nameKeys) {
+      nameKeys = keys;
+      list.replaceChildren(
+        ...entries.map((entry, index) => {
+          const label = document.createElement("label");
+          label.className = "lobby-local-name";
+          const caption = document.createElement("span");
+          caption.textContent = `P${index + 2} · Change name`;
+          const input = document.createElement("input");
+          input.type = "text";
+          input.maxLength = 30;
+          input.autocomplete = "off";
+          input.dataset.localName = entry.key;
+          input.setAttribute("aria-label", `Player ${index + 2} name`);
+          input.oninput = () => party.rename(entry.key, input.value);
+          input.onchange = () => {
+            input.value = entry.name;
+          };
+          label.append(caption, input);
+          return label;
+        }),
+      );
+    }
+    for (const input of list.querySelectorAll("input")) {
+      const entry = entries.find((p) => p.key === input.dataset.localName);
+      if (input !== document.activeElement) input.value = entry.name;
+      input.title = entry.name;
+    }
+    list.hidden = !entries.length;
+    $("add-screen-player-copy").textContent =
+      entries.length === 3
+        ? "Manage players on this screen"
+        : "Add additional players on this screen";
+  };
   const render = () => {
     const entries = party.ensure();
     $("local-players-list").replaceChildren(
@@ -300,7 +341,8 @@ export function localPlayersPanel(party, net, open, toast, name) {
   };
   let timer;
   party.addEventListener("change", () => {
-    render();
+    if ($("local-players-dialog").open) render();
+    renderLobbyNames();
     clearTimeout(timer);
     if (net.room)
       timer = setTimeout(() => {
@@ -334,5 +376,6 @@ export function localPlayersPanel(party, net, open, toast, name) {
       party.entries.length >= 4 ||
       (net.room && net.connected.length >= net.room.capacity);
   });
+  renderLobbyNames();
   return render;
 }

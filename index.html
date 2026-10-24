@@ -341,10 +341,26 @@
                   autocomplete="nickname"
                   aria-label="Your name"
                 />
+                <button
+                  id="add-screen-player"
+                  class="add-screen-player"
+                  type="button"
+                  data-local-players
+                  aria-haspopup="dialog"
+                >
+                  <span class="add-player-icon" aria-hidden="true"></span>
+                  <span id="add-screen-player-copy"
+                    >Add additional players on this screen</span
+                  >
+                </button>
+                <div
+                  id="lobby-local-names"
+                  class="lobby-local-names"
+                  hidden
+                ></div>
               </div>
               <button id="create-open" class="primary">Create a room</button>
               <button id="join-open">Join a room</button>
-              <button data-local-players>Players on this device</button>
             </div>
           </div>
           <section class="room-browser" aria-label="Available rooms">
@@ -689,7 +705,7 @@
         <div class="dialog-heading">
           <div>
             <p class="eyebrow">MAKE A NAME FOR YOURSELF</p>
-            <h2>Change your name</h2>
+            <h2 id="name-dialog-title">Change your name</h2>
           </div>
           <button
             type="button"
@@ -700,7 +716,7 @@
             ×
           </button>
         </div>
-        <label for="name-draft">Your name</label
+        <label id="name-draft-label" for="name-draft">Your name</label
         ><input id="name-draft" maxlength="30" autocomplete="nickname" />
         <div
           id="name-keys"
