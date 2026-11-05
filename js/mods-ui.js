@@ -4,6 +4,7 @@
 import {
   ModLibrary,
   patchCartridge,
+  modMemory,
   modsSignature,
   parseRefs,
   formatRefs,
@@ -102,13 +103,20 @@ export class ModsUI {
   // browser storage; only this in-memory copy is modified.
   async prepare(rom) {
     const packs = await this.bootPacks();
+    this.memory = [];
+    this.costumeButton = null;
     if (packs.length)
       try {
         const bytes = await patchCartridge(rom, packs);
+        this.memory = modMemory(rom, packs);
         this.engine.modPacks = packs;
         this.engine.modsTag = await modsSignature(packs);
+        this.costumeButton =
+          packs.flatMap((p) => p.mods).find((m) => m.costumeButton)
+            ?.costumeButton || null;
         return bytes;
       } catch (error) {
+        this.memory = [];
         this.toast(`Mods are off for this game: ${error.message}`);
       }
     this.engine.modPacks = [];
