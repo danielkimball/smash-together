@@ -16,6 +16,8 @@ import { LocalPlayers, localPlayersPanel } from "./local-players.js";
 import { menuRows, isGameplay, characterScenes } from "./native-menus.js";
 import * as storage from "./storage.js";
 import { serviceFetch, appBase } from "./service.js";
+import { ModsUI } from "./mods-ui.js";
+import { parseRefs } from "./mods.js";
 
 const $ = (id) => document.getElementById(id);
 const neutral = { buttons: 0, x: 0, y: 0 };
@@ -117,6 +119,17 @@ window.smash = {
     logs: engine.logs.slice(-15),
   }),
 };
+const mods = new ModsUI({
+  engine,
+  romSha1: ROM_SHA1,
+  toast,
+  busy,
+  open: (id) => dialog(id, { pauseGame: false }),
+  $,
+});
+mods.inRoom = () => !!net.room;
+window.smash.mods = mods;
+let lastJoin = null;
 function toast(message) {
   clearTimeout(toastTimer);
   $("toast").textContent = message;
@@ -433,7 +446,8 @@ async function powerOn() {
   engineBootPromise = (async () => {
     busy("Loading your cartridge…", "Getting ready for the opening.");
     try {
-      await engine.load(rom);
+      // Mod packs patch only this in-memory copy; storage keeps the original.
+      await engine.load(await mods.prepare(rom));
       engine.romHash = ROM_SHA1;
       engine.frame([neutral]);
       bootState = engine.snapshot();
@@ -863,6 +877,14 @@ function inviteToken(value = location.hash) {
   return String(value).match(/(?:room=)?([a-f0-9]{36})/)?.[1] || "";
 }
 async function joinRoom(options) {
+  const { mods: roomMods = null, refs = null, ...join } = options;
+  if (join.token || join.roomId) {
+    lastJoin = join;
+    // Everyone in a room runs the same cartridge; switching reloads the tab.
+    const intent = join.token ? `room=${join.token}` : `join=${join.roomId}`;
+    if (!(await mods.ensureRoom({ mods: roomMods, refs, intent }))) return;
+  }
+  options = join;
   if (!engine.loaded || nativeOpening) {
     pendingJoin = options;
     closeDialogs();
@@ -886,7 +908,7 @@ function openCreate() {
 }
 $("create-open").onclick = openCreate;
 $("create-empty").onclick = openCreate;
-$("create-form").onsubmit = attempt((e) => {
+$("create-form").onsubmit = attempt(async (e) => {
   e.preventDefault();
   const options = {
     roomName: $("room-name").value,
@@ -895,6 +917,8 @@ $("create-form").onsubmit = attempt((e) => {
     delay: Number($("delay").value),
   };
   $("create-dialog").close();
+  // Your room always runs your own enabled mods (or the original game).
+  if (!(await mods.ensureHosting())) return;
   return withCartridge(() => setupRoom(options));
 });
 function openJoin() {
@@ -906,10 +930,17 @@ $("join-form").onsubmit = attempt((e) => {
   e.preventDefault();
   $("player-name").value = $("join-name").value.trim() || playerName();
   localStorage.setItem("smash.name", playerName());
-  const token = inviteToken($("invite-input").value);
+  const link = $("invite-input").value;
+  const token = inviteToken(link);
   if (!token) throw Error("Paste the invitation link your friend sent you.");
+  const params = new URLSearchParams(link.split("#")[1] || "");
+  const refs = params.has("mods")
+    ? params.get("mods") === "none"
+      ? []
+      : parseRefs(params.get("mods"))
+    : null;
   $("join-dialog").close();
-  return withCartridge(() => joinRoom({ token }));
+  return withCartridge(() => joinRoom({ token, refs }));
 });
 $("player-name").value = localStorage.getItem("smash.name") || funnyName();
 savePlayerName();
@@ -935,7 +966,7 @@ async function refreshRooms() {
             name = document.createElement("strong"),
             host = document.createElement("small");
           name.textContent = r.name;
-          host.textContent = `Hosted by ${r.host}`;
+          host.textContent = `Hosted by ${r.host}${r.mods?.length ? ` · ${r.mods.map((m) => m.name).join(", ")} mods` : ""}`;
           desc.append(name, host);
           const count = document.createElement("span");
           count.className = "room-count";
@@ -950,7 +981,9 @@ async function refreshRooms() {
               : "Choose a fighter  →";
           row.append(desc, count, state);
           row.onclick = attempt(() =>
-            withCartridge(() => joinRoom({ roomId: r.id })),
+            withCartridge(() =>
+              joinRoom({ roomId: r.id, mods: r.mods || null }),
+            ),
           );
           return row;
         }),
@@ -983,7 +1016,8 @@ async function copyInvite() {
     } catch {}
     if (shareUrl) base = shareUrl;
   }
-  const link = `${(publicUrl || base).replace(/\/$/, "")}/#room=${net.token}`;
+  // The room's mod keys ride in the fragment, which never reaches a server.
+  const link = `${(publicUrl || base).replace(/\/$/, "")}/#room=${net.token}${mods.inviteSuffix()}`;
   $("invite-link").value = link;
   $("invite-copy-status").textContent =
     "Anyone with this link can join your room.";
@@ -1113,7 +1147,9 @@ function renderCharacterRoom() {
     r && r.selecting && engine.info?.scene === 16 && view === "game";
   $("character-room").hidden = !showing;
   if (!showing) return;
-  $("room-title").textContent = r.name;
+  $("room-title").textContent =
+    r.name +
+    (r.mods?.length ? ` · ${r.mods.map((m) => m.name).join(", ")} mods` : "");
   $("rename-open").hidden = !net.isHost;
   const info = engine.info || { players: [] };
   $("room-waiting").textContent = !net.localFighters.length
@@ -1262,6 +1298,17 @@ net.addEventListener("change", () => {
   }
 });
 net.addEventListener("notice", (e) => toast(e.detail));
+// The server names a room's mods when this tab's cartridge does not match.
+net.addEventListener(
+  "cartridge",
+  attempt(async ({ detail }) => {
+    if (!lastJoin || net.room) return;
+    const intent = lastJoin.token
+      ? `room=${lastJoin.token}`
+      : `join=${lastJoin.roomId}`;
+    await mods.ensureRoom({ mods: detail.mods, intent });
+  }),
+);
 function pause() {
   if (net.state !== "offline") net.pause();
   else {
@@ -1800,11 +1847,11 @@ $("reset").onclick = () => {
 function diagnostics() {
   const sample = net.performanceSamples.at(-1);
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.8.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.9.0`;
 }
 $("performance-export").onclick = () => {
   const report = {
-    version: "3.8.0",
+    version: "3.9.0",
     exported: new Date().toISOString(),
     samples: net.performanceSamples,
     events: net.performanceEvents,
@@ -2253,6 +2300,24 @@ const hostStatus = serviceFetch("/api/status")
   })
   .catch(() => {});
 function followInvitation() {
+  // #join=<room id> resumes a room-browser join after a cartridge switch.
+  const params = new URLSearchParams(location.hash.slice(1));
+  const roomId = params.get("join");
+  if (/^[a-f0-9]{10}$/.test(roomId || "") && !net.room) {
+    const refs = params.get("mods");
+    setView("browse");
+    savedCartridge.then(
+      attempt(() =>
+        withCartridge(() =>
+          joinRoom({
+            roomId,
+            refs: !refs ? null : refs === "none" ? [] : parseRefs(refs),
+          }),
+        ),
+      ),
+    );
+    return;
+  }
   const token = inviteToken();
   if (!token || token === net.token) return;
   if (net.room)

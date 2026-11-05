@@ -85,6 +85,7 @@
         </nav>
         <div class="native-tools">
           <button data-controls>Controllers</button
+          ><button data-mods>Mods</button
           ><button data-fullscreen>Fullscreen</button>
         </div>
         <p class="native-legend">
@@ -269,6 +270,7 @@
         <span id="cartridge-badge" class="status-badge">Insert cartridge</span>
         <div class="header-actions">
           <button class="quiet" data-controls>Controller</button>
+          <button class="quiet" data-mods>Mods</button>
           <button class="quiet" data-fullscreen>Fullscreen</button>
         </div>
       </header>
@@ -670,6 +672,7 @@
         ><button data-fullscreen>Toggle fullscreen</button
         ><button data-voice>Audio &amp; Voice</button>
         <button data-local-players>Players on this device</button>
+        <button data-mods>Mods</button>
         <div id="local-save-actions" class="form-grid">
           <button id="save">Save progress</button
           ><button id="load-save">Load progress</button
@@ -857,6 +860,43 @@
         This device shares one microphone and voice connection.
       </p>
       <button data-close="local-players-dialog">Done</button>
+    </dialog>
+    <dialog id="mods-dialog" aria-labelledby="mods-title">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">YOUR CREW’S CUSTOM LOOKS</p>
+          <h2 id="mods-title">Mods</h2>
+        </div>
+        <button class="close" data-close="mods-dialog" aria-label="Close mods">
+          ×
+        </button>
+      </div>
+      <p id="mods-running" class="mods-running"></p>
+      <ul id="mods-list" class="mods-list"></ul>
+      <p id="mods-empty" class="subtext">
+        No mod packs yet. Open an install link from your crew to add one.
+      </p>
+      <button id="mods-restart" class="primary" hidden>
+        Restart the game to apply
+      </button>
+      <p id="mods-room-note" class="subtext" hidden>
+        Leave this room to switch mods.
+      </p>
+      <form id="mods-install-form" class="mods-install">
+        <input
+          id="mods-link"
+          placeholder="Paste a mod install link"
+          aria-label="Mod install link"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button>Install</button>
+      </form>
+      <p class="subtext">
+        Rooms play with the host’s mods. Your invitation link brings them along
+        for that room only. Mods stay in this browser and only change the game
+        for people you invite.
+      </p>
     </dialog>
     <dialog id="help-dialog">
       <div class="dialog-heading">

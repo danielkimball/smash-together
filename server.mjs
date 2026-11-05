@@ -47,6 +47,25 @@ const MIME = {
   ".gz": "application/gzip",
 };
 const TOKEN = /^[a-f0-9]{36}$/;
+// Display-only names of a room's mod packs. Keys never reach the server; the
+// room build string carries the pack signature that keeps simulations apart.
+export function cleanMods(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, 4)
+    .filter(
+      (m) =>
+        m &&
+        /^[a-z0-9][a-z0-9-]{0,39}$/.test(m.id) &&
+        /^[a-f0-9]{16}$/.test(m.hash) &&
+        typeof m.name === "string",
+    )
+    .map((m) => ({
+      id: m.id,
+      name: m.name.replace(/\s+/g, " ").trim().slice(0, 60) || m.id,
+      hash: m.hash,
+    }));
+}
 const send = (s, m) => {
   if (s?.readyState === 1) s.send(JSON.stringify(m));
 };
@@ -271,6 +290,7 @@ export function createApp({
                 phase: r.phase,
                 selecting: r.selecting,
                 host: r.members.get(r.hostId)?.name || "Host",
+                mods: r.mods || [],
               })),
           }),
         );
@@ -378,6 +398,7 @@ export function createApp({
     teams: !!r.teams,
     teamsConfigured: !!r.teamsConfigured,
     muteSpectators: !!r.muteSpectators,
+    mods: r.mods || [],
     members: [...r.members.values()].map((p) => ({
       id: p.id,
       ownerId: ownerOf(p),
@@ -630,6 +651,7 @@ export function createApp({
             ),
             rom: m.rom,
             build: m.build,
+            mods: cleanMods(m.mods),
             phase: "starting",
             selecting: true,
             match: 1,
@@ -644,9 +666,13 @@ export function createApp({
           if (!r)
             return fail("This room has closed or the invitation is invalid.");
           if (r.rom !== m.rom || r.build !== m.build)
-            return fail(
-              "Everyone needs the same ROM and game build. Reload the pages and try again.",
-            );
+            return send(socket, {
+              type: "error",
+              message: r.mods?.length
+                ? `This room plays with ${r.mods.map((x) => x.name).join(", ")} mods. Open the host's invitation link to join.`
+                : "Everyone needs the same ROM and game build. Reload the pages and try again.",
+              mods: r.mods || [],
+            });
           p = [...r.members.values()].find(
             (p) => !p.ownerId && m.ticket && p.ticket === m.ticket,
           );

@@ -479,3 +479,65 @@ body[data-view="home"] .home-screen {
 .native-port .player-actions {
   pointer-events: auto;
 }
+
+/* Mod packs */
+#mods-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+.mods-running {
+  margin: 0 0 12px;
+  color: #fafafa;
+}
+.mods-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+.mod-pack {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid #8282aa50;
+  border-radius: 10px;
+}
+.mod-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 16px;
+  color: #fafafa;
+  cursor: pointer;
+}
+.mod-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #ff0028;
+}
+.mod-pack small {
+  color: #8282aa;
+}
+.mod-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mod-actions button {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.mods-install {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+.mods-install input {
+  flex: 1;
+  min-width: 0;
+}
+#mods-restart {
+  width: 100%;
+}

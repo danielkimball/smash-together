@@ -290,7 +290,17 @@ export class Netplay extends EventTarget {
             ? sessionStorage.getItem("smash.room-ticket." + options.roomId)
             : undefined,
         rom: this.engine.romHash,
-        build: this.engine.build + ROOM_BUILD,
+        // Mod packs change cartridge data, so they are part of the build.
+        build: this.engine.build + ROOM_BUILD + (this.engine.modsTag || ""),
+        ...(options.token || options.roomId
+          ? {}
+          : {
+              mods: (this.engine.modPacks || []).map(({ id, name, hash }) => ({
+                id,
+                name,
+                hash,
+              })),
+            }),
       });
     ws.onmessage = (e) => {
       if (ws !== this.socket) return;
@@ -367,6 +377,10 @@ export class Netplay extends EventTarget {
         if (!this.room) this.status("error");
         else
           this.dispatchEvent(new CustomEvent("notice", { detail: m.message }));
+        if (!this.room && Array.isArray(m.mods))
+          this.dispatchEvent(
+            new CustomEvent("cartridge", { detail: { mods: m.mods } }),
+          );
       }
     };
     ws.onclose = () => {
