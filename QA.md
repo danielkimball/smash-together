@@ -1,3 +1,12 @@
+# Uniform costume for all fighters — v3.10.0 — 2026-11-05
+
+- **103 Node tests pass** (two new: format-2 code-table edits with boot-checksum repair, RAM-data copies/overrides/bounds/conflicts and costume-button validation; double-tap timing, selection, scene and no-pack behavior). `npm run check` passes.
+- **Real emulator, all 12 fighters** (isolated Chrome, session-owned server 8791): A gives the regular costume unchanged; C-right alternates show no helmet; the uniform (C-left or double-tap) shows field-gray colors and a helmet for every fighter. Pikachu/Jigglypuff keep their alternate hats and swap them for the helmet only in the uniform. Screenshots `artifacts/mods-v310/`.
+- **Double tap:** Up-Up on the stick after choosing Fox switched to the uniform; the same input with no pack left Fox regular.
+- **Two real emulators in a modded room**, both players in uniform via double tap, through character select and a battle: **23/22 matching state checks, 0 repairs**; helmets and the uniform stock-icon palette render in combat.
+- Found and fixed during testing: an edit in the first megabyte stopped the console boot until the header checksum was recomputed; `royal[0]` is the default costume (moved to `royal[3]`); opaque fighter render mode ignores alpha (cut-out mode); hat material calls reset render state.
+- The emulator's WebGL `uniform4f` console warnings occur identically with and without mods. Not verified: physical controllers, separate households, Ryker's Windows host before rollout.
+
 # Crew mod packs — v3.9.0 — 2026-11-05
 
 Validated locally on Dan's Intel Mac against a session-owned testing-autoload server (port 8791). Production (Ryker's host, v3.8.0) was not touched; the release deploys through the normal idle updater.

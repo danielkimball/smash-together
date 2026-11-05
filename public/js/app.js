@@ -18,6 +18,7 @@ import * as storage from "./storage.js";
 import { serviceFetch, appBase } from "./service.js";
 import { ModsUI } from "./mods-ui.js";
 import { parseRefs } from "./mods.js";
+import { CostumeGesture } from "./costume-gesture.js";
 
 const $ = (id) => document.getElementById(id);
 const neutral = { buttons: 0, x: 0, y: 0 };
@@ -129,6 +130,8 @@ const mods = new ModsUI({
 });
 mods.inRoom = () => !!net.room;
 window.smash.mods = mods;
+const gesture = new CostumeGesture();
+window.smash.gesture = gesture;
 let lastJoin = null;
 function toast(message) {
   clearTimeout(toastTimer);
@@ -448,8 +451,11 @@ async function powerOn() {
     try {
       // Mod packs patch only this in-memory copy; storage keeps the original.
       await engine.load(await mods.prepare(rom));
+      gesture.use(mods.costumeButton);
       engine.romHash = ROM_SHA1;
       engine.frame([neutral]);
+      // Pack data in upper RDRAM must precede every snapshot the app keeps.
+      engine.writeMemory(mods.memory);
       bootState = engine.snapshot();
       engine.audioStart().catch(() => {});
     } finally {
@@ -771,6 +777,11 @@ function requestMatch() {
 net.filterInput = (input, player = net.me) => {
   const r = net.room;
   if (!player || player.slot < 0) return neutral;
+  // Mod packs: Up/Down twice on the character screen picks their costume.
+  input = gesture.filter(input, player.id, {
+    scene: engine.info?.scene,
+    selected: !!engine.info?.players?.[player.slot]?.selected,
+  });
   const primary = player.id === net.id;
   if (primary && pointerQueue.length && engine.info?.scene !== 22)
     input = nextPointerInput();
@@ -1764,7 +1775,7 @@ function liveControls() {
 async function saveProgress() {
   await storage.put("save", {
     state: engine.snapshot(),
-    build: engine.build,
+    build: engine.build + engine.modsTag,
     rom: ROM_SHA1,
   });
   toast("Progress saved in this browser.");
@@ -1772,7 +1783,7 @@ async function saveProgress() {
 async function loadProgress() {
   const s = await storage.get("save");
   if (!s) throw Error("No saved progress yet.");
-  if (s.rom !== ROM_SHA1 || s.build !== engine.build)
+  if (s.rom !== ROM_SHA1 || s.build !== engine.build + engine.modsTag)
     throw Error("That save belongs to a different game build.");
   engine.restore(s.state);
   paused = false;
@@ -1793,7 +1804,7 @@ async function exportSave() {
     JSON.stringify({
       format: "smash64-v1",
       rom: ROM_SHA1,
-      build: engine.build,
+      build: engine.build + engine.modsTag,
     }),
   );
   const data = await compress(engine.snapshot());
@@ -1814,7 +1825,7 @@ async function importSave(file) {
   if (
     meta.format !== "smash64-v1" ||
     meta.rom !== ROM_SHA1 ||
-    meta.build !== engine.build
+    meta.build !== engine.build + engine.modsTag
   )
     throw Error("This save is for a different game or build.");
   engine.restore(await decompress(new Uint8Array(buf, 4 + size)));
@@ -1847,11 +1858,11 @@ $("reset").onclick = () => {
 function diagnostics() {
   const sample = net.performanceSamples.at(-1);
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.9.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.10.0`;
 }
 $("performance-export").onclick = () => {
   const report = {
-    version: "3.9.0",
+    version: "3.10.0",
     exported: new Date().toISOString(),
     samples: net.performanceSamples,
     events: net.performanceEvents,
@@ -2103,7 +2114,10 @@ function tick(time) {
             ? nextMenuInput()
             : pointerQueue.length
               ? nextPointerInput()
-              : controls.sample(),
+              : gesture.filter(controls.sample(), "primary", {
+                  scene: engine.info?.scene,
+                  selected: !!engine.info?.players?.[0]?.selected,
+                }),
         ];
         if (waitForMenuRelease) {
           waitForMenuRelease = !!controls

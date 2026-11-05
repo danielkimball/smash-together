@@ -20,6 +20,7 @@ import {
   sealPack,
   openPack,
   patchCartridge,
+  modMemory,
   parseRefs,
   toBase64Url,
   toHex,
@@ -78,6 +79,9 @@ function normalizeEdit(edit) {
 async function readPlain(file) {
   const plain = JSON.parse(await readFile(file, "utf8"));
   const rom = await cartridge();
+  // Format 2 packs come from generators already normalized (sha1s, hex
+  // edits, cartridge edits and memory regions).
+  if (plain.format === 2) return { pack: validatePack(plain, ROM_SHA1), rom };
   const pack = {
     format: plain.format,
     id: plain.id,
@@ -118,6 +122,7 @@ if (command === "build") {
   // Prove it fits and round-trips on the real cartridge before publishing.
   const patched = await patchCartridge(rom, [pack], ROM_SHA1);
   const changed = patched.reduce((n, b, i) => n + (b !== rom[i]), 0);
+  const memory = modMemory(rom, [pack]).reduce((n, r) => n + r.bytes.length, 0);
   const key = await keyFor(pack.id, true);
   const sealed = await sealPack(pack, key);
   const opened = await openPack(sealed, key, ROM_SHA1);
@@ -133,6 +138,7 @@ if (command === "build") {
         hash: opened.hash,
         mods: pack.mods.map((m) => m.name),
         romBytesChanged: changed,
+        memoryBytes: memory,
       },
       null,
       2,

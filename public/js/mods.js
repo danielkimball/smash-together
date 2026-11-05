@@ -5,7 +5,14 @@
 // server never mixes modded and original simulations.
 import { decodeVpk0, encodeVpk0 } from "./vpk0.js";
 
-export const MOD_FORMAT = 1;
+export const MOD_FORMAT = 1; // encrypted envelope version
+// Pack format 2 adds absolute cartridge edits (code tables) and data written
+// to the upper 4 MB of RDRAM, which the game never uses (its framebuffers and
+// heaps end at 0x80400000; the emulator provides 8 MB).
+export const PACK_FORMATS = [1, 2];
+export const MOD_MEMORY_START = 0x80400000;
+export const MOD_MEMORY_END = 0x80800000;
+const ROM_SIZE = 16777216;
 // US v1.0 relocatable file table (VetriTheRetri/ssb-decomp-re lbreloc.c).
 export const FILE_TABLE = 0x1ac870;
 export const FILE_COUNT = 2132;
@@ -60,7 +67,7 @@ const plain = (value, max) =>
   typeof value === "string" && value.trim() && value.length <= max;
 
 export function validatePack(pack, romSha1) {
-  if (!pack || pack.format !== MOD_FORMAT || !ID.test(pack.id || ""))
+  if (!pack || !PACK_FORMATS.includes(pack.format) || !ID.test(pack.id || ""))
     throw Error("This mod pack needs a newer version of Smash Portal.");
   if (!plain(pack.name, 60) || !Number.isInteger(pack.version))
     throw Error("This mod pack is incomplete.");
@@ -68,15 +75,78 @@ export function validatePack(pack, romSha1) {
     throw Error("This mod pack is for a different game.");
   if (!Array.isArray(pack.mods) || !pack.mods.length || pack.mods.length > 32)
     throw Error("This mod pack is incomplete.");
-  let bytes = 0;
+  let bytes = 0,
+    memoryBytes = 0;
   for (const mod of pack.mods) {
     if (!ID.test(mod?.id || "") || !plain(mod.name, 80))
       throw Error("A mod in this pack is incomplete.");
     if (mod.summary !== undefined && !plain(mod.summary, 300))
       throw Error("A mod description is too long.");
-    if (!Array.isArray(mod.patches) || !mod.patches.length)
+    if (
+      mod.costumeButton !== undefined &&
+      !["cu", "cr", "cd", "cl"].includes(mod.costumeButton)
+    )
+      throw Error("A mod in this pack has invalid controls.");
+    const patches = mod.patches || [],
+      rom = mod.rom || [],
+      memory = mod.memory || [];
+    if (
+      !Array.isArray(patches) ||
+      !Array.isArray(rom) ||
+      !Array.isArray(memory) ||
+      (pack.format === 1 && (rom.length || memory.length)) ||
+      !(patches.length + rom.length + memory.length)
+    )
       throw Error("A mod in this pack has no changes.");
-    for (const patch of mod.patches) {
+    for (const edit of rom) {
+      const want = fromHex(edit?.expect),
+        next = fromHex(edit?.hex);
+      if (
+        !Number.isInteger(edit.offset) ||
+        edit.offset < 0 ||
+        want.length !== next.length ||
+        next.length > 64 ||
+        edit.offset + next.length > ROM_SIZE
+      )
+        throw Error("A mod in this pack has invalid changes.");
+    }
+    for (const region of memory) {
+      const size = region?.size;
+      if (
+        !Number.isInteger(region.address) ||
+        !Number.isInteger(size) ||
+        size <= 0 ||
+        region.address < MOD_MEMORY_START ||
+        region.address + size > MOD_MEMORY_END ||
+        region.address % 8 ||
+        !Array.isArray(region.chunks) ||
+        !Array.isArray(region.copies)
+      )
+        throw Error("A mod in this pack uses memory it may not.");
+      memoryBytes += size;
+      for (const chunk of region.chunks) {
+        const length = fromHex(chunk?.hex).length;
+        if (
+          !Number.isInteger(chunk.at) ||
+          chunk.at < 0 ||
+          chunk.at + length > size
+        )
+          throw Error("A mod in this pack uses memory it may not.");
+        bytes += length;
+      }
+      for (const copy of region.copies)
+        if (
+          !Number.isInteger(copy?.file) ||
+          copy.file < 0 ||
+          copy.file >= FILE_COUNT ||
+          ![copy.at, copy.offset, copy.length].every(
+            (n) => Number.isInteger(n) && n >= 0,
+          ) ||
+          copy.at + copy.length > size
+        )
+          throw Error("A mod in this pack uses memory it may not.");
+    }
+    for (const patch of patches) {
       if (
         !Number.isInteger(patch?.file) ||
         patch.file < 0 ||
@@ -94,7 +164,8 @@ export function validatePack(pack, romSha1) {
       }
     }
   }
-  if (bytes > 262144) throw Error("This mod pack is too large.");
+  if (bytes > 2097152 || memoryBytes > 4194304)
+    throw Error("This mod pack is too large.");
   return pack;
 }
 
@@ -171,7 +242,7 @@ export async function patchCartridge(base, packs, romSha1) {
   const files = new Map();
   for (const pack of [...packs].sort((a, b) => a.id.localeCompare(b.id)))
     for (const mod of pack.mods)
-      for (const patch of mod.patches) {
+      for (const patch of mod.patches || []) {
         const file = files.get(patch.file) || {
           sha1: patch.sha1,
           edits: [],
@@ -215,7 +286,100 @@ export async function patchCartridge(base, packs, romSha1) {
     if (check.length !== edited.length || check.some((b, i) => b !== edited[i]))
       throw Error(`${file.names[0]} could not be prepared.`);
   }
+  // Absolute edits (code tables, file-table pointer heads), each verified
+  // against the original cartridge bytes.
+  const written = new Map();
+  for (const pack of packs)
+    for (const mod of pack.mods)
+      for (const edit of mod.rom || []) {
+        const want = fromHex(edit.expect),
+          next = fromHex(edit.hex);
+        if (want.some((b, i) => base[edit.offset + i] !== b))
+          throw Error(`${mod.name} does not match this cartridge.`);
+        next.forEach((b, i) => {
+          const at = edit.offset + i;
+          if (written.has(at) && written.get(at) !== b)
+            throw Error(`${mod.name} conflicts with another mod.`);
+          written.set(at, b);
+          rom[at] = b;
+        });
+      }
+  // The boot chip refuses a cartridge whose first megabyte (after 0x1000)
+  // no longer matches the header checksum, so recompute it when needed.
+  if ([...written.keys()].some((at) => at >= 0x1000 && at < 0x101000)) {
+    const view = new DataView(rom.buffer, rom.byteOffset, rom.byteLength);
+    const [crc1, crc2] = bootChecksum(rom);
+    view.setUint32(0x10, crc1);
+    view.setUint32(0x14, crc2);
+  }
   return rom;
+}
+
+// CIC-NUS-6103 checksum (Smash 64 US) over 0x1000-0x101000.
+export function bootChecksum(rom) {
+  const view = new DataView(rom.buffer, rom.byteOffset, rom.byteLength);
+  const seed = 0xa3886759;
+  let t1 = seed,
+    t2 = seed,
+    t3 = seed,
+    t4 = seed,
+    t5 = seed,
+    t6 = seed;
+  for (let i = 0x1000; i < 0x101000; i += 4) {
+    const d = view.getUint32(i);
+    if ((t6 + d) >>> 0 < t6) t4 = (t4 + 1) >>> 0;
+    t6 = (t6 + d) >>> 0;
+    t3 = (t3 ^ d) >>> 0;
+    const s = d & 0x1f;
+    const r = s ? ((d << s) | (d >>> (32 - s))) >>> 0 : d;
+    t5 = (t5 + r) >>> 0;
+    t2 = (t2 > d ? t2 ^ r : t2 ^ t6 ^ d) >>> 0;
+    t1 = (t1 + ((t5 ^ d) >>> 0)) >>> 0;
+  }
+  return [((t6 ^ t4) + t3) >>> 0, ((t5 ^ t2) + t1) >>> 0];
+}
+
+// Data a pack places in upper RDRAM once the emulator starts. Copies come
+// from the player's own original cartridge; packs carry only new bytes.
+export function modMemory(base, packs) {
+  const files = new Map();
+  const original = (id) => {
+    if (!files.has(id)) {
+      const entry = fileEntry(base, id);
+      const slot = base.subarray(
+        entry.start,
+        entry.start + (entry.compressed ? entry.slot : entry.size),
+      );
+      files.set(id, entry.compressed ? decodeVpk0(slot).data : slot);
+    }
+    return files.get(id);
+  };
+  const regions = [];
+  for (const pack of packs)
+    for (const mod of pack.mods)
+      for (const region of mod.memory || []) {
+        const bytes = new Uint8Array(region.size);
+        for (const copy of region.copies) {
+          const data = original(copy.file);
+          if (copy.offset + copy.length > data.length)
+            throw Error(`${mod.name} copies data outside its game file.`);
+          bytes.set(
+            data.subarray(copy.offset, copy.offset + copy.length),
+            copy.at,
+          );
+        }
+        // New bytes go on top of copies (e.g. one entry of a copied palette).
+        for (const chunk of region.chunks)
+          bytes.set(fromHex(chunk.hex), chunk.at);
+        for (const other of regions)
+          if (
+            region.address < other.address + other.bytes.length &&
+            other.address < region.address + bytes.length
+          )
+            throw Error(`${mod.name} conflicts with another mod.`);
+        regions.push({ address: region.address, bytes });
+      }
+  return regions;
 }
 
 // "id.key,id.key" from install links and invitations.

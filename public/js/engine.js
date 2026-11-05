@@ -32,6 +32,8 @@ export class Engine {
     this.logs = [];
     this.volume = 0.55;
     this.voiceGain = 1;
+    this.modsTag = "";
+    this.modPacks = [];
   }
   async load(bytes) {
     if (this.loaded) return;
@@ -149,6 +151,20 @@ export class Engine {
       throw Error("Could not restore the game state.");
     this.info = null;
     if (!preserveAudio) this.flushAudio();
+  }
+  writeMemory(regions = []) {
+    // Mod pack data lives only in RDRAM above 4 MB, which Smash 64 never
+    // uses. Written once at boot through the official serializer.
+    if (!regions.length) return;
+    const state = this.snapshot();
+    for (const { address, bytes } of regions) {
+      const at = address & 0x7fffff;
+      if (address < 0x80400000 || at + bytes.length > 0x800000)
+        throw Error("Mod data must stay in the upper 4 MB of memory.");
+      for (let i = 0; i < bytes.length; i++)
+        state[448 + ((at + i) ^ 3)] = bytes[i];
+    }
+    this.restore(state, { preserveAudio: true });
   }
   unlockAll() {
     // Native LBBackupData: all twelve playable fighters (FTKind 0..11),

@@ -84,6 +84,9 @@ try {
     [id],
   );
   await host.locator("[data-invite]").first().click();
+  await host.waitForFunction(() =>
+    document.getElementById("invite-link").value.includes("#room="),
+  );
   const invite = await host.locator("#invite-link").inputValue();
   await host.keyboard.press("Escape");
   assert.match(invite, new RegExp(`&mods=${id}\\.`));

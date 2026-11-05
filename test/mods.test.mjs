@@ -244,3 +244,151 @@ test("rooms list display-only mods and refuse a different cartridge", async (t) 
   assert.equal((await crew.next("joined")).token, token);
   for (const c of [host, guest, crew]) c.s.close();
 });
+
+test("format 2 packs edit code tables, repair the boot checksum and place RAM data", async () => {
+  const { rom, model } = cartridge();
+  const { bootChecksum, modMemory } = await import("../public/js/mods.js");
+  const code = 0x6d8d8;
+  rom.set([0x24, 0x01, 0x00, 0x09], code);
+  new DataView(rom.buffer).setUint32(0x10, bootChecksum(rom)[0]);
+  new DataView(rom.buffer).setUint32(0x14, bootChecksum(rom)[1]);
+  const pack = {
+    format: 2,
+    id: "test-crew",
+    name: "Test crew",
+    version: 2,
+    rom: ROM,
+    mods: [
+      {
+        id: "uniform",
+        name: "Uniform",
+        costumeButton: "cl",
+        rom: [{ offset: code, expect: "24010009", hex: "2401000a" }],
+        memory: [
+          {
+            address: 0x80600000,
+            size: 16,
+            chunks: [{ at: 2, hex: "abcd" }],
+            copies: [{ at: 0, file: 5, offset: 0, length: 8 }],
+          },
+        ],
+      },
+    ],
+  };
+  validatePack(pack, ROM);
+  const patched = await patchCartridge(rom, [pack]);
+  assert.deepEqual(
+    [...patched.subarray(code, code + 4)],
+    [0x24, 0x01, 0x00, 0x0a],
+  );
+  const [crc1, crc2] = bootChecksum(patched);
+  const view = new DataView(patched.buffer);
+  assert.equal(
+    view.getUint32(0x10),
+    crc1,
+    "header checksum follows the code edit",
+  );
+  assert.equal(view.getUint32(0x14), crc2);
+  assert.notEqual(crc1, new DataView(rom.buffer).getUint32(0x10));
+  const [region] = modMemory(rom, [pack]);
+  assert.equal(region.address, 0x80600000);
+  // Copy first, then new bytes on top of it.
+  assert.deepEqual(
+    [...region.bytes.subarray(0, 8)],
+    [model[0], model[1], 0xab, 0xcd, ...model.subarray(4, 8)],
+  );
+  const wrong = structuredClone(pack);
+  wrong.mods[0].rom[0].expect = "00000000";
+  await assert.rejects(patchCartridge(rom, [wrong]), /does not match/);
+  for (const bad of [
+    { address: 0x80300000, size: 8, chunks: [], copies: [] },
+    { address: 0x807ffff8, size: 16, chunks: [], copies: [] },
+  ]) {
+    const p = structuredClone(pack);
+    p.mods[0].memory = [bad];
+    assert.throws(() => validatePack(p, ROM), /memory/);
+  }
+  const twice = structuredClone(pack);
+  twice.id = "other";
+  twice.mods[0].rom = [];
+  assert.throws(() => modMemory(rom, [pack, twice]), /conflicts/);
+  const v1 = structuredClone(pack);
+  v1.format = 1;
+  assert.throws(() => validatePack(v1, ROM), /no changes/);
+  const button = structuredClone(pack);
+  button.mods[0].costumeButton = "a";
+  assert.throws(() => validatePack(button, ROM), /controls/);
+});
+
+test("double tap Up or Down picks the pack's costume once a fighter is chosen", async () => {
+  const { CostumeGesture } = await import("../public/js/costume-gesture.js");
+  const g = new CostumeGesture();
+  const up = { buttons: 0, x: 0, y: 80 },
+    rest = { buttons: 0, x: 0, y: 0 },
+    css = { scene: 16, selected: true };
+  const run = (steps) =>
+    steps.map(
+      ([input, now, ctx = css]) =>
+        g.filter(input, "p", { ...ctx, now }).buttons,
+    );
+  assert.deepEqual(
+    run([
+      [up, 0],
+      [rest, 50],
+      [up, 120],
+    ]),
+    [0, 0, 0],
+    "no pack, no change",
+  );
+  g.use("cl");
+  const out = run([
+    [up, 0],
+    [rest, 50],
+    [up, 120],
+    [up, 200],
+    [rest, 300],
+  ]);
+  assert.equal(out[2] & 512, 512, "second Up presses C-left");
+  assert.equal(out[3] & 512, 512, "held briefly so the game sees it");
+  assert.equal(out[4] & 512, 0);
+  g.use("cl");
+  assert.equal(
+    run([
+      [up, 0],
+      [rest, 50],
+      [up, 900],
+    ])[2] & 512,
+    0,
+    "too slow is two separate presses",
+  );
+  g.use("cl");
+  assert.equal(
+    run([
+      [up, 0, { scene: 16, selected: false }],
+      [rest, 50, { scene: 16, selected: false }],
+      [up, 120, { scene: 16, selected: false }],
+    ])[2] & 512,
+    0,
+    "moving the hand while choosing never picks a costume",
+  );
+  g.use("cl");
+  const down = { buttons: 4, x: 0, y: 0 }; // D-pad down
+  assert.equal(
+    run([
+      [down, 0],
+      [rest, 40],
+      [down, 100],
+    ])[2] & 512,
+    512,
+  );
+  g.use("cl");
+  assert.equal(
+    run([
+      [up, 0, { scene: 22, selected: true }],
+      [rest, 40, { scene: 22, selected: true }],
+      [up, 90, { scene: 22, selected: true }],
+    ])[2] & 512,
+    0,
+    "only on the character screen",
+  );
+});
