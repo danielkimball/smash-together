@@ -104,6 +104,7 @@ export class ModsUI {
   async prepare(rom) {
     const packs = await this.bootPacks();
     this.memory = [];
+    this.controls = [];
     this.costumeButton = null;
     if (packs.length)
       try {
@@ -111,9 +112,17 @@ export class ModsUI {
         this.memory = modMemory(rom, packs);
         this.engine.modPacks = packs;
         this.engine.modsTag = await modsSignature(packs);
-        this.costumeButton =
-          packs.flatMap((p) => p.mods).find((m) => m.costumeButton)
-            ?.costumeButton || null;
+        // Newer packs list controls; older ones name one vertical button.
+        this.controls = packs
+          .flatMap((p) => p.mods)
+          .flatMap(
+            (m) =>
+              m.controls ||
+              (m.costumeButton
+                ? [{ gesture: "vertical", button: m.costumeButton }]
+                : []),
+          );
+        this.costumeButton = this.controls[0]?.button || null;
         return bytes;
       } catch (error) {
         this.memory = [];
