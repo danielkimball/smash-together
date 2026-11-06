@@ -750,3 +750,140 @@ export function sampleScript(commands, count) {
   }
   return tracks;
 }
+
+// ---- Draw-order analysis -------------------------------------------------
+
+// Flatten a display list, following calls into other display lists (not the
+// per-material segment 0x0E calls). Commands keep their source location so
+// pointer words can be resolved.
+export function flattenDL(rom, fileId, offset, out = []) {
+  const file = gameFile(rom, fileId);
+  for (let o = offset, n = 0; n < 4096; o += 8, n++) {
+    const w0 = u32(file.data, o),
+      w1 = u32(file.data, o + 4),
+      op = w0 >>> 24;
+    if (op === 0xde && w1 >>> 24 !== 0x0e) {
+      const p = pointer(rom, file, o + 4);
+      if (!p) throw Error(`Unresolved call in ${fileId}+${o.toString(16)}`);
+      flattenDL(rom, p.file, p.offset, out);
+      if ((w0 >>> 16) & 1) return out;
+      continue;
+    }
+    if (op === 0xdf) return out;
+    out.push({ w0, w1, op, file: fileId, offset: o, ptr: pointer(rom, file, o + 4) });
+  }
+  throw Error("Display list too long");
+}
+// Vertex-buffer slots a display list reads before loading them (inherited
+// from the previous joint, as the game's smooth joints do) and slots it loads.
+export function slotUse(cmds) {
+  const reads = new Set(),
+    writes = new Set();
+  const read = (s) => {
+    if (!writes.has(s)) reads.add(s);
+  };
+  for (const c of cmds) {
+    if (c.op === 0x01) {
+      const n = (c.w0 >>> 12) & 0xff,
+        end = (c.w0 >>> 1) & 0x7f;
+      for (let s = end - n; s < end; s++) writes.add(s);
+    } else if (c.op === 0x05 || c.op === 0x06 || c.op === 0x07) {
+      [16, 8, 0].forEach((b) => read(((c.w0 >>> b) & 0xff) / 2));
+      if (c.op !== 0x05) [16, 8, 0].forEach((b) => read(((c.w1 >>> b) & 0xff) / 2));
+    }
+  }
+  return { reads, writes };
+}
+// Model-part alternatives per joint index (FTModelPartContainer): each
+// descriptor holds [id][detail] parts of 20 bytes {dl, mobjsubs, costume
+// script, main script, flags}; ids run until the next known structure.
+export function modelParts(rom, F) {
+  const c = pointer(rom, F.main, F.attr + ATTR.modelparts);
+  if (!c) return new Map();
+  const cf = gameFile(rom, c.file);
+  const joints = F.levels[0].joints.filter((j) => j.id !== 18).length;
+  const descs = [];
+  for (let i = 0; i < joints; i++) {
+    const p = pointer(rom, cf, c.offset + 4 * i);
+    if (p) descs.push({ index: i, ...p });
+  }
+  const bounds = (file) => {
+    const f = gameFile(rom, file);
+    // starts of every pointed-to structure in that file bound a descriptor
+    return [...new Set([...f.internAt.values(), f.data.length, ...(file === c.file ? [c.offset] : [])])].sort((a, b) => a - b);
+  };
+  const out = new Map();
+  for (const d of descs) {
+    const b = bounds(d.file);
+    const next = b.find((x) => x > d.offset);
+    const ids = Math.max(1, Math.floor((next - d.offset) / 40));
+    const df = gameFile(rom, d.file);
+    const parts = [];
+    for (let id = 0; id < ids; id++)
+      for (let level = 0; level < 2; level++) {
+        const at = d.offset + (id * 2 + level) * 20;
+        parts.push({ id, level, at, file: d.file, dl: pointer(rom, df, at), subs: pointer(rom, df, at + 4), costume: pointer(rom, df, at + 8), main: pointer(rom, df, at + 12), flags: df.data[at + 16] });
+      }
+    out.set(d.index, { ...d, ids, parts });
+  }
+  return out;
+}
+// The game draws joints in DObjDesc order; Yoshi-style joints (parts flags 1)
+// point at two lists: one before and one after the joint's own matrix.
+export function drawSteps(rom, F, level) {
+  const c = pointer(rom, F.main, F.attr + ATTR.commonparts);
+  const flags = gameFile(rom, c.file).data[c.offset + level * 16 + 12] & 15;
+  const parts = modelParts(rom, F);
+  const L = F.levels[level];
+  const steps = [];
+  const lists = (p) => {
+    if (!p) return [null, null];
+    if (flags !== 1) return [null, p];
+    const af = gameFile(rom, p.file);
+    return [pointer(rom, af, p.offset), pointer(rom, af, p.offset + 4)];
+  };
+  for (const j of L.joints) {
+    if (j.id === 18) break;
+    const variants = [j.dlPtr];
+    const mp = parts.get(j.index);
+    if (mp)
+      for (const part of mp.parts)
+        if (part.level === level && part.dl) variants.push(part.dl);
+    const pre = [],
+      post = [];
+    for (const v of variants) {
+      const [a, b] = lists(v);
+      if (a) pre.push(flattenDL(rom, a.file, a.offset));
+      if (b) post.push(flattenDL(rom, b.file, b.offset));
+    }
+    steps.push({ joint: j.joint, index: j.index, phase: "pre", variants: pre });
+    steps.push({ joint: j.joint, index: j.index, phase: "post", variants: post });
+  }
+  return { flags, steps };
+}
+// Slots that display lists from step "at" on still expect to find loaded; an
+// accessory drawn just before that step must not overwrite them.
+export function protectedSlots(steps, at) {
+  const out = new Set(),
+    rewritten = new Set();
+  for (let i = at; i < steps.length; i++) {
+    const uses = steps[i].variants.map(slotUse);
+    if (!uses.length) continue;
+    for (const u of uses) for (const r of u.reads) if (!rewritten.has(r)) out.add(r);
+    const always = [...uses[0].writes].filter((w) => uses.every((u) => u.writes.has(w)));
+    for (const w of always) rewritten.add(w);
+  }
+  return out;
+}
+// Largest contiguous run of unprotected slots: [start, end).
+export function freeRun(prot, size = 32) {
+  let best = [0, 0];
+  for (let a = 0; a < size; a++) {
+    if (prot.has(a)) continue;
+    let b = a;
+    while (b < size && !prot.has(b)) b++;
+    if (b - a > best[1] - best[0]) best = [a, b];
+    a = b;
+  }
+  return best;
+}

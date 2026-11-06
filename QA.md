@@ -1,3 +1,12 @@
+# Chilean uniform parts and metal skins — v3.11.0 — 2026-11-05
+
+- `npm test`: **105 pass** (new: horizontal double tap only for listed fighters, controls validation). `npm run check` passes.
+- Real emulator, character screen, all 12 fighters: regular, uniform (C-left) and, for Mario/Luigi, metal (R); D-pad Up-Up gives the uniform and Left-Left the metal skin. M35 helmets (~210 triangles) on every head; red collar tabs, gold buttons and shoulder boards; gray tunics on Kirby, Jigglypuff, Pikachu, Yoshi and DK. Jigglypuff's parts draw before her body and needed her own light colors (fixed). Screenshots `artifacts/mods-v311/`.
+- Battle, one emulator + synthetic P2: metal Mario's attributes read from RDRAM match Metal Mario (gravity 4.8, fall speed 100, traction 4, jump squat 8, metallic, voice off, knockback resistance 30); gray metal stock icon. The synthetic P2 cannot press costume buttons on the character screen (harness limit, also for plain C-left).
+- Two real emulators (private room, invitation guest): metal Mario (host, Left-Left) vs metal Luigi (guest, Right-Right): both peers read Metal Mario stats for both fighters, **33 matching checks, 0 repairs**. Link vs DK in uniform: 33 matching, 0 repairs.
+- Performance, two emulators on Dan's Mac (another Chrome renderer at ~80% CPU, load 3–12): plain 60 FPS (one alternating run failed on backlog 11–20); pack installed with regular costumes **60 FPS, step 7.8 ms, pass**; both fighters in uniform **56.6–57.7 FPS, fail** (target 58). One emulator: each uniformed fighter adds **0.35–0.5 ms per frame** (7.7 → 8.1 ms); nothing else costs time.
+- Not tested: results screen after a finished match, physical controllers, phones, separate households. Metal skins do not copy Metal Mario's metal footstep sounds.
+
 # Uniform costume for all fighters — v3.10.0 — 2026-11-05
 
 - **103 Node tests pass** (two new: format-2 code-table edits with boot-checksum repair, RAM-data copies/overrides/bounds/conflicts and costume-button validation; double-tap timing, selection, scene and no-pack behavior). `npm run check` passes.

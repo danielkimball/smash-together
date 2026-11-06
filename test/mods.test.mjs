@@ -392,3 +392,52 @@ test("double tap Up or Down picks the pack's costume once a fighter is chosen", 
     "only on the character screen",
   );
 });
+
+test("controls: Left or Right twice presses the metal button only for its fighters", async () => {
+  const { CostumeGesture } = await import("../public/js/costume-gesture.js");
+  const g = new CostumeGesture();
+  const controls = [
+    { gesture: "vertical", button: "cl" },
+    { gesture: "horizontal", button: "r", fighters: [0, 4] },
+  ];
+  const rest = { buttons: 0, x: 0, y: 0 };
+  const doubleTap = (input, fighter) => {
+    g.use(controls);
+    return [input, rest, input].map(
+      (step, i) =>
+        g.filter(step, "p", { scene: 16, selected: true, fighter, now: [0, 50, 120][i] })
+          .buttons,
+    )[2];
+  };
+  const left = { buttons: 0, x: -80, y: 0 },
+    dpadRight = { buttons: 1, x: 0, y: 0 },
+    up = { buttons: 0, x: 0, y: 80 };
+  assert.equal(doubleTap(left, 0) & 4096, 4096, "Mario: Left twice presses R");
+  assert.equal(doubleTap(dpadRight, 4) & 4096, 4096, "Luigi: D-pad Right twice");
+  assert.equal(doubleTap(left, 2), 0, "DK has no metal skin");
+  assert.equal(doubleTap(up, 2) & 512, 512, "the uniform still works for everyone");
+});
+
+test("controls are validated", () => {
+  const base = {
+    format: 2,
+    id: "c",
+    name: "C",
+    version: 1,
+    rom: ROM,
+    mods: [{ id: "m", name: "M", rom: [{ offset: 0x1000, expect: "00", hex: "00" }] }],
+  };
+  const ok = structuredClone(base);
+  ok.mods[0].controls = [{ gesture: "horizontal", button: "r", fighters: [0, 4] }];
+  validatePack(ok, ROM);
+  for (const controls of [
+    [{ gesture: "diagonal", button: "r" }],
+    [{ gesture: "vertical", button: "a" }],
+    [{ gesture: "horizontal", button: "r", fighters: [12] }],
+    "r",
+  ]) {
+    const bad = structuredClone(base);
+    bad.mods[0].controls = controls;
+    assert.throws(() => validatePack(bad, ROM), /controls/);
+  }
+});

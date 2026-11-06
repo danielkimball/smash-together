@@ -65,6 +65,21 @@ export function fileEntry(rom, id) {
 
 const plain = (value, max) =>
   typeof value === "string" && value.trim() && value.length <= max;
+// Costume controls on the character screen: a double-tap direction presses a
+// button the game reads there, optionally only for some fighters (0-11).
+export const CONTROL_BUTTONS = ["cu", "cr", "cd", "cl", "r", "l", "z"];
+const validControls = (list) =>
+  Array.isArray(list) &&
+  list.length <= 4 &&
+  list.every(
+    (c) =>
+      ["vertical", "horizontal"].includes(c?.gesture) &&
+      CONTROL_BUTTONS.includes(c.button) &&
+      (c.fighters === undefined ||
+        (Array.isArray(c.fighters) &&
+          c.fighters.length <= 12 &&
+          c.fighters.every((k) => Number.isInteger(k) && k >= 0 && k < 12))),
+  );
 
 export function validatePack(pack, romSha1) {
   if (!pack || !PACK_FORMATS.includes(pack.format) || !ID.test(pack.id || ""))
@@ -83,8 +98,9 @@ export function validatePack(pack, romSha1) {
     if (mod.summary !== undefined && !plain(mod.summary, 300))
       throw Error("A mod description is too long.");
     if (
-      mod.costumeButton !== undefined &&
-      !["cu", "cr", "cd", "cl"].includes(mod.costumeButton)
+      (mod.costumeButton !== undefined &&
+        !["cu", "cr", "cd", "cl"].includes(mod.costumeButton)) ||
+      (mod.controls !== undefined && !validControls(mod.controls))
     )
       throw Error("A mod in this pack has invalid controls.");
     const patches = mod.patches || [],

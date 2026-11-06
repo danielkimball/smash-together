@@ -451,7 +451,7 @@ async function powerOn() {
     try {
       // Mod packs patch only this in-memory copy; storage keeps the original.
       await engine.load(await mods.prepare(rom));
-      gesture.use(mods.costumeButton);
+      gesture.use(mods.controls);
       engine.romHash = ROM_SHA1;
       engine.frame([neutral]);
       // Pack data in upper RDRAM must precede every snapshot the app keeps.
@@ -777,10 +777,11 @@ function requestMatch() {
 net.filterInput = (input, player = net.me) => {
   const r = net.room;
   if (!player || player.slot < 0) return neutral;
-  // Mod packs: Up/Down twice on the character screen picks their costume.
+  // Mod packs: a double tap on the character screen picks their costumes.
   input = gesture.filter(input, player.id, {
     scene: engine.info?.scene,
     selected: !!engine.info?.players?.[player.slot]?.selected,
+    fighter: engine.info?.players?.[player.slot]?.fighter,
   });
   const primary = player.id === net.id;
   if (primary && pointerQueue.length && engine.info?.scene !== 22)
@@ -1858,11 +1859,11 @@ $("reset").onclick = () => {
 function diagnostics() {
   const sample = net.performanceSamples.at(-1);
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.10.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.11.0`;
 }
 $("performance-export").onclick = () => {
   const report = {
-    version: "3.10.0",
+    version: "3.11.0",
     exported: new Date().toISOString(),
     samples: net.performanceSamples,
     events: net.performanceEvents,
@@ -2117,6 +2118,7 @@ function tick(time) {
               : gesture.filter(controls.sample(), "primary", {
                   scene: engine.info?.scene,
                   selected: !!engine.info?.players?.[0]?.selected,
+                  fighter: engine.info?.players?.[0]?.fighter,
                 }),
         ];
         if (waitForMenuRelease) {
