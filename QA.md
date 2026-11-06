@@ -1,3 +1,12 @@
+# Red sweatband on every uniform — v3.12.0 — 2026-11-05
+
+- `npm test`: **105 pass**; `npm run check` passes.
+- Each uniform adds a red terry sweatband on the left upper arm (48 triangles, 8 sides, rolled edges). It rides the arm joint (all 12 upper arms are rigid, so it cannot slide), and each ring circumscribes the arm's cross-sections near it, so the sleeve cannot poke through in the bind pose. Ness wears it below his sleeve, DK over his gray sleeve, Jigglypuff on the part of her arm outside the tunic. Left = +x in bind pose (Samus's cannon arm is -x).
+- Real emulator, character screen: bands visible on all 12 uniforms; regular costumes unchanged. Battle: DK's band clearly visible. Screenshots `artifacts/mods-v312/`.
+- Two real emulators (Fox vs DK, both in uniform): **33/31 and 33/32 matching checks, 0 repairs**. One earlier run with 10-sided bands ended with the host showing "fell too far behind" (loadavg ~11 on Dan's Mac); the same test with the v3.11 pack under the same load passed; after trimming to 8 sides it passed. Treat the two-emulators-on-one-Mac test as a stress limit, not player conditions.
+- One emulator (DK, loadavg ~9): step average regular 10.2 ms, uniform 9.9–11.3 ms with either pack; the band's cost (~0.1 ms) is inside run-to-run noise.
+- Not tested: results screen, physical controllers, phones, separate households.
+
 # Chilean uniform parts and metal skins — v3.11.0 — 2026-11-05
 
 - `npm test`: **105 pass** (new: horizontal double tap only for listed fighters, controls validation). `npm run check` passes.
