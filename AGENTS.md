@@ -154,3 +154,7 @@ Dan (2026-11-05): an accurate Chilean M35 helmet that fits every fighter, a real
 ## v3.12 sweatband
 
 Dan (2026-11-05): a red sweatband on the left biceps of every uniform (his Chilean friend's high-school football habit). `sweatband()` in `.local/mods/crew-design.mjs` (private): left upper arm per fighter (`LEFT_ARM`; the fighter's left is +x in bind pose), position/height per fighter (`BAND`, fractions of shoulder->elbow), rings = polygons circumscribing the clipped arm triangles near each ring (plus any part already on that joint, e.g. DK's sleeve). Merged into that joint's part list, so no new hook or slot logic. 48 triangles per fighter; keep it small, two-emulator stress runs on Dan's Mac sit near the limit.
+
+## v3.12.1 create-room navigation
+
+The saved main menu (`menuState`) keeps whatever row was highlighted when it was captured, so never replay relative presses from it. `openVersusMode` steers by `inspect().menu.row` (0x80132c88: 0 1P, 1 VS, 2 Option, 3 Data), verifies VS Mode, then presses A; `setupRoom` and `prepareVersus` both use it. A failed setup returns to the room list instead of a paused native screen. `scripts/create-room-check.mjs` saves the menu on VS Mode/Data like a quick player and checks both paths.

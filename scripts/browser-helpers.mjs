@@ -93,6 +93,12 @@ export function browserHelpers(browser, { url, pages, errors }) {
         (await p.evaluate(() => !!smash.net.room))
       )
         break;
+      // The portal saves the main menu ~30 frames after it appears. Another
+      // Start in that window would open 1P Mode instead, so wait for the save.
+      if (await p.evaluate(() => smash.engine.inspect().scene === 7)) {
+        await wait(700);
+        continue;
+      }
       await p.locator("#power-on").click();
       await p.mouse.move(0, 0);
       await wait(1400);

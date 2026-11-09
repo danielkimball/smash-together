@@ -1,3 +1,12 @@
+# Create room always opens VS Mode — v3.12.1 — 2026-11-09
+
+- Dan's report: Create room sometimes opened the native Option screen (Sound / Screen Adjust / Backup Clear) under "Set up your match", with no way to continue.
+- Cause: the saved main menu keeps the row highlighted when it was captured (~30 frames after the menu first appears in the opening). A quick stick tap in that window saved VS Mode highlighted; Create room's fixed "Down, A" then opened Option, failed its scene check and stayed paused (the error toast lasts 5.5 s). Host preparation after a handoff used the same fixed press.
+- Fix: `openVersusMode` reads the native row (0x80132c88) and steers to VS Mode before A; a failed setup returns to the room list with its message. No protocol, timing, netplay or emulator change.
+- New `scripts/create-room-check.mjs`, session-owned staging 8794: on v3.12.0 it reproduced the exact screen (scene 57, paused, default title, "Could not open VS settings."). With the fix, **5 pass**: remembered VS Mode opens VS settings with the room name, the room opens and gives an invite link; remembered Data (Up wraps) opens VS settings; host preparation from remembered VS Mode reaches character selection; a forced failure returns to the room list with its message; the default row still opens a room.
+- `npm test` **105 pass**, `npm run check` passes, `room-check.mjs` **9 pass** (includes creating another room after a battle and host handoffs), `menu-check.mjs` **2 pass**. The shared boot helper no longer presses Start once the main menu is up: under load (avg 7–8) an extra Start opened 1P Mode in the third page's boot, before any room code ran.
+- Not tested: physical controllers, Ryker's Windows host before rollout.
+
 # Red sweatband on every uniform — v3.12.0 — 2026-11-05
 
 - `npm test`: **105 pass**; `npm run check` passes.
