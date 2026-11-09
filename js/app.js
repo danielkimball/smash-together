@@ -488,6 +488,33 @@ async function prepareMain() {
   engine.unlockAll();
   menuState = engine.snapshot();
 }
+// The saved main menu keeps whichever row was highlighted when it was captured
+// (a quick stick tap during the opening). One fixed Down press from there
+// opened Option or Data, so steer by the native row: 0 1P, 1 VS, 2 Option, 3 Data.
+async function openVersusMode(valid) {
+  await runSequence([[6, neutral]], valid);
+  for (let step = 0; step < 6; step++) {
+    const info = engine.inspect();
+    if (info.scene !== 7 || info.menu.row === 1) break;
+    await runSequence(
+      [
+        [4, { buttons: 0, x: 0, y: info.menu.row > 1 ? 85 : -85 }],
+        [20, neutral],
+      ],
+      valid,
+    );
+  }
+  const info = engine.inspect();
+  if (info.scene !== 7 || info.menu.row !== 1)
+    throw Error("Could not select VS Mode. Try again.");
+  await runSequence(
+    [
+      [10, { buttons: BITS.a, x: 0, y: 0 }],
+      [180, neutral],
+    ],
+    valid,
+  );
+}
 async function startNativeGame() {
   if (net.room || homeBooting) return;
   if (engine.loaded) return;
@@ -615,19 +642,21 @@ async function setupRoom(options) {
   try {
     await prepareMain();
     engine.unlockAll();
-    await runSequence([
-      [10, { buttons: 0, x: 0, y: -85 }],
-      [60, neutral],
-      [10, { buttons: BITS.a, x: 0, y: 0 }],
-      [180, neutral],
-    ]);
+    await openVersusMode();
     if (engine.inspect().scene !== 9)
-      throw Error("Could not open VS settings.");
+      throw Error("Could not open VS settings. Try Create room again.");
     menuInput = [];
     paused = false;
     next = performance.now();
     $("setup-title").textContent = options.roomName || "One more match";
     $("canvas").focus();
+  } catch (e) {
+    // Never leave the host on a paused native screen behind the setup header.
+    roomSetup = null;
+    menuInput = [];
+    preparing = false;
+    setView("browse");
+    throw e;
   } finally {
     preparing = false;
     $("busy").hidden = true;
@@ -666,17 +695,15 @@ async function prepareVersus() {
       return;
     }
     await prepareMain();
+    const valid = () =>
+      net.connectionGeneration === generation && net.room?.match === match;
+    await openVersusMode(valid);
     await runSequence(
       [
-        [10, { buttons: 0, x: 0, y: -85 }],
-        [60, neutral],
-        [10, { buttons: BITS.a, x: 0, y: 0 }],
-        [180, neutral],
         [10, { buttons: BITS.a, x: 0, y: 0 }],
         [180, neutral],
       ],
-      () =>
-        net.connectionGeneration === generation && net.room?.match === match,
+      valid,
     );
     if (engine.inspect().scene !== 16)
       throw Error(
@@ -1859,11 +1886,11 @@ $("reset").onclick = () => {
 function diagnostics() {
   const sample = net.performanceSamples.at(-1);
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.12.0`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.12.1`;
 }
 $("performance-export").onclick = () => {
   const report = {
-    version: "3.12.0",
+    version: "3.12.1",
     exported: new Date().toISOString(),
     samples: net.performanceSamples,
     events: net.performanceEvents,
