@@ -541,3 +541,21 @@ body[data-view="home"] .home-screen {
 #mods-restart {
   width: 100%;
 }
+
+/* Exit confirmation: the focused choice is what A presses. */
+#exit-dialog {
+  width: min(420px, calc(100vw - 32px));
+}
+#exit-dialog .exit-actions {
+  margin: 18px 0 14px;
+}
+#exit-dialog .exit-actions button {
+  min-height: 48px;
+  font-size: 15px;
+}
+#exit-dialog .exit-actions button:focus {
+  background: var(--accent);
+  border-color: var(--accent);
+  outline: 2px solid var(--yellow);
+  outline-offset: 5px;
+}

@@ -34,6 +34,7 @@ let rom = null,
   mainMenuEnteredAt = null,
   startRequest = null,
   selectionButtons = 0,
+  selectionRelease = 0,
   enteredStage = false,
   roomSetup = null,
   menuInput = [],
@@ -261,6 +262,7 @@ for (const d of document.querySelectorAll("dialog"))
     const resume = d.resumeOnClose;
     d.resumeOnClose = false;
     if (resume && ["game", "native"].includes(view)) unpause();
+    if (net.room?.selecting) selectionRelease = BITS.a | BITS.b;
     blockInput();
   });
 document
@@ -631,6 +633,7 @@ async function setupRoom(options) {
   net.leave();
   menuInput = [];
   selectionButtons = 0;
+  selectionRelease = 0;
   startRequest = null;
   enteredStage = false;
   roomSetup = options;
@@ -814,6 +817,12 @@ net.filterInput = (input, player = net.me) => {
   if (primary && pointerQueue.length && engine.info?.scene !== 22)
     input = nextPointerInput();
   if (r?.selecting) {
+    // A or B still held from closing a dialog must be released first, so
+    // backing out of a panel never reaches selection as a fresh press.
+    if (primary && selectionRelease && !controls.blocked) {
+      selectionRelease &= input.buttons;
+      input = { ...input, buttons: input.buttons & ~selectionRelease };
+    }
     const bPressed =
       primary && input.buttons & BITS.b && !(selectionButtons & BITS.b);
     if (primary) selectionButtons = input.buttons;
@@ -823,7 +832,7 @@ net.filterInput = (input, player = net.me) => {
       !info.players[player.slot]?.selected &&
       input.buttons & BITS.b
     ) {
-      if (bPressed) queueMicrotask(leaveRoom);
+      if (bPressed) queueMicrotask(confirmExit);
       return neutral;
     }
     if (input.buttons & BITS.start) requestMatch();
@@ -1079,9 +1088,19 @@ $("invite-copy").onclick = async () => {
 document
   .querySelectorAll("[data-invite]")
   .forEach((b) => (b.onclick = attempt(copyInvite)));
+// B with the token still in hand asks first; Back buttons leave directly.
+function confirmExit() {
+  if (!net.room || $("exit-dialog").open) return;
+  dialog("exit-dialog", { pauseGame: false });
+  // Cancel is the default so a stray A after a stray B keeps you in the room.
+  $("exit-cancel").focus();
+}
+$("exit-confirm").onclick = () => leaveRoom();
+$("exit-cancel").onclick = () => $("exit-dialog").close();
 function leaveRoom() {
   startRequest = null;
   selectionButtons = 0;
+  selectionRelease = 0;
   enteredStage = false;
   menuInput = [];
   roomSetup = null;
@@ -1886,11 +1905,11 @@ $("reset").onclick = () => {
 function diagnostics() {
   const sample = net.performanceSamples.at(-1);
   $("diagnostics").textContent =
-    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.12.1`;
+    `Game: ${engine.loaded ? "Verified US ROM" : "Not loaded"}\nMode: ${net.state}\nPlayers: ${net.connected.length || 1}\nGame inputs: ${net.room?.inputMode === "latest" ? "next available server tick" : "buffered server deadlines"}\nServer round trip: ${net.relayRTT || "—"} ms (typical ${Math.round(net.inputTiming.rtt)} ms)\nYour input buffer: ${net.personalDelay ?? net.delay} frames (${Math.round(((net.personalDelay ?? net.delay) * 1000) / 60)} ms)\nInput sample → emulator: ${sample?.inputAckSamples ? `${sample.inputAckAvgMs} ms average / ${sample.inputAckP95Ms} ms p95` : "measuring"}\nFrames waiting to render: ${Math.max(0, net.serverFrame - net.frame + 1) || 0}\nEmulator frame time: ${sample?.stepAvgMs || 0} ms average / ${sample?.stepMaxMs || 0} ms peak\nLongest frame delivery gap: ${sample?.frameGapMs || 0} ms\nYour missed deadlines: ${net.ownLateInputs || 0}\nGame send queue: ${net.socket?.bufferedAmount || 0} bytes\nVoice/snapshots: ${net.mediaReady ? "separate connection" : "connecting"}\nMatching state checks: ${net.matches}\nAutomatic resyncs: ${net.repairs}\nRendering: ${lastFPS} fps\nVersion: 3.12.2`;
 }
 $("performance-export").onclick = () => {
   const report = {
-    version: "3.12.1",
+    version: "3.12.2",
     exported: new Date().toISOString(),
     samples: net.performanceSamples,
     events: net.performanceEvents,
@@ -1975,7 +1994,7 @@ function menuController(time) {
     const info = engine.info || engine.inspect();
     if (info.scene === 16 && !info.players[net.player]?.selected) {
       menuEdges = active;
-      leaveRoom();
+      confirmExit();
       return;
     }
   }
@@ -2052,7 +2071,7 @@ window.addEventListener("keydown", (e) => {
       !info.players[net.player]?.selected
     ) {
       e.preventDefault();
-      leaveRoom();
+      confirmExit();
       return;
     }
     if (pressed & BITS.start) {

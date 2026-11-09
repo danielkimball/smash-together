@@ -154,7 +154,11 @@ try {
   assert.equal(await a.evaluate(() => smash.view), "native");
   await browse(a);
   await create(a);
+  // B with the token in hand asks first; D-pad right reaches Exit, A leaves.
   await pad(a, 8);
+  await a.waitForFunction(() => document.getElementById("exit-dialog").open);
+  await pad(a, 15);
+  await pad(a, 6);
   await a.waitForFunction(() => smash.view === "browse" && !smash.net.room);
   await create(a);
   await a.locator("#selection-back").click();
@@ -177,6 +181,9 @@ try {
   await a.evaluate(() => {
     qaPad = null;
     smash.controls.select("keyboard");
+    // Player 1 stays bound to the unplugged pad (v3.7 local players), so
+    // switch it back to the keyboard like Controller setup does.
+    smash.localPlayers.assign("primary", "keyboard");
   });
   await create(a);
   await act(a, ["KeyW"], 28, 12);
@@ -217,6 +224,7 @@ try {
       axes: [0, 0],
     };
     smash.controls.select("0");
+    smash.localPlayers.assign("primary", "pad:0");
   });
   await pad(a, 9);
   await scene(a, 21);
@@ -346,12 +354,15 @@ try {
   );
   assert.equal(await b.evaluate(() => !!smash.net.room), true);
   await b.keyboard.press("KeyK");
+  await b.waitForFunction(() => document.getElementById("exit-dialog").open);
+  assert.equal(await b.evaluate(() => !!smash.net.room), true);
+  await b.locator("#exit-confirm").click();
   await b.waitForFunction(() => smash.view === "browse" && !smash.net.room);
   await a.waitForFunction(
     () => smash.net.running && smash.net.connected.length === 1,
   );
   record(
-    "B recalls a selected fighter; a separate B leaves only the guest and keeps the host room open",
+    "B recalls a selected fighter; a separate B asks Exit game?, and Exit leaves only the guest while the host room stays open",
   );
   assert.deepEqual(errors, []);
 } catch (e) {

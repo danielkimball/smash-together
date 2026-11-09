@@ -1,3 +1,12 @@
+# Exit game? confirmation — v3.12.2 — 2026-11-09
+
+- Dan's request: with the selection token still in hand, B must ask "Exit game?" (Exit / Cancel) instead of leaving.
+- B from controller, keyboard (K) or touch opens the prompt; Cancel is focused (red, yellow ring). A or B cancels, direction + A or a click on Exit leaves. Toolbar B · Back and the native top-right Back still leave directly.
+- Found and fixed: closing any panel with B during selection (Invite friends, Controller, Server settings) passed the still-held B to the room and **left the room** (reproduced on v3.12.1 in an isolated browser). A held after closing a dialog could also pick a fighter. Both are now ignored until released (selection only; combat input unchanged).
+- New `scripts/exit-check.mjs`, session-owned staging 8794, **9 pass**: keyboard B opens with Cancel focused; B cancels and the held B neither reopens nor leaves; B with a fighter chosen still recalls natively; A on Cancel keeps you in without picking the hovered fighter; closing Invite with B stays; synthetic Xbox pad B opens/B cancels, Right + A exits; phone touch B opens (358 px dialog at 390 px), Cancel stays, Exit leaves; no uncaught errors. Screenshots `artifacts/exit-modal-desktop.png`, `exit-modal-phone.png`.
+- `flow-check.mjs` **6 pass** (DragonRise B → prompt → D-pad right + A exits; guest B → prompt → Exit leaves only the guest). Its pad unplug/replug steps failed identically on v3.12.1 (player 1 stays bound to its pad since v3.7); the harness now rebinds player 1 like Controller setup. `room-check.mjs` **9 pass**. `npm test` 105 pass, `npm run check` passes.
+- Not tested: physical controllers, Ryker's Windows host before rollout. `party-check.mjs` (shared device) not rerun; secondary players' B handling is unchanged.
+
 # Create room always opens VS Mode — v3.12.1 — 2026-11-09
 
 - Dan's report: Create room sometimes opened the native Option screen (Sound / Screen Adjust / Backup Clear) under "Set up your match", with no way to continue.

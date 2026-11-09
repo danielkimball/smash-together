@@ -41,7 +41,7 @@ Responsive play is the first priority. The renderer now uses its native vertex b
 
 The permanent address stays on GitHub Pages; Cloudflare connects it to Ryker's PC behind the scenes. His testing host loads the game automatically when the site opens, without a ROM picker or password. New hosts still default to bring-your-own-ROM. No ROM is stored in Git or Pages.
 
-- **Back:** B recalls your fighter token; press B again to leave character selection. Top-right **B - Back** leaves immediately. In the multiplayer menu, B returns to native Mode Select. Leaving transfers the room host role to the next connected fighter, then the oldest spectator.
+- **Back:** B recalls your fighter token; with the token in your hand, B asks **Exit game?** (Cancel is selected, so A or B keeps you in; move to Exit and press A to leave). Top-right **B - Back** leaves immediately. In the multiplayer menu, B returns to native Mode Select. Leaving transfers the room host role to the next connected fighter, then the oldest spectator.
 - **Start:** the host's controller Start starts when everyone has chosen fighters. Your saved controller mapping applies.
 - **Phone:** Auto hides touch controls when a USB/Bluetooth controller is detected. Visible **Touch controls / Hide controls** and **Fullscreen** buttons stay available. Browsers without page fullscreen show home-screen installation steps.
 - **Lag:** late inputs affect that controller while others keep moving. Spectators and battle reconnects catch up from targeted snapshots without pausing the fighters. Manual pause and fighter-state repairs still synchronize everyone. Losing the Windows backend still ends the room. This is not rollback.
