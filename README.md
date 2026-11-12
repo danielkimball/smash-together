@@ -1,3 +1,7 @@
+# Room creation after a tunnel restart — v3.12.3
+
+Room discovery now reads the latest committed host address without waiting for a GitHub Pages build. This fixes VS Start returning to the multiplayer lobby when the site still points at an expired tunnel. The selected host and permanent player address stay the same. Reload the page once to receive the fix.
+
 # Native startup and simpler room controls — v3.8.0
 
 The original ROM now starts once at normal speed when the site loads. Press Start to skip its opening/title; there is no separate intro or accelerated replay. Cached cartridges and the development auto-load work automatically. Without a cartridge, the branded Add your ROM screen uses the supplied box art and verifies your file locally before starting the game. The development build still skips that picker.

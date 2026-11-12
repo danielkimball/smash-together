@@ -159,6 +159,10 @@ Dan (2026-11-05): a red sweatband on the left biceps of every uniform (his Chile
 
 The saved main menu (`menuState`) keeps whatever row was highlighted when it was captured, so never replay relative presses from it. `openVersusMode` steers by `inspect().menu.row` (0x80132c88: 0 1P, 1 VS, 2 Option, 3 Data), verifies VS Mode, then presses A; `setupRoom` and `prepareVersus` both use it. A failed setup returns to the room list instead of a paused native screen. `scripts/create-room-check.mjs` saves the menu on VS Mode/Data like a quick player and checks both paths.
 
+## v3.12.3 tunnel discovery during delayed Pages builds
+
+Dan (2026-11-12): VS Start returned to the multiplayer browser. Reproduced: native scene 16 opened correctly, but the room WebSocket received HTTP 530 / Cloudflare 1033 at the old tunnel. Ryker's current tunnel was healthy; the committed registry was newer than the deployed Pages record, whose build was queued. `discoverHost` now reads the same owner-guarded `gh-pages/active-host.json` directly from raw GitHub first, falling back to Pages on failure/invalid data (five-second raw timeout). Never choose `backup` automatically. Protocol, gameplay timing, core binaries and permanent player origin are unchanged. Tests in `test/hosting.test.mjs` cover rotation before Pages publication and fallback failures.
+
 ## v3.12.2 Exit game? confirmation
 
 Dan (2026-11-09): B with the token in hand must ask before leaving. All three B paths (`net.filterInput`, `menuController`, selection keydown) call `confirmExit()`; `#exit-dialog` focuses Cancel, so a stray A after a stray B stays in the room. Top-right Back and the toolbar B · Back still leave directly. Any dialog closed during selection sets `selectionRelease` (A|B): the primary's held A/B are masked in selection until released. Before this, closing Invite/Controller/Server panels with B left the room (verified on v3.12.1), and A on a dialog could pick a fighter. Combat input is untouched (selection branch only). `scripts/exit-check.mjs`; `flow-check.mjs` now rebinds player 1 when it unplugs/replugs its fake pad (stale since v3.7 local players).
