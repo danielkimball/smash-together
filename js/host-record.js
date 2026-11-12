@@ -22,13 +22,33 @@ export function parseHostRecord(record) {
 }
 
 export async function discoverHost(base, request = fetch) {
-  const url = new URL("active-host.json", base);
-  url.searchParams.set("t", String(Date.now()));
-  const response = await request(url.href, {
-    cache: "no-store",
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!response.ok)
-    throw Error("The primary host address is unavailable. Try again shortly.");
-  return parseHostRecord(await response.json()).url;
+  const page = new URL(base);
+  const urls = [new URL("active-host.json", page)];
+  // A tunnel can rotate while Pages is still building. The committed registry
+  // already names the verified host; do not wait for a static-site deployment
+  // to discover it. This is the same owner-guarded record, never a backup host.
+  const owner = /^([a-z0-9-]+)\.github\.io$/i.exec(page.hostname)?.[1];
+  const repo = page.pathname.split("/").filter(Boolean)[0];
+  if (owner && repo && /^[a-z0-9_.-]+$/i.test(repo))
+    urls.unshift(
+      new URL(
+        `https://raw.githubusercontent.com/${owner}/${repo}/gh-pages/active-host.json`,
+      ),
+    );
+  for (const [index, url] of urls.entries()) {
+    url.searchParams.set("t", String(Date.now()));
+    try {
+      const response = await request(url.href, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(index < urls.length - 1 ? 5000 : 15000),
+      });
+      if (!response.ok)
+        throw Error(
+          "The primary host address is unavailable. Try again shortly.",
+        );
+      return parseHostRecord(await response.json()).url;
+    } catch (error) {
+      if (index === urls.length - 1) throw error;
+    }
+  }
 }
